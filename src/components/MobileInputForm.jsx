@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
@@ -9,8 +9,11 @@ export default function MobileInputForm() {
   const [paymentMethod, setPaymentMethod] = useState('💵 現金');
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false); // 🌟 OCR処理中の状態
 
-  // 🌟 カスタム項目のState（追加ボタンで増える！）
+  // 🌟 ファイル（カメラ）入力用の参照
+  const fileInputRef = useRef(null);
+
   const [expenseCategories, setExpenseCategories] = useState(['🍔 食費', '🧻 日用品', '🚃 交通費', '🍻 交際費', '🎮 趣味', '🤖 自動取得(AI)', '📦 その他']);
   const [incomeCategories, setIncomeCategories] = useState(['💼 給与・報酬', '💰 お小遣い', '⚡ チャージ', '📦 その他']);
   const [accounts, setAccounts] = useState(['💵 現金', '🏦 三井住友銀行', '🏦 三菱UFJ銀行', '🏦 ゆうちょ銀行', '📱 PayPay', '💍 EVERING']);
@@ -24,17 +27,13 @@ export default function MobileInputForm() {
     setAmount(val);
   };
 
-  // 🌟 項目追加ロジック（ブラウザの機能を使ってサクッと追加）
   const handleAddCategory = () => {
     const newName = prompt('新しいカテゴリ名を入力してください:');
     if (!newName) return;
     const newItem = `✨ ${newName}`;
-    if (type === 'expense') {
-      setExpenseCategories([...expenseCategories, newItem]);
-    } else {
-      setIncomeCategories([...incomeCategories, newItem]);
-    }
-    setCategory(newItem); // 追加したらすぐそれに切り替える
+    if (type === 'expense') setExpenseCategories([...expenseCategories, newItem]);
+    else setIncomeCategories([...incomeCategories, newItem]);
+    setCategory(newItem);
   };
 
   const handleAddAccount = () => {
@@ -45,30 +44,81 @@ export default function MobileInputForm() {
     setPaymentMethod(newItem);
   };
 
-  // 📸 カメラボタンのダミー機能
-  const handleCameraClick = () => {
-    alert('【システムメッセージ】\n現在はOCRモジュールが未接続です。将来的にはここでカメラを起動し、AIがレシートから金額を自動抽出します。');
+  // 📸 レシート画像をAIで解析する最強の関数！！
+  const processReceipt = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsOcrProcessing(true);
+    try {
+      // 1. 画像をBase64（文字列）に変換する
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        const base64Image = reader.result.split(',')[1];
+
+        // 2. Google Cloud Vision APIに画像を送りつける！
+        // ⚠️ ここに星翔の APIキー を入れる！
+        const API_KEY = "AIzaSyB5UE_wkcBoBsaGo0warU40csxJAWi73-I"; 
+        const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requests: [{
+              image: { content: base64Image },
+              features: [{ type: 'TEXT_DETECTION' }] // 文字認識モード
+            }]
+          })
+        });
+
+        const data = await response.json();
+        const text = data.responses[0]?.textAnnotations[0]?.description;
+
+        if (!text) {
+          alert("⚠️ 文字が読み取れませんでした");
+          setIsOcrProcessing(false);
+          return;
+        }
+
+        console.log("🤖 AIが読み取った全テキスト:\n", text);
+
+        // 3. テキストから「店名」と「金額」をハッキング！
+        const lines = text.split('\n');
+        
+        // レシートの一番上の行はだいたい店名なのでメモに入れる
+        if (lines.length > 0) {
+          setMemo(lines[0]);
+        }
+
+        // 「合計」や「¥」の近くにある数字を正規表現で引っこ抜く
+        const amountMatch = text.match(/(?:合計|合\s*計|小計|¥)\s*([0-9,]+)/);
+        if (amountMatch) {
+          const extractedAmount = amountMatch[1].replace(/,/g, '');
+          setAmount(extractedAmount);
+        } else {
+          alert("⚠️ 文字は読めましたが、合計金額の特定に失敗しました。手動で入力してください。");
+        }
+      };
+    } catch (error) {
+      console.error("OCRエラー: ", error);
+      alert("❌ 画像の解析に失敗しました");
+    } finally {
+      setIsOcrProcessing(false);
+      e.target.value = ''; // 連続で同じ画像を選べるようにリセット
+    }
   };
 
   const handleSubmit = async () => {
     if (!amount || Number(amount) <= 0) { alert("⚠️ 金額を入力してください！"); return; }
     if (!auth.currentUser) { alert("⚠️ ログインしていません！"); return; }
-
-    // 振替の時、出金と入金が同じならエラーを出す
-    if (type === 'transfer' && paymentMethod === category) {
-      alert("⚠️ 出金元と入金先が同じです！"); return;
-    }
+    if (type === 'transfer' && paymentMethod === category) { alert("⚠️ 出金元と入金先が同じです！"); return; }
 
     setIsSubmitting(true);
     try {
-      // 📝 送信するデータを整理
-      // 振替の場合：paymentMethod = 出金元、category = 入金先 として記録する！
-      let finalCategory = category;
-      let finalPaymentMethod = paymentMethod;
-
-      // 絵文字がついているとダッシュボードの表示が崩れる可能性があるので、絵文字以降の文字だけを抽出して保存する！
-      const cleanCategory = finalCategory.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
-      const cleanPaymentMethod = finalPaymentMethod.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+      const cleanCategory = category.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+      const cleanPaymentMethod = paymentMethod.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
 
       await addDoc(collection(db, "transactions"), {
         userId: auth.currentUser.uid,
@@ -90,14 +140,13 @@ export default function MobileInputForm() {
     }
   };
 
-  // タブ切り替え時にカテゴリの初期値を自動調整
   const handleTypeChange = (newType) => {
     setType(newType);
     if (newType === 'expense') setCategory(expenseCategories[0]);
     if (newType === 'income') setCategory(incomeCategories[0]);
     if (newType === 'transfer') {
-      setPaymentMethod(accounts[0]); // 出金元
-      setCategory(accounts[1] || accounts[0]); // 入金先（最初は出金元と違うものにする）
+      setPaymentMethod(accounts[0]);
+      setCategory(accounts[1] || accounts[0]);
     }
   };
 
@@ -124,7 +173,26 @@ export default function MobileInputForm() {
           <div>
             <div style={labelStyle}>金額</div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={handleCameraClick} style={{ ...iconBtnStyle, borderColor: '#00bfff' }}>📸</button>
+              
+              {/* 🌟 隠しファイル入力（カメラ起動用） */}
+              <input 
+                type="file" 
+                accept="image/*" 
+                capture="environment" 
+                ref={fileInputRef} 
+                onChange={processReceipt} 
+                style={{ display: 'none' }} 
+              />
+              
+              {/* 📸 カメラボタン（押すと隠しinputが発動する） */}
+              <button 
+                onClick={() => fileInputRef.current.click()} 
+                disabled={isOcrProcessing}
+                style={{ ...iconBtnStyle, borderColor: isOcrProcessing ? '#555' : '#00bfff', opacity: isOcrProcessing ? 0.5 : 1 }}
+              >
+                {isOcrProcessing ? '⏳' : '📸'}
+              </button>
+
               <div style={{ ...inputStyle, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '24px', fontWeight: 'bold', background: '#0a0c10' }}>
                 <span style={{ color: '#555' }}>¥</span>
                 <input type="text" inputMode="numeric" value={amount ? Number(amount).toLocaleString() : ''} onChange={handleAmountChange} placeholder="0" style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '28px', fontWeight: 'bold', textAlign: 'right', width: '100%', outline: 'none', fontFamily: 'monospace' }} />
@@ -135,7 +203,6 @@ export default function MobileInputForm() {
           {/* 🌟 振替かそれ以外でUIを完全に切り替える！ */}
           {type === 'transfer' ? (
             <>
-              {/* 振替モードのUI */}
               <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
                 <div style={{ marginBottom: '15px' }}>
                   <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
@@ -158,7 +225,6 @@ export default function MobileInputForm() {
             </>
           ) : (
             <>
-              {/* 通常モード（支出・収入）のUI */}
               <div>
                 <div style={labelStyle}>カテゴリ ({type === 'expense' ? '用途' : '収入源'})</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
