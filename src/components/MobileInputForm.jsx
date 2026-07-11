@@ -60,7 +60,7 @@ export default function MobileInputForm() {
         const base64Image = reader.result.split(',')[1];
 
         // 🌟 星翔のホンモノのAPIキーをセット済み！
-        const API_KEY = "AIzaSyB5UE_wkcBoBsaGo0warU40csxJAWi73-I"; 
+        const API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
         const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
 
         const response = await fetch(url, {
