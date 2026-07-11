@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from './firebase';
 
@@ -9,7 +9,11 @@ import BalanceChart from './components/BalanceChart';
 export default function MobileApp() {
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [currentTab, setCurrentTab] = useState('input'); // 最初は必ず「入力」が開く！
+  const [currentTab, setCurrentTab] = useState('input'); 
+
+  // 🌟 ステルスシステム用のState
+  const [isStealthActive, setIsStealthActive] = useState(true); 
+  const [stealthAccounts, setStealthAccounts] = useState([]); 
 
   useEffect(() => {
     signInWithEmailAndPassword(auth, "seisuma2@gmail.com", "Seisuma2")
@@ -19,41 +23,74 @@ export default function MobileApp() {
 
   useEffect(() => {
     if (!user) return;
+    
     const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubscribeTx = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
     });
-    return () => unsubscribe();
+
+    const unsubscribeSettings = onSnapshot(doc(db, "user_settings", user.uid), (document) => {
+      if (document.exists()) {
+        setStealthAccounts(document.data().stealthAccounts || []);
+      }
+    });
+
+    return () => { unsubscribeTx(); unsubscribeSettings(); };
   }, [user]);
+
+  // 🔓 【極秘】タイトルをダブルタップした時だけ発動する解除コマンド
+  const unlockStealth = () => {
+    const pw = prompt("パスコードを入力してください");
+    if (pw === "0000") { // ⚠️ 好きなパスワードに変えてくれ！
+      setIsStealthActive(false);
+      alert("🔓 ゴーストプロトコルを解除しました");
+      setTimeout(() => setIsStealthActive(true), 30000); 
+    } else if (pw !== null) {
+      alert("❌ パスコードが違います");
+    }
+  };
+
+  // 🌟 【超重要】ここでデータを完全に「なかったこと」にする！
+  const displayTransactions = transactions.filter(tx => {
+    if (!isStealthActive) return true; // ロック解除時は全部見せる
+    if (stealthAccounts.includes(tx.paymentMethod)) return false; // 出金元が裏口座なら消す
+    if (tx.type === 'transfer' && stealthAccounts.includes(tx.category)) return false; // 入金先が裏口座なら消す
+    return true; // それ以外（普通の口座のデータ）は残す
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif' }}>
       
-      {/* 📱 メイン画面エリア（入力 か 残高 だけ！） */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        
-        {/* 入力フォーム */}
         {currentTab === 'input' && <MobileInputForm />}
         
-        {/* 残高一覧（PCのカートリッジ部品をそのまま流用！） */}
         {currentTab === 'balance' && (
           <div style={{ padding: '20px' }}>
-            <h2 style={{ fontSize: '18px', borderBottom: '1px solid #252838', paddingBottom: '10px', marginTop: 0 }}>
-              🏦 口座・決済手段別の現在高
-            </h2>
-            <BalanceChart transactions={transactions} isStealthMode={false} />
+            <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
+              
+              {/* 🌟 偽装UI: パッと見は普通のタイトルだが、ダブルクリックで解除画面が出る！ */}
+              <h2 
+                onDoubleClick={unlockStealth} 
+                style={{ fontSize: '18px', margin: 0, userSelect: 'none' }}
+              >
+                🏦 口座・決済手段別の現在高
+              </h2>
+              {/* 「ロック中」ボタンは完全に消去！ */}
+
+            </div>
+            
+            {/* 完全に検閲・フィルタリング済みのクリーンなデータだけを渡す！ */}
+            <BalanceChart transactions={displayTransactions} />
           </div>
         )}
       </div>
 
-      {/* 📱 入力アプリ専用のシンプルなボトムナビゲーション */}
       <div style={{ background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px' }}>
         <BottomTab icon="✏️" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />
         <BottomTab icon="🏦" label="残高一覧" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
       </div>
-
     </div>
   );
 }

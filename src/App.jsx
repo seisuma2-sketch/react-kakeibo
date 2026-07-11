@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; // 🌟 doc, setDocを追加！
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from './firebase';
 
@@ -64,12 +64,43 @@ function App() {
     if (!user) return;
     const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
     });
-    return () => unsubscribe();
+
+    // 🌟 【新規】Firebaseから「裏口座リスト」の初期設定を読み込む
+    const unsubscribeSettings = onSnapshot(doc(db, "user_settings", user.uid), (document) => {
+      if (document.exists()) {
+        const data = document.data();
+        setStealthConfig(prev => ({
+          ...prev,
+          ghostAccounts: data.stealthAccounts || []
+        }));
+      }
+    });
+
+    return () => { unsubscribe(); unsubscribeSettings(); };
   }, [user]);
+
+  // 🌟 【新規】チェックボックス変更時にFirebaseへ即座に送信する関数
+  const toggleGhostAccount = async (account, isChecked) => {
+    const newGhostAccounts = isChecked
+      ? [...stealthConfig.ghostAccounts, account]
+      : stealthConfig.ghostAccounts.filter(a => a !== account);
+
+    setStealthConfig(prev => ({ ...prev, ghostAccounts: newGhostAccounts }));
+
+    if (user) {
+      try {
+        await setDoc(doc(db, "user_settings", user.uid), {
+          stealthAccounts: newGhostAccounts
+        }, { merge: true }); // 他の設定を消さずに上書き！
+      } catch (error) {
+        console.error("設定保存エラー:", error);
+      }
+    }
+  };
 
   const displayTransactions = transactions.filter(tx => {
     if (!stealthConfig.active) return true;
@@ -117,24 +148,21 @@ function App() {
               <SummaryPanel currentMonth={currentMonth} monthlyIncome={monthlyIncome} monthlyExpense={monthlyExpense} netIncome={netIncome} isSurplus={isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
               
               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
-                <div style={{ flex: 2, minWidth: 0 }}><BalanceChart transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideCartridges} /></div>
+                <div style={{ flex: 2, minWidth: 0 }}>
+                  <BalanceChart transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideCartridges} />
+                </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} />
                   <NebulaCore netIncome={netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
                 </div>
               </div>
 
-              {/* 🌟 3段目：右下の埋め込みを削除し、ショートカットボタンを3つに増やしたぞ！ */}
               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
-                
-                {/* 🌟 ボタン群 */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: '15px' }}>
-                  {/* 新設！入力画面へのワープボタン */}
                   <div onClick={() => setCurrentTab('input')} style={quickAccessStyle('#00ff66')}>
                     <div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>✏️</div>
                     <div style={{ color: '#00ff66', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>入力フォーム</div>
                   </div>
-                  
                   <div onClick={() => setCurrentTab('balance')} style={quickAccessStyle('#ff9900')}>
                     <div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>🔒</div>
                     <div style={{ color: '#ff9900', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>残高管理</div>
@@ -145,7 +173,6 @@ function App() {
                   </div>
                 </div>
                 
-                {/* 履歴リスト */}
                 <div style={{ flex: 2, minWidth: 0 }}>
                    <TransactionList transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} isMobile={isMobile} />
                 </div>
@@ -153,7 +180,6 @@ function App() {
             </div>
           )}
 
-          {/* 🌟 別のタブとして入力フォームを全画面表示！ */}
           {currentTab === 'input' && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '600px' }}>
               <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #00ff66', borderRadius: '12px', boxShadow: '0 0 30px rgba(0,255,102,0.1)' }}>
@@ -171,7 +197,6 @@ function App() {
         </div>
       </div>
 
-      {/* 📱 スマホ用ボトムナビゲーション */}
       {isMobile && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', zIndex: 100, backdropFilter: 'blur(10px)' }}>
           <BottomTab icon="🏠" label="総合" isActive={currentTab === 'home'} onClick={() => setCurrentTab('home')} />
@@ -181,7 +206,6 @@ function App() {
         </div>
       )}
 
-      {/* --- ゴーストプロトコル用モーダル --- */}
       {isAuthModalOpen && (
         <div style={overlayStyle}>
           <div style={modalStyle}>
@@ -207,7 +231,8 @@ function App() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {uniqueAccounts.map(account => (
                   <label key={account} style={{ fontSize: '12px', background: stealthConfig.ghostAccounts.includes(account) ? '#ff336622' : '#1a1d24', padding: '6px 10px', borderRadius: '4px', border: `1px solid ${stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : '#252838'}` }}>
-                    <input type="checkbox" checked={stealthConfig.ghostAccounts.includes(account)} onChange={(e) => setStealthConfig(prev => ({ ...prev, ghostAccounts: e.target.checked ? [...prev.ghostAccounts, account] : prev.ghostAccounts.filter(a => a !== account) }))} style={{ display: 'none' }} />
+                    {/* 🌟 変更: onChangeで toggleGhostAccount を呼び出す！ */}
+                    <input type="checkbox" checked={stealthConfig.ghostAccounts.includes(account)} onChange={(e) => toggleGhostAccount(account, e.target.checked)} style={{ display: 'none' }} />
                     {stealthConfig.ghostAccounts.includes(account) ? '☠️' : '💽'} {account}
                   </label>
                 ))}
@@ -221,7 +246,7 @@ function App() {
   );
 }
 
-// UIスタイル
+// UIスタイル群 (変更なし)
 const quickAccessStyle = (color) => ({ flex: 1, background: '#11141a', border: `1px solid ${color}`, borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', padding: '15px 0' });
 const overlayStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(5px)' };
 const modalStyle = { background: '#0a0c10', padding: '20px', borderRadius: '8px', border: '1px solid #ff3366' };
