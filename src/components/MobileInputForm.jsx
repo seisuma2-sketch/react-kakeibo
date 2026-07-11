@@ -9,9 +9,10 @@ export default function MobileInputForm() {
   const [paymentMethod, setPaymentMethod] = useState('💵 現金');
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false); // 🌟 OCR処理中の状態
+  
+  // 🌟 AI処理中のステータス（ローディング画面用）
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
 
-  // 🌟 ファイル（カメラ）入力用の参照
   const fileInputRef = useRef(null);
 
   const [expenseCategories, setExpenseCategories] = useState(['🍔 食費', '🧻 日用品', '🚃 交通費', '🍻 交際費', '🎮 趣味', '🤖 自動取得(AI)', '📦 その他']);
@@ -49,16 +50,16 @@ export default function MobileInputForm() {
     const file = e.target.files[0];
     if (!file) return;
 
+    // 🌟 ここでローディング画面を起動！
     setIsOcrProcessing(true);
+    
     try {
-      // 1. 画像をBase64（文字列）に変換する
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = async () => {
         const base64Image = reader.result.split(',')[1];
 
-        // 2. Google Cloud Vision APIに画像を送りつける！
-        // ⚠️ ここに星翔の APIキー を入れる！
+        // 🌟 星翔のホンモノのAPIキーをセット済み！
         const API_KEY = "AIzaSyB5UE_wkcBoBsaGo0warU40csxJAWi73-I"; 
         const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
 
@@ -68,45 +69,73 @@ export default function MobileInputForm() {
           body: JSON.stringify({
             requests: [{
               image: { content: base64Image },
-              features: [{ type: 'TEXT_DETECTION' }] // 文字認識モード
+              features: [{ type: 'TEXT_DETECTION' }]
             }]
           })
         });
 
         const data = await response.json();
+        
+        if (data.error) {
+          alert(`⚠️ AIエラー: ${data.error.message}`);
+          setIsOcrProcessing(false);
+          return;
+        }
+
         const text = data.responses[0]?.textAnnotations[0]?.description;
 
         if (!text) {
-          alert("⚠️ 文字が読み取れませんでした");
+          alert("⚠️ 文字が読み取れませんでした。もう一度明るい場所で撮影してください。");
           setIsOcrProcessing(false);
           return;
         }
 
         console.log("🤖 AIが読み取った全テキスト:\n", text);
-
-        // 3. テキストから「店名」と「金額」をハッキング！
         const lines = text.split('\n');
         
-        // レシートの一番上の行はだいたい店名なのでメモに入れる
+        // ① レシートの一番上の行（店名）をメモに入れる
         if (lines.length > 0) {
-          setMemo(lines[0]);
+          setMemo(lines[0].trim());
         }
 
-        // 「合計」や「¥」の近くにある数字を正規表現で引っこ抜く
-        const amountMatch = text.match(/(?:合計|合\s*計|小計|¥)\s*([0-9,]+)/);
-        if (amountMatch) {
-          const extractedAmount = amountMatch[1].replace(/,/g, '');
-          setAmount(extractedAmount);
+        // ② 最強の金額抽出アルゴリズム
+        let foundAmount = "";
+        
+        // パターンA: 「合計」「小計」「お買上」「¥」などのキーワードを探す（下から探すのがコツ）
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const match = lines[i].match(/(?:合計|合\s*計|小計|お買上額|支払|¥|￥)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)/);
+          if (match) {
+            foundAmount = match[1].replace(/,/g, '');
+            break;
+          }
+        }
+
+        // パターンB: もしキーワードが見つからなかったら、テキスト内の「一番デカい数字」を合計金額とみなす！
+        if (!foundAmount) {
+          const allNumbers = text.match(/[0-9,]+/g);
+          if (allNumbers) {
+            // カンマを抜いて数値化し、最大値を取得
+            const maxNum = Math.max(...allNumbers.map(n => parseInt(n.replace(/,/g, ''), 10) || 0));
+            if (maxNum > 0 && maxNum < 1000000) { // 異常な数字（電話番号など）を弾くため100万円未満に限定
+              foundAmount = maxNum.toString();
+            }
+          }
+        }
+
+        if (foundAmount) {
+          setAmount(foundAmount);
         } else {
           alert("⚠️ 文字は読めましたが、合計金額の特定に失敗しました。手動で入力してください。");
         }
+        
+        setIsOcrProcessing(false); // 処理完了でローディング画面を消す
       };
     } catch (error) {
       console.error("OCRエラー: ", error);
       alert("❌ 画像の解析に失敗しました");
-    } finally {
       setIsOcrProcessing(false);
-      e.target.value = ''; // 連続で同じ画像を選べるようにリセット
+    } finally {
+      e.target.value = ''; // 連続撮影できるようにリセット
     }
   };
 
@@ -152,6 +181,27 @@ export default function MobileInputForm() {
 
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px' }}>
+      
+      {/* 🌟 AIスキャン中のサイバーローディング画面！！ */}
+      {isOcrProcessing && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(10, 12, 16, 0.9)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(5px)' }}>
+          <style>
+            {`
+              @keyframes scanline { 0% { transform: translateY(-50px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(50px); opacity: 0; } }
+              @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.8; } }
+            `}
+          </style>
+          <div style={{ position: 'relative', width: '100px', height: '100px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ position: 'absolute', width: '100%', height: '100%', border: '2px solid #00ff66', borderRadius: '50%', borderTopColor: 'transparent', animation: 'pulse 1.5s infinite linear' }}></div>
+            <div style={{ fontSize: '40px', animation: 'pulse 2s infinite ease-in-out' }}>👁️</div>
+          </div>
+          <div style={{ color: '#00ff66', marginTop: '20px', fontWeight: 'bold', fontSize: '18px', letterSpacing: '2px', textShadow: '0 0 10px #00ff66' }}>
+            AI ENGIN SCANNING...
+          </div>
+          <div style={{ color: '#00bfff', marginTop: '10px', fontSize: '14px' }}>レシートのデータを解析中</div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
         <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>💸 支出・収入クイック入力</h2>
       </div>
@@ -174,23 +224,10 @@ export default function MobileInputForm() {
             <div style={labelStyle}>金額</div>
             <div style={{ display: 'flex', gap: '10px' }}>
               
-              {/* 🌟 隠しファイル入力（カメラ起動用） */}
-              <input 
-                type="file" 
-                accept="image/*" 
-                capture="environment" 
-                ref={fileInputRef} 
-                onChange={processReceipt} 
-                style={{ display: 'none' }} 
-              />
+              <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={processReceipt} style={{ display: 'none' }} />
               
-              {/* 📸 カメラボタン（押すと隠しinputが発動する） */}
-              <button 
-                onClick={() => fileInputRef.current.click()} 
-                disabled={isOcrProcessing}
-                style={{ ...iconBtnStyle, borderColor: isOcrProcessing ? '#555' : '#00bfff', opacity: isOcrProcessing ? 0.5 : 1 }}
-              >
-                {isOcrProcessing ? '⏳' : '📸'}
+              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00bfff' }}>
+                📸
               </button>
 
               <div style={{ ...inputStyle, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '24px', fontWeight: 'bold', background: '#0a0c10' }}>
@@ -200,7 +237,6 @@ export default function MobileInputForm() {
             </div>
           </div>
 
-          {/* 🌟 振替かそれ以外でUIを完全に切り替える！ */}
           {type === 'transfer' ? (
             <>
               <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
