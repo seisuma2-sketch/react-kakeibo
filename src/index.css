@@ -1,0 +1,19 @@
+/* 余計なマージンや幅制限を全解除！ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0a0c10;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  max-width: none; /* ←これが悪さをしてた犯人！ */
+}
