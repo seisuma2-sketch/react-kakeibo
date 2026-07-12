@@ -15,7 +15,9 @@ export default defineConfig({
       
       // キャッシュ（オフライン対応）するアセットの対象
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+
+        maximumFileSizeToCacheInBytes: 5000000
       },
       
       // すでに用意されているpublic/manifest.jsonの内容をここに統合すると確実です
