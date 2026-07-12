@@ -11,22 +11,19 @@ const path = window.location.pathname;
 const isDashboardRoute = path === '/dashboard';
 const isMobileRoute = path === '/mobile' || path === '/input';
 
-// 3️⃣ ルートURL（ / ）のときのスマホ自動判定
-const isMobileDevice = 
-  window.innerWidth <= 768 || 
-  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+// 3️⃣ 【ここを修正】ルートURL（ / ）のときのスマホ判定
+// 端末がAndroidかiPhoneかに関わらず、画面の横幅が768px以下（スマホサイズ）のときだけスマホ版にする
+const isMobileDevice = window.innerWidth <= 768;
 
 // 4️⃣ 条件に合わせて表示する画面を完全に分ける
 let ScreenComponent;
 
 if (isDashboardRoute) {
-  // 📱スマホからでも、URLが /dashboard なら絶対に「パソコン版」を開く！
   ScreenComponent = <App />;
 } else if (isMobileRoute) {
-  // URLが /mobile や /input なら絶対に「スマホ版」を開く
   ScreenComponent = <MobileApp />;
 } else {
-  // パスが何も無い（ / ）のときは、端末のサイズに合わせて自動で振り分ける
+  // パスが何も無い（ / ）のときは、画面のサイズに合わせて自動で振り分ける
   ScreenComponent = isMobileDevice ? <MobileApp /> : <App />;
 }
 
