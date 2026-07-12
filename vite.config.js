@@ -22,9 +22,9 @@ export default defineConfig({
       
       // すでに用意されているpublic/manifest.jsonの内容をここに統合すると確実です
       manifest: {
-        short_name: "サイバー家計簿",
-        name: "負け犬の家計簿 - Cyber Edition",
-        start_url: "/mobile",
+        short_name: "家計簿",
+        name: "家計簿",
+        start_url: "/",
         display: "standalone",
         background_color: "#0a0c10",
         theme_color: "#0a0c10",
