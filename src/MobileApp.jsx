@@ -52,13 +52,7 @@ export default function MobileApp() {
     }
   };
 
-  // 🌟 【超重要】ここでデータを完全に「なかったこと」にする！
-  const displayTransactions = transactions.filter(tx => {
-    if (!isStealthActive) return true; // ロック解除時は全部見せる
-    if (stealthAccounts.includes(tx.paymentMethod)) return false; // 出金元が裏口座なら消す
-    if (tx.type === 'transfer' && stealthAccounts.includes(tx.category)) return false; // 入金先が裏口座なら消す
-    return true; // それ以外（普通の口座のデータ）は残す
-  });
+  const ghostList = isStealthActive ? stealthAccounts : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif' }}>
@@ -73,16 +67,15 @@ export default function MobileApp() {
               {/* 🌟 偽装UI: パッと見は普通のタイトルだが、ダブルクリックで解除画面が出る！ */}
               <h2 
                 onDoubleClick={unlockStealth} 
-                style={{ fontSize: '18px', margin: 0, userSelect: 'none' }}
+                style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}
               >
                 🏦 口座・決済手段別の現在高
               </h2>
-              {/* 「ロック中」ボタンは完全に消去！ */}
 
             </div>
             
-            {/* 完全に検閲・フィルタリング済みのクリーンなデータだけを渡す！ */}
-            <BalanceChart transactions={displayTransactions} />
+            {/* 🌟 BalanceChartには「全データ」と「隠蔽リスト」を渡す！ */}
+            <BalanceChart transactions={transactions} ghostAccounts={ghostList} />
           </div>
         )}
       </div>

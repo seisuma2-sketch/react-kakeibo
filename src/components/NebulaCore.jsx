@@ -1,48 +1,148 @@
-import { useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
 
-export default function NebulaCore({ netIncome, isStealthMode }) {
-  // 収支がプラスなら「星雲（緑）」、マイナスなら「ブラックホール（赤）」
-  const isSurplus = netIncome >= 0;
+// 🌟 3Dオブジェクト本体（キモくないスタイリッシュ版）
+function CoreMesh({ netIncome }) {
+  const outerRef = useRef();
+  const innerRef = useRef();
+
+  const isDeficit = netIncome < 0;
   
+  const baseColor = isDeficit ? '#ff3366' : '#00ff66';
+  const emissiveColor = isDeficit ? '#aa0000' : '#00aa22';
+
+  const baseSpeed = 0.003;
+  const currentSpeed = isDeficit ? baseSpeed * 3 : baseSpeed;
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+
+    if (outerRef.current && innerRef.current) {
+      outerRef.current.rotation.y += currentSpeed;
+      outerRef.current.rotation.z += currentSpeed * 0.5;
+
+      innerRef.current.rotation.y -= currentSpeed * 1.5;
+      innerRef.current.rotation.x = Math.sin(time) * 0.2; 
+
+      const hover = Math.sin(time * 1.5) * 0.1;
+      outerRef.current.position.y = hover;
+      innerRef.current.position.y = hover;
+    }
+  });
+
   return (
-    <div style={{ background: '#11141a', padding: '30px', borderRadius: '8px', border: '1px solid #252838', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', height: '100%' }}>
+    <group>
+      {/* 🛡️ 外側のバリア（二十面体） */}
+      <mesh ref={outerRef}>
+        <icosahedronGeometry args={[1.4, 1]} />
+        <meshStandardMaterial
+          color={baseColor}
+          emissive={emissiveColor}
+          emissiveIntensity={1}
+          wireframe={true}
+          transparent={true}
+          opacity={0.3} 
+        />
+      </mesh>
+
+      {/* 💎 内側のコア（八面体） */}
+      <mesh ref={innerRef}>
+        <octahedronGeometry args={[0.7, 0]} />
+        <meshStandardMaterial
+          color={baseColor}
+          emissive={emissiveColor}
+          emissiveIntensity={2}
+          wireframe={false} 
+        />
+      </mesh>
+    </group>
+  );
+}
+
+// 🌟 ダッシュボードに表示される枠組み
+export default function NebulaCore({ netIncome, isStealthMode }) {
+  // 🌟 解説パネルの開閉を管理する状態（State）
+  const [showInfo, setShowInfo] = useState(false);
+  
+  if (isStealthMode) {
+    return (
+      <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px dashed #252838', height: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ color: '#555', fontSize: '14px', letterSpacing: '2px' }}>[ CORE OFFLINE ]</div>
+      </div>
+    );
+  }
+
+  const isDeficit = netIncome < 0;
+
+  return (
+    <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: `1px solid ${isDeficit ? '#ff3366' : '#252838'}`, height: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
       
-      <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', zIndex: 10 }}>
-        {isSurplus ? '✨ 資産星雲 (安定)' : '🌀 重力崩壊 (警告)'}
-      </h3>
-
-      {/* 🌌 天体アニメーションの本体 */}
-      <div style={{ position: 'relative', width: '150px', height: '150px', marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <h3 style={{ margin: 0, fontSize: '16px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          ✨ 資産星雲 (3D ホログラム)
+        </h3>
         
-        {/* 回転するオーラ（外側） */}
-        <div className="aura" style={{
-          position: 'absolute', width: '100%', height: '100%', borderRadius: '50%',
-          background: isSurplus 
-            ? 'conic-gradient(from 0deg, transparent 0%, rgba(0, 255, 102, 0.1) 40%, rgba(0, 255, 102, 0.8) 50%, transparent 60%)'
-            : 'conic-gradient(from 0deg, transparent 0%, rgba(255, 51, 102, 0.1) 40%, rgba(255, 51, 102, 0.8) 50%, transparent 60%)',
-          animation: `spin ${isSurplus ? '4s' : '1.5s'} linear infinite`
-        }}></div>
-
-        {/* コア（中心） */}
-        <div className="core" style={{
-          position: 'absolute', width: '60%', height: '60%', borderRadius: '50%',
-          background: '#0a0c10',
-          boxShadow: isSurplus 
-            ? '0 0 20px #00ff66, inset 0 0 20px #00ff66' 
-            : '0 0 30px #ff3366, inset 0 0 30px #ff3366',
-          animation: 'pulse 2s infinite alternate'
-        }}></div>
-
-        {/* 中心に表示する金額 */}
-        <div style={{ position: 'relative', zIndex: 10, color: isSurplus ? '#00ff66' : '#ff3366', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '18px', textShadow: '0 0 10px #000' }}>
-          {isStealthMode ? '¥***' : `${isSurplus ? '+' : '-'}¥${Math.abs(netIncome).toLocaleString()}`}
+        {/* 🌟 バッジと「？」ボタンを横に並べる */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', color: isDeficit ? '#ff3366' : '#00ff66', background: '#0a0c10', padding: '4px 8px', borderRadius: '4px', border: `1px solid ${isDeficit ? '#ff3366' : '#00ff66'}` }}>
+            {isDeficit ? '⚠️ CRITICAL' : '🟢 STABLE'}
+          </span>
+          
+          <button 
+            onClick={() => setShowInfo(!showInfo)} 
+            style={{ 
+              background: showInfo ? '#00bfff' : 'transparent', 
+              color: showInfo ? '#000' : '#00bfff', 
+              border: '1px solid #00bfff', 
+              borderRadius: '50%', width: '24px', height: '24px', 
+              cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', 
+              fontSize: '14px', fontWeight: 'bold', transition: 'all 0.2s' 
+            }}
+          >
+            ?
+          </button>
         </div>
       </div>
 
-      <style>{`
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-        @keyframes pulse { 0% { transform: scale(0.9); opacity: 0.8; } 100% { transform: scale(1.1); opacity: 1; } }
-      `}</style>
+      {/* 🌟 クリックされたら表示される解説パネル（オーバーレイ） */}
+      {showInfo && (
+        <div style={{
+          position: 'absolute', top: '60px', right: '20px', width: '250px', 
+          background: 'rgba(10, 12, 16, 0.95)', border: '1px solid #00bfff', 
+          borderRadius: '8px', padding: '15px', zIndex: 100, 
+          backdropFilter: 'blur(5px)', boxShadow: '0 0 20px rgba(0, 191, 255, 0.3)', 
+          fontSize: '12px', color: '#fff', lineHeight: '1.6'
+        }}>
+          <h4 style={{ margin: '0 0 10px 0', color: '#00bfff', borderBottom: '1px solid #252838', paddingBottom: '5px' }}>
+            ℹ️ 量子コア(Quantum Core)仕様
+          </h4>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ color: '#00ff66', fontWeight: 'bold' }}>🟢 黒字 (STABLE)</span>
+            <br />総資産が安定している状態。コアは正常な出力でゆったりと浮遊・回転します。
+          </div>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ color: '#ff3366', fontWeight: 'bold' }}>🔴 赤字 (CRITICAL)</span>
+            <br />支出が収入を上回り警告状態。コアが赤く染まり、回転速度が上昇します。
+          </div>
+          <div style={{ color: '#aaa', fontSize: '11px', marginTop: '10px', paddingTop: '5px', borderTop: '1px dashed #555' }}>
+            ※マウス操作で視点のドラッグ回転が可能です。
+          </div>
+        </div>
+      )}
+
+      {/* 3Dキャンバス */}
+      <div style={{ width: '100%', flex: 1, cursor: 'grab' }}>
+        <Canvas camera={{ position: [0, 0, 4] }}>
+          <ambientLight intensity={0.5} />
+          <pointLight position={[10, 10, 10]} intensity={1} />
+          <CoreMesh netIncome={netIncome} />
+          <OrbitControls enableZoom={false} />
+        </Canvas>
+      </div>
+
+      {/* スキャンライン演出 */}
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06))', backgroundSize: '100% 2px, 3px 100%', pointerEvents: 'none', zIndex: 5, opacity: 0.3 }}></div>
     </div>
   );
 }

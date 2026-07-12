@@ -1,28 +1,12 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
 
-// 🌟 isStealthMode などの怪しい受け取り口は削除。ただデータを受け取るだけ！
-export default function BalanceChart({ transactions }) {
+// 🌟 ghostAccounts を受け取れるようにする！
+export default function BalanceChart({ transactions, ghostAccounts = [] }) {
   const chartRef = useRef(null);
 
-  const chronologicalTx = [...transactions].reverse();
-  let currentTotalForChart = 0;
-  const dateLabels = [];
-  const balanceData = [];
-
-  chronologicalTx.forEach(tx => {
-    if (!tx.date) return;
-    const dateStr = tx.date.toDate().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
-    if (tx.type === 'income') currentTotalForChart += (tx.amount || 0);
-    if (tx.type === 'expense') currentTotalForChart -= (tx.amount || 0);
-    
-    dateLabels.push(dateStr);
-    balanceData.push(currentTotalForChart);
-  });
-
+  // 1️⃣ 全取引データを使って、絶対に狂わない「真の残高（True Balance）」を計算する！
   const balances = {};
-  let totalAssets = 0;
-
   transactions.forEach(tx => {
     const amount = Number(tx.amount) || 0;
     const method = tx.paymentMethod || '不明';
@@ -32,15 +16,59 @@ export default function BalanceChart({ transactions }) {
 
     if (tx.type === 'income') {
       balances[method] += amount;
-      totalAssets += amount;
     } else if (tx.type === 'expense') {
       balances[method] -= amount;
-      totalAssets -= amount; 
     } else if (tx.type === 'transfer') {
       if (!balances[category]) balances[category] = 0;
       balances[method] -= amount;
       balances[category] += amount;
     }
+  });
+
+  // 🌟 ここがキモ！「真の残高」を持ったまま、ゴースト口座のカードだけを消滅させる！
+  const visibleBalances = Object.entries(balances)
+    .filter(([name]) => !ghostAccounts.includes(name))
+    .sort((a, b) => b[1] - a[1]);
+
+  // グラフとパーセント計算用の「表示上の総資産（ゴースト口座を抜いた額）」
+  const visibleTotalAssets = visibleBalances.reduce((sum, [, amount]) => sum + amount, 0);
+
+  // 2️⃣ グラフ用の時系列データ計算
+  const chronologicalTx = [...transactions].reverse();
+  const runningBalances = {};
+  const dateLabels = [];
+  const balanceData = [];
+
+  chronologicalTx.forEach(tx => {
+    if (!tx.date) return;
+    const dateStr = tx.date.toDate().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+    
+    const amount = Number(tx.amount) || 0;
+    const method = tx.paymentMethod || '不明';
+    const category = tx.category || '不明';
+
+    if (!runningBalances[method]) runningBalances[method] = 0;
+
+    if (tx.type === 'income') {
+      runningBalances[method] += amount;
+    } else if (tx.type === 'expense') {
+      runningBalances[method] -= amount;
+    } else if (tx.type === 'transfer') {
+      if (!runningBalances[category]) runningBalances[category] = 0;
+      runningBalances[method] -= amount;
+      runningBalances[category] += amount;
+    }
+
+    // 🌟 その時点での「表示可能な口座のみ」の合計を計算し直す
+    let currentVisibleTotal = 0;
+    for (const [accName, accBalance] of Object.entries(runningBalances)) {
+      if (!ghostAccounts.includes(accName)) {
+        currentVisibleTotal += accBalance;
+      }
+    }
+
+    dateLabels.push(dateStr);
+    balanceData.push(currentVisibleTotal);
   });
 
   useEffect(() => {
@@ -78,9 +106,7 @@ export default function BalanceChart({ transactions }) {
     const handleResize = () => chartInstance.resize();
     window.addEventListener('resize', handleResize);
     return () => { window.removeEventListener('resize', handleResize); chartInstance.dispose(); };
-  }, [transactions]);
-
-  const sortedBalances = Object.entries(balances).sort((a, b) => b[1] - a[1]);
+  }, [transactions, ghostAccounts]); // 🌟 隠蔽設定が変わった時も再描画
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%' }}>
@@ -98,8 +124,9 @@ export default function BalanceChart({ transactions }) {
         </h2>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-          {sortedBalances.map(([name, amount]) => {
-            const percent = totalAssets > 0 ? Math.min(100, Math.max(0, (amount / totalAssets) * 100)) : 0;
+          {/* 🌟 フィルタリング済みの visibleBalances をマッピング */}
+          {visibleBalances.map(([name, amount]) => {
+            const percent = visibleTotalAssets > 0 ? Math.min(100, Math.max(0, (amount / visibleTotalAssets) * 100)) : 0;
             const isNegative = amount < 0;
 
             return (
@@ -123,7 +150,6 @@ export default function BalanceChart({ transactions }) {
                   <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
                 </div>
                 
-                {/* 🌟 普通に金額を表示するだけ！ */}
                 <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>
                   ¥{amount.toLocaleString()}
                 </div>
