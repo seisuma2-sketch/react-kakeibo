@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+// 👇 変更点: enableMultiTabIndexedDbPersistence を追加でインポート
+import { getFirestore, enableMultiTabIndexedDbPersistence } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-// 星翔のFirebaseプロジェクトの「鍵」
 const firebaseConfig = {
   apiKey: "AIzaSyB5UE_wkcBoBsaGo0warU40csxJAWi73-I",
   authDomain: "hybrid-kakeibo.firebaseapp.com",
@@ -13,10 +13,18 @@ const firebaseConfig = {
   measurementId: "G-5SV54CHL1W"
 };
 
-// Firebaseのシステムを起動！
 const app = initializeApp(firebaseConfig); 
 const db = getFirestore(app); 
+
+// 👇 ここを追加！：データベースのオフラインキャッシュを有効化
+enableMultiTabIndexedDbPersistence(db).catch((err) => {
+  if (err.code == 'failed-precondition') {
+    console.warn('⚠️ オフライン同期エラー: 複数のタブが開かれています。');
+  } else if (err.code == 'unimplemented') {
+    console.warn('⚠️ このブラウザはオフライン機能をサポートしていません。');
+  }
+});
+
 const auth = getAuth(app);
 
-// 他のファイル（App.jsxなど）で db や auth を使えるようにエクスポート
 export { db, auth };

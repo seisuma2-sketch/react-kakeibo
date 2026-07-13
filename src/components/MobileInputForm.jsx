@@ -52,7 +52,7 @@ export default function MobileInputForm() {
       else setIncomeCategories([...incomeCategories, newItem]);
       setCategory(newItem);
     } else if (customPrompt.target === 'account') {
-      const newItem = `💽 ${customPrompt.text}`;
+      const newItem = ` ${customPrompt.text}`;
       setAccounts([...accounts, newItem]);
       setPaymentMethod(newItem);
     }

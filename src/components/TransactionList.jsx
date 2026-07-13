@@ -97,7 +97,7 @@ export default function TransactionList({ transactions, isStealthMode, isMobile 
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                    <span style={{ color: '#00bfff', fontSize: '12px' }}>💽 {tx.paymentMethod}</span>
+                    <span style={{ color: '#00bfff', fontSize: '12px' }}> {tx.paymentMethod}</span>
                     <span style={{ color: '#aaa', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
                       {tx.memo || '-'}
                     </span>

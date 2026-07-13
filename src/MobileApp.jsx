@@ -76,6 +76,25 @@ export default function MobileApp() {
   };
 
   const ghostList = isStealthActive ? stealthAccounts : [];
+ const safeTransactions = transactions.map(tx => {
+    if (!isStealthActive) return tx;
+
+    const isFromGhost = stealthAccounts.includes(tx.paymentMethod);
+    const isToGhost = tx.type === 'transfer' && stealthAccounts.includes(tx.category);
+
+    if (tx.type === 'transfer') {
+      if (isFromGhost && !isToGhost) {
+        return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
+      }
+      if (!isFromGhost && isToGhost) {
+        return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
+      }
+    }
+
+    if (isFromGhost || isToGhost) return null;
+
+    return tx;
+  }).filter(Boolean);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif' }}>
@@ -95,7 +114,7 @@ export default function MobileApp() {
             </div>
             
             {/* 🌟 BalanceChartには「全データ」と「隠蔽リスト」を渡す！ */}
-            <BalanceChart transactions={transactions} ghostAccounts={ghostList} />
+            <BalanceChart transactions={safeTransactions} ghostAccounts={[]} />
           </div>
         )}
         {currentTab === 'feed' && <NewsFeed />}

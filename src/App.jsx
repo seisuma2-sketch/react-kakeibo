@@ -27,6 +27,7 @@ function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [stealthPassword, setStealthPassword] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   const [stealthConfig, setStealthConfig] = useState(() => {
     const saved = localStorage.getItem('stealthConfig');
@@ -95,6 +96,17 @@ function App() {
     localStorage.setItem('stealthActive', stealthConfig.active);
   }, [stealthConfig.active]);
 
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const toggleGhostAccount = async (account, isChecked) => {
     const newGhostAccounts = isChecked
       ? [...stealthConfig.ghostAccounts, account]
@@ -113,13 +125,30 @@ function App() {
     }
   };
 
-  // 🌟 ここで履歴や集計用の「検閲済みデータ」を作る（裏口座の痕跡を消す）
-  const displayTransactions = transactions.filter(tx => {
-    if (!stealthConfig.active) return true;
-    if (stealthConfig.ghostAccounts.includes(tx.paymentMethod)) return false;
-    if (tx.type === 'transfer' && stealthConfig.ghostAccounts.includes(tx.category)) return false;
-    return true;
-  });
+  // 🌟 検閲 兼 データ偽装処理（裏口座の痕跡を消しつつ、計算の辻褄を合わせる）
+  const displayTransactions = transactions.map(tx => {
+    if (!stealthConfig.active) return tx; // ロック解除中はそのまま通す
+
+    const isFromGhost = stealthConfig.ghostAccounts.includes(tx.paymentMethod);
+    const isToGhost = tx.type === 'transfer' && stealthConfig.ghostAccounts.includes(tx.category);
+
+    if (tx.type === 'transfer') {
+      // ① ゴースト口座 ➡️ 通常口座（資金ロンダリング：謎の入金に偽装）
+      if (isFromGhost && !isToGhost) {
+        return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
+      }
+      // ② 通常口座 ➡️ ゴースト口座（資金隠蔽：謎の出費に偽装）
+      if (!isFromGhost && isToGhost) {
+        return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
+      }
+    }
+
+    // ③ ゴースト口座同士の移動、またはゴースト口座単体の収入・支出は完全に存在を抹消（nullにする）
+    if (isFromGhost || isToGhost) return null;
+
+    // ④ それ以外の安全な普通の取引はそのまま通す
+    return tx;
+  }).filter(Boolean); // 最後に null になった取引を配列から消し去る
 
   const uniqueAccounts = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
   const currentMonth = new Date().getMonth() + 1;
@@ -154,24 +183,25 @@ function App() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px' }}>
           <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff' }}>{tabTitles[currentTab] || '開発中...'}</h2>
-          <div style={{ fontSize: '12px', color: user ? '#00bfff' : '#ff3366' }}>{user ? `🟢 接続済` : '🔴 切断'}</div>
-        </div>
+<div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900' }}>
+            {isOnline ? (user ? '🟢 接続済 (SYNC)' : '🔴 切断') : '📡 オフライン (LOCAL)'}
+          </div>        </div>
 
         <div>
           {currentTab === 'home' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
               <SummaryPanel currentMonth={currentMonth} monthlyIncome={monthlyIncome} monthlyExpense={monthlyExpense} netIncome={netIncome} isSurplus={isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
               
-              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
+             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  {/* 🌟 BalanceChartには全データ(transactions)と、隠す口座リスト(ghostList)を直接渡す！ */}
-                  <BalanceChart transactions={transactions} ghostAccounts={ghostList} />
+                  {/* 🚨 変更前: transactions={transactions} ghostAccounts={ghostList} */}
+                  {/* ✅ 変更後: 最初から裏データを抜いた displayTransactions だけを渡す！ */}
+                  <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />
                 </div>
-
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
+                  {/* ここも displayTransactions が渡されていることを確認 */}
                   <CategoryChart transactions={displayTransactions} />
                   
-                  {/* 👇 カテゴリグラフの下にニュースウィジェットを追加！ */}
                   {!isMobile && <TopNewsWidget onClickViewAll={() => setCurrentTab('feed')} />}
 
                   <NebulaCore netIncome={netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
@@ -216,8 +246,7 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart transactions={transactions} ghostAccounts={ghostList} />}
-          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
+{currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />}          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'playground' && <Playground transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
@@ -261,7 +290,7 @@ function App() {
                 {uniqueAccounts.map(account => (
                   <label key={account} style={{ fontSize: '12px', background: stealthConfig.ghostAccounts.includes(account) ? '#ff336622' : '#1a1d24', padding: '6px 10px', borderRadius: '4px', border: `1px solid ${stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : '#252838'}` }}>
                     <input type="checkbox" checked={stealthConfig.ghostAccounts.includes(account)} onChange={(e) => toggleGhostAccount(account, e.target.checked)} style={{ display: 'none' }} />
-                    {stealthConfig.ghostAccounts.includes(account) ? '☠️' : '💽'} {account}
+                    {stealthConfig.ghostAccounts.includes(account) ? '' : ''} {account}
                   </label>
                 ))}
               </div>
