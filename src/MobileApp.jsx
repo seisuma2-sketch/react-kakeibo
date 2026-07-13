@@ -5,6 +5,8 @@ import { db, auth } from './firebase';
 
 import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
+import NewsFeed from './components/NewsFeed';
+
 
 export default function MobileApp() {
   const [user, setUser] = useState(null);
