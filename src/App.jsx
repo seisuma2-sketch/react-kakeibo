@@ -17,6 +17,7 @@ import NebulaCore from './components/NebulaCore';
 import MobileInputForm from './components/MobileInputForm';
 import MoneyFlowMap from './components/MoneyFlowMap';
 import NewsFeed from './components/NewsFeed';
+import TopNewsWidget from './components/TopNewsWidget';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -180,6 +181,8 @@ function App() {
   <div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>📍</div>
   <div style={{ color: '#ff3366', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>トラッカー</div>
 </div>
+
+{!isMobile && <TopNewsWidget onClickViewAll={() => setCurrentTab('feed')} />}
                 </div>
                 
                 <div style={{ flex: 2, minWidth: 0 }}>

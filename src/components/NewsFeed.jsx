@@ -44,7 +44,7 @@ export default function NewsFeed() {
     <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', minHeight: '80vh' }}>
       <div style={{ borderBottom: '1px solid #252838', paddingBottom: '15px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ fontSize: '20px', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          📡 最新テクノロジー通信
+           最新テクノロジー通信
         </h2>
         <span style={{ color: '#00ff66', fontSize: '12px', fontFamily: 'monospace', border: '1px solid #00ff66', padding: '2px 6px', borderRadius: '4px' }}>
           CONNECTION SECURE
