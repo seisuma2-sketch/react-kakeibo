@@ -16,6 +16,7 @@ import Playground from './components/Playground';
 import NebulaCore from './components/NebulaCore';
 import MobileInputForm from './components/MobileInputForm';
 import MoneyFlowMap from './components/MoneyFlowMap';
+import NewsFeed from './components/NewsFeed';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -126,9 +127,9 @@ function App() {
   const isSurplus = netIncome >= 0;
 
   const tabTitles = {
-    'home': '総合', 'calendar': 'カレンダー', 'balance': '総合残高', 'input': '💸 クイック入力',
+    'home': '総合', 'calendar': 'カレンダー', 'balance': '総合残高', 'input': ' クイック入力',
     'income-expense': '収支確認', 'category': 'カテゴリ別', 'playground': '遊び場', 'bs-pl': 'BS / PL',
-    'map': '📍 マップ'
+    'map': ' マップ','feed': ' 情報傍受'
   };
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
@@ -204,6 +205,7 @@ function App() {
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'playground' && <Playground transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'map' && <MoneyFlowMap transactions={displayTransactions} />}
+          {currentTab === 'feed' && <NewsFeed />}
         </div>
       </div>
 

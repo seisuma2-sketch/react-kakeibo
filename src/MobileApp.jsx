@@ -78,11 +78,13 @@ export default function MobileApp() {
             <BalanceChart transactions={transactions} ghostAccounts={ghostList} />
           </div>
         )}
+        {currentTab === 'feed' && <NewsFeed />}
       </div>
 
       <div style={{ background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px' }}>
         <BottomTab icon="✏️" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />
         <BottomTab icon="🏦" label="残高一覧" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
+          <BottomTab icon="📡" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} />
       </div>
     </div>
   );

@@ -8,7 +8,8 @@ export default function Sidebar({ currentTab, setCurrentTab }) {
     { id: 'category', label: 'カテゴリ別内訳' },
     { id: 'playground', label: '残高遊び場' },
     { id: 'bs-pl', label: 'BS / PL 財務諸表' },
-    { id: 'map', label: ' マップ' }
+    { id: 'map', label: ' マップ' },
+    { id: 'feed', label: '📡 情報傍受 (Feed)' }
   ];
 
   return (
