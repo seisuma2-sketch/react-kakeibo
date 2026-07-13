@@ -14,10 +14,15 @@ export default function MobileApp() {
   const [currentTab, setCurrentTab] = useState('input'); 
 
   // 🌟 ステルスシステム用のState
-  const [isStealthActive, setIsStealthActive] = useState(() => {
-    const savedActive = localStorage.getItem('stealthActiveMobile');
-    return savedActive !== 'false'; // 過去に明示的に解除(false)されていなければ基本はtrue
+ const [isStealthActive, setIsStealthActive] = useState(() => {
+    const saved = localStorage.getItem('stealthActiveMobile');
+    return saved !== null ? saved === 'true' : true;
   });
+
+  // 👇 そのすぐ下にこれを追加！
+  useEffect(() => {
+    localStorage.setItem('stealthActiveMobile', isStealthActive);
+  }, [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
   useEffect(() => {
@@ -50,14 +55,23 @@ export default function MobileApp() {
   }, [isStealthActive]);
 
   // 🔓 【極秘】タイトルをダブルタップした時だけ発動する解除コマンド
-  const unlockStealth = () => {
-    const pw = prompt("パスコードを入力してください");
-    if (pw === "0000") { // ⚠️ 好きなパスワードに変えてくれ！
-      setIsStealthActive(false);
-      alert("🔓 ゴーストプロトコルを解除しました");
-      //setTimeout(() => setIsStealthActive(true), 30000); 
-    } else if (pw !== null) {
-      alert("❌ パスコードが違います");
+  // 変更前：unlockStealth という関数でした
+  // 変更後：ダブルタップでON/OFFを切り替えられるようにする
+  const toggleStealth = () => {
+    if (!isStealthActive) {
+      // 🔓 すでに解除されているなら、パスワードなしで即ロックする！
+      setIsStealthActive(true);
+      alert("🔒 ゴーストプロトコルを再起動しました");
+    } else {
+      // 🔒 ロックされているならパスコード要求
+      const pw = prompt("パスコードを入力してください");
+      if (pw === "0000") { 
+        setIsStealthActive(false);
+        alert("🔓 ゴーストプロトコルを解除しました");
+        // ※ 30秒で戻るタイマーは消しました
+      } else if (pw !== null) {
+        alert("❌ パスコードが違います");
+      }
     }
   };
 
@@ -74,10 +88,7 @@ export default function MobileApp() {
             <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
               
               {/* 🌟 偽装UI: パッと見は普通のタイトルだが、ダブルクリックで解除画面が出る！ */}
-              <h2 
-                onDoubleClick={unlockStealth} 
-                style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}
-              >
+              <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}>
                 🏦 口座・決済手段別の現在高
               </h2>
 

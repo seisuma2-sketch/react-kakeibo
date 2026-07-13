@@ -29,15 +29,14 @@ function App() {
   const [stealthPassword, setStealthPassword] = useState('');
   
   const [stealthConfig, setStealthConfig] = useState(() => {
-    const savedActive = localStorage.getItem('stealthActive');
-    return {
-      active: savedActive === 'true', // 記憶があればそれを使い、なければOFF(false)
-      hideSummary: true, 
-      hideCartridges: true, 
-      hideHistory: true, 
-      ghostAccounts: [],
+    const saved = localStorage.getItem('stealthConfig');
+    return saved ? JSON.parse(saved) : {
+      active: false, hideSummary: true, hideCartridges: true, hideHistory: true, ghostAccounts: [],
     };
   });
+  useEffect(() => {
+    localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
+  }, [stealthConfig]);
   const CORRECT_PASSWORD = 'cyber';
 
   useEffect(() => {
