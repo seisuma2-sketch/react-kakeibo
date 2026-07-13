@@ -80,13 +80,13 @@ export default function NebulaCore({ netIncome, isStealthMode }) {
       
       <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
         <h3 style={{ margin: 0, fontSize: '16px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          ✨ 資産星雲 (3D ホログラム)
+           3D ホログラム
         </h3>
         
         {/* 🌟 バッジと「？」ボタンを横に並べる */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '12px', fontWeight: 'bold', color: isDeficit ? '#ff3366' : '#00ff66', background: '#0a0c10', padding: '4px 8px', borderRadius: '4px', border: `1px solid ${isDeficit ? '#ff3366' : '#00ff66'}` }}>
-            {isDeficit ? '⚠️ CRITICAL' : '🟢 STABLE'}
+            {isDeficit ? ' 警告' : ' 安定'}
           </span>
           
           <button 
@@ -115,14 +115,14 @@ export default function NebulaCore({ netIncome, isStealthMode }) {
           fontSize: '12px', color: '#fff', lineHeight: '1.6'
         }}>
           <h4 style={{ margin: '0 0 10px 0', color: '#00bfff', borderBottom: '1px solid #252838', paddingBottom: '5px' }}>
-            ℹ️ 量子コア(Quantum Core)仕様
+             3Dホログラム仕様
           </h4>
           <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#00ff66', fontWeight: 'bold' }}>🟢 黒字 (STABLE)</span>
+            <span style={{ color: '#00ff66', fontWeight: 'bold' }}> 黒字 </span>
             <br />総資産が安定している状態。コアは正常な出力でゆったりと浮遊・回転します。
           </div>
           <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#ff3366', fontWeight: 'bold' }}>🔴 赤字 (CRITICAL)</span>
+            <span style={{ color: '#ff3366', fontWeight: 'bold' }}> 赤字 </span>
             <br />支出が収入を上回り警告状態。コアが赤く染まり、回転速度が上昇します。
           </div>
           <div style={{ color: '#aaa', fontSize: '11px', marginTop: '10px', paddingTop: '5px', borderTop: '1px dashed #555' }}>

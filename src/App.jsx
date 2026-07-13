@@ -28,8 +28,15 @@ function App() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [stealthPassword, setStealthPassword] = useState('');
   
-  const [stealthConfig, setStealthConfig] = useState({
-    active: false, hideSummary: true, hideCartridges: true, hideHistory: true, ghostAccounts: [],
+  const [stealthConfig, setStealthConfig] = useState(() => {
+    const savedActive = localStorage.getItem('stealthActive');
+    return {
+      active: savedActive === 'true', // 記憶があればそれを使い、なければOFF(false)
+      hideSummary: true, 
+      hideCartridges: true, 
+      hideHistory: true, 
+      ghostAccounts: [],
+    };
   });
   const CORRECT_PASSWORD = 'cyber';
 
@@ -84,6 +91,10 @@ function App() {
 
     return () => { unsubscribe(); unsubscribeSettings(); };
   }, [user]);
+
+  useEffect(() => {
+    localStorage.setItem('stealthActive', stealthConfig.active);
+  }, [stealthConfig.active]);
 
   const toggleGhostAccount = async (account, isChecked) => {
     const newGhostAccounts = isChecked

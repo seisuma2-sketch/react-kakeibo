@@ -14,7 +14,10 @@ export default function MobileApp() {
   const [currentTab, setCurrentTab] = useState('input'); 
 
   // 🌟 ステルスシステム用のState
-  const [isStealthActive, setIsStealthActive] = useState(true); 
+  const [isStealthActive, setIsStealthActive] = useState(() => {
+    const savedActive = localStorage.getItem('stealthActiveMobile');
+    return savedActive !== 'false'; // 過去に明示的に解除(false)されていなければ基本はtrue
+  });
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
   useEffect(() => {
@@ -42,13 +45,17 @@ export default function MobileApp() {
     return () => { unsubscribeTx(); unsubscribeSettings(); };
   }, [user]);
 
+  useEffect(() => {
+    localStorage.setItem('stealthActiveMobile', isStealthActive);
+  }, [isStealthActive]);
+
   // 🔓 【極秘】タイトルをダブルタップした時だけ発動する解除コマンド
   const unlockStealth = () => {
     const pw = prompt("パスコードを入力してください");
     if (pw === "0000") { // ⚠️ 好きなパスワードに変えてくれ！
       setIsStealthActive(false);
       alert("🔓 ゴーストプロトコルを解除しました");
-      setTimeout(() => setIsStealthActive(true), 30000); 
+      //setTimeout(() => setIsStealthActive(true), 30000); 
     } else if (pw !== null) {
       alert("❌ パスコードが違います");
     }
