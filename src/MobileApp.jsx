@@ -6,6 +6,7 @@ import { db, auth } from './firebase';
 import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
 import NewsFeed from './components/NewsFeed';
+import MobileTransactionList from './components/MobileTransactionList'; // 👈 これを追加！
 
 
 export default function MobileApp() {
@@ -117,12 +118,16 @@ export default function MobileApp() {
             <BalanceChart transactions={safeTransactions} ghostAccounts={[]} />
           </div>
         )}
+        {currentTab === 'history' && (
+            <MobileTransactionList transactions={safeTransactions} />
+          )}
         {currentTab === 'feed' && <NewsFeed />}
       </div>
 
       <div style={{ background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px' }}>
         <BottomTab icon="✏️" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />
         <BottomTab icon="🏦" label="残高一覧" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
+          <BottomTab icon="📑" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} />
           <BottomTab icon="📡" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} />
       </div>
     </div>
