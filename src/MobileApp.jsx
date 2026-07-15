@@ -326,13 +326,31 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       onPointerDown={onPointerDown} 
       onPointerUp={onPointerUp} 
       onPointerLeave={onPointerLeave}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '60px' }}>
+      style={{ 
+        display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', 
+        opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '60px',
+        // 🌟 ハッキング：iPhoneの「長押しメニュー」と「テキスト選択」を完全に無効化する呪文
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+      }}>
       {isImage ? (
-        <img src={icon} alt={label} style={{ width: '40px', height: '38px', objectFit: 'contain', marginBottom: '4px', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)' }} />
+        <img 
+          src={icon} 
+          alt={label} 
+          style={{ 
+            width: '40px', height: '38px', objectFit: 'contain', marginBottom: '4px', 
+            filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)',
+            // 🌟 画像自体のドラッグやタップ判定を消し、親のdivに判定を全て任せる
+            pointerEvents: 'none' 
+          }} 
+        />
       ) : (
-        <div style={{ fontSize: '24px', marginBottom: '4px' }}>{icon}</div>
+        <div style={{ fontSize: '24px', marginBottom: '4px', pointerEvents: 'none' }}>{icon}</div>
       )}
-      <div style={{ fontSize: '10px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none' }}>{label}</div>
+      <div style={{ fontSize: '10px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>
+        {label}
+      </div>
     </div>
   );
 }
