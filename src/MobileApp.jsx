@@ -7,6 +7,7 @@ import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
 import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList'; // 👈 これを追加！
+import NebulaCore3D from './components/NebulaCore3D';
 
 
 export default function MobileApp() {
@@ -124,11 +125,10 @@ export default function MobileApp() {
         {currentTab === 'feed' && <NewsFeed />}
       </div>
 
-      <div style={{ background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px' }}>
-          <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />        
-          <BottomTab icon="/S__32194590.jpg" label="残高" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
-          <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} />
-          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} />      </div>
+          <div style={{ background: '#11141a', borderTop: '1px solid #252838', paddingBottom: '20px', zIndex: 100 }}>
+        <NebulaCore3D currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      </div>
+      
     </div>
   );
 }
