@@ -25,6 +25,20 @@ export default function BalanceChart({ transactions, ghostAccounts = [] }) {
     }
   });
 
+  // 🌟 名前と画像パスを自動で結びつける対応表（辞書）
+const iconMap = {
+  '現金': '/icon-cash.png',
+  '三井住友銀行': '/icon-smbc.png',
+  '三菱UFJ銀行': '/icon-mufg.png',
+  'ゆうちょ銀行': '/icon-yucho.png',
+  'PayPay': '/icon-paypay.png',
+  'EVERING': '/icon-evering.png',
+  '食費': '/icon-food.png', // カテゴリの場合もここに追加していけばOK
+  
+
+
+};
+
   // 🌟 ここがキモ！「真の残高」を持ったまま、ゴースト口座のカードだけを消滅させる！
   const visibleBalances = Object.entries(balances)
     .filter(([name]) => !ghostAccounts.includes(name))
@@ -146,8 +160,21 @@ export default function BalanceChart({ transactions, ghostAccounts = [] }) {
                 }}
               >
                 <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>💽 {name}</span>
-                  <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* 対応表に画像があればそれを使い、なければデフォルトで何かの画像（または絵文字）を出す */}
+                   {iconMap[name] ? (
+                   <img 
+                     src={iconMap[name]} 
+                       alt="" 
+                                   style={{ width: '20px', height: '20px', objectFit: 'contain' }} 
+                                      />
+                             ) : (
+                            <span style={{ fontSize: '18px' }}>💽</span>
+                         )}
+
+                             <span>{name}</span>
+                  </span>    
+              <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
                 </div>
                 
                 <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>

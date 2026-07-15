@@ -2,30 +2,66 @@ import { useState, useRef, useEffect } from 'react';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
+// 画像パスと名前を切り分けるヘルパー関数
+function renderIconOrText(item, imgSize = '20px') {
+  if (item && item.startsWith('/')) {
+    const spaceIndex = item.indexOf(' ');
+    const iconPath = item.slice(0, spaceIndex);
+    const name = item.slice(spaceIndex + 1);
+
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <span>{name}</span>
+      </div>
+    );
+  }
+  return item;
+}
+
 export default function MobileInputForm() {
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('🍔 食費');
-  const [paymentMethod, setPaymentMethod] = useState('💵 現金');
+  const [category, setCategory] = useState('/icon-food.png 食費');
+  const [paymentMethod, setPaymentMethod] = useState('/icon-cash.png 現金');
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
 
-  // 🌟 自作ポップアップ用のState
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
 
   const fileInputRef = useRef(null);
 
-  const [expenseCategories, setExpenseCategories] = useState(['🍔 食費', '🧻 日用品', '🚃 交通費', '🍻 交際費', '🎮 趣味', '🤖 自動取得(AI)', '📦 その他']);
-  const [incomeCategories, setIncomeCategories] = useState(['💼 給与・報酬', '💰 お小遣い', '⚡ チャージ', '📦 その他']);
-  const [accounts, setAccounts] = useState(['💵 現金', '🏦 三井住友銀行', '🏦 三菱UFJ銀行', '🏦 ゆうちょ銀行', '📱 PayPay', '💍 EVERING']);
+  // 📝 画像パス付きの初期データ
+  const [expenseCategories, setExpenseCategories] = useState([
+    '/icon-food.png 食費', 
+    '/icon-daily.png 日用品', 
+    '/icon-train.png 交通費', 
+    '/icon-drink.png 交際費', 
+    '/icon-hobby.png 趣味', 
+    '/icon-ai.png 自動取得(AI)', 
+    '/icon-other.png その他'
+  ]);
+  const [incomeCategories, setIncomeCategories] = useState([
+    '/icon-salary.png 給与・報酬', 
+    '/icon-money.png お小遣い', 
+    '/icon-charge.png チャージ', 
+    '/icon-other.png その他'
+  ]);
+  const [accounts, setAccounts] = useState([
+    '/icon-cash.png 現金', 
+    '/icon-smbc.png 三井住友銀行', 
+    '/icon-mufg.png 三菱UFJ銀行', 
+    '/icon-yucho.png ゆうちょ銀行', 
+    '/icon-paypay.png PayPay', 
+    '/icon-evering.png EVERING'
+  ]);
 
   const now = new Date();
   const defaultDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const [date, setDate] = useState(defaultDate);
 
-  // 🌟 自作アラート関数
   const showAlert = (message, alertType = 'success') => {
     setCustomAlert({ isOpen: true, message, type: alertType });
     setTimeout(() => setCustomAlert({ isOpen: false, message: '', type: 'success' }), 3000);
@@ -36,30 +72,27 @@ export default function MobileInputForm() {
     setAmount(val);
   };
 
-  // 🌟 ブラウザのprompt()ではなく、自作プロンプトを開く
   const handleAddCategory = () => setCustomPrompt({ isOpen: true, title: '新しいカテゴリ名を入力', target: 'category', text: '' });
   const handleAddAccount = () => setCustomPrompt({ isOpen: true, title: '新しい口座・決済手段を入力', target: 'account', text: '' });
 
-  // 🌟 自作プロンプトの決定ボタン処理
   const handlePromptSubmit = () => {
     if (!customPrompt.text.trim()) {
       setCustomPrompt({ ...customPrompt, isOpen: false });
       return;
     }
     if (customPrompt.target === 'category') {
-      const newItem = `✨ ${customPrompt.text}`;
+      const newItem = `✨ ${customPrompt.text}`; // 自分で追加したやつは絵文字にしておく
       if (type === 'expense') setExpenseCategories([...expenseCategories, newItem]);
       else setIncomeCategories([...incomeCategories, newItem]);
       setCategory(newItem);
     } else if (customPrompt.target === 'account') {
-      const newItem = ` ${customPrompt.text}`;
+      const newItem = `💳 ${customPrompt.text}`;
       setAccounts([...accounts, newItem]);
       setPaymentMethod(newItem);
     }
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
 
-  // 📸 レシート画像をAIで解析
   const processReceipt = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -144,10 +177,12 @@ export default function MobileInputForm() {
 
     setIsSubmitting(true);
     try {
-      const cleanCategory = category.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
-      const cleanPaymentMethod = paymentMethod.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+      // 🌟 データベースに保存する前に、画像パス「/icon-xxx.png 」を削って純粋な名前にする処理
+      const getCleanName = (val) => val.startsWith('/') ? val.slice(val.indexOf(' ') + 1) : val.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+      
+      const cleanCategory = getCleanName(category);
+      const cleanPaymentMethod = getCleanName(paymentMethod);
 
-      // 📍 GPS取得
       const getPosition = () => {
         return new Promise((resolve) => {
           if (!navigator.geolocation) return resolve(null);
@@ -202,7 +237,6 @@ export default function MobileInputForm() {
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative' }}>
       
-      {/* 🌟 自作アラート（画面上部からフワッと） */}
       {customAlert.isOpen && (
         <div style={{
           position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)',
@@ -218,7 +252,6 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* 🌟 自作プロンプト（中央にポップアップ） */}
       {customPrompt.isOpen && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
@@ -241,7 +274,6 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* AIローディング画面 */}
       {isOcrProcessing && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(10, 12, 16, 0.9)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(5px)' }}>
           <style>
@@ -260,8 +292,11 @@ export default function MobileInputForm() {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
-        <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>💸 支出・収入クイック入力</h2>
-      </div>
+          <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+            支出・収入クイック入力
+          </h2>    
+       </div>
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: '#11141a', width: '100%', maxWidth: '400px', borderRadius: '12px', border: '1px solid #252838', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -280,9 +315,11 @@ export default function MobileInputForm() {
           <div>
             <div style={labelStyle}>金額</div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={processReceipt} style={{ display: 'none' }} />
-              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00bfff' }}>📸</button>
-              <div style={{ ...inputStyle, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '24px', fontWeight: 'bold', background: '#0a0c10' }}>
+             <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={processReceipt} style={{ display: 'none' }} />
+              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00bfff', padding: '0 10px' }}>
+                <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
+              </button>
+            <div style={{ ...inputStyle, flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '24px', fontWeight: 'bold', background: '#0a0c10' }}>
                 <span style={{ color: '#555' }}>¥</span>
                 <input type="text" inputMode="numeric" value={amount ? Number(amount).toLocaleString() : ''} onChange={handleAmountChange} placeholder="0" style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '28px', fontWeight: 'bold', textAlign: 'right', width: '100%', outline: 'none', fontFamily: 'monospace' }} />
               </div>
@@ -291,32 +328,72 @@ export default function MobileInputForm() {
 
           {type === 'transfer' ? (
             <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
+              
               <div style={{ marginBottom: '15px' }}>
                 <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ ...inputStyle, flex: 1, background: '#0a0c10' }}>
-                    {accounts.map(acc => <option key={`from-${acc}`} value={acc}>{acc}</option>)}
-                  </select>
+                  {/* 🌟 統合されたカスタムセレクトボックス */}
+                  <div style={{ ...inputStyle, flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                    <div style={{ pointerEvents: 'none' }}>{renderIconOrText(paymentMethod, '24px')}</div>
+                    <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                    <select 
+                      value={paymentMethod} 
+                      onChange={(e) => setPaymentMethod(e.target.value)} 
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {accounts.map(acc => {
+                        const displayName = acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc;
+                        return <option key={`from-${acc}`} value={acc}>{displayName}</option>;
+                      })}
+                    </select>
+                  </div>
                 </div>
               </div>
+
               <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '20px', marginBottom: '15px' }}>⬇️</div>
+              
               <div>
                 <div style={{...labelStyle, color: '#00ff66'}}>📥 入金先 (増える口座)</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, flex: 1, background: '#0a0c10' }}>
-                    {accounts.map(acc => <option key={`to-${acc}`} value={acc}>{acc}</option>)}
-                  </select>
+                  {/* 🌟 統合されたカスタムセレクトボックス */}
+                  <div style={{ ...inputStyle, flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                    <div style={{ pointerEvents: 'none' }}>{renderIconOrText(category, '24px')}</div>
+                    <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                    <select 
+                      value={category} 
+                      onChange={(e) => setCategory(e.target.value)} 
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {accounts.map(acc => {
+                        const displayName = acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc;
+                        return <option key={`to-${acc}`} value={acc}>{displayName}</option>;
+                      })}
+                    </select>
+                  </div>
                 </div>
               </div>
+
             </div>
           ) : (
             <>
               <div>
                 <div style={labelStyle}>カテゴリ ({type === 'expense' ? '用途' : '収入源'})</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, flex: 1, appearance: 'none' }}>
-                    {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
+                  {/* 🌟 統合されたカスタムセレクトボックス */}
+                  <div style={{ ...inputStyle, flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                    <div style={{ pointerEvents: 'none' }}>{renderIconOrText(category, '24px')}</div>
+                    <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                    <select 
+                      value={category} 
+                      onChange={(e) => setCategory(e.target.value)} 
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => {
+                        const displayName = cat.startsWith('/') ? cat.slice(cat.indexOf(' ') + 1) : cat;
+                        return <option key={cat} value={cat}>{displayName}</option>;
+                      })}
+                    </select>
+                  </div>
                   <button onClick={handleAddCategory} style={addBtnStyle}>+ 追加</button>
                 </div>
               </div>
@@ -324,9 +401,21 @@ export default function MobileInputForm() {
               <div>
                 <div style={labelStyle}>支払い・入金先口座</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ ...inputStyle, flex: 1, appearance: 'none' }}>
-                    {accounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
-                  </select>
+                  {/* 🌟 統合されたカスタムセレクトボックス */}
+                  <div style={{ ...inputStyle, flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                    <div style={{ pointerEvents: 'none' }}>{renderIconOrText(paymentMethod, '24px')}</div>
+                    <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                    <select 
+                      value={paymentMethod} 
+                      onChange={(e) => setPaymentMethod(e.target.value)} 
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {accounts.map(acc => {
+                        const displayName = acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc;
+                        return <option key={acc} value={acc}>{displayName}</option>;
+                      })}
+                    </select>
+                  </div>
                   <button onClick={handleAddAccount} style={addBtnStyle}>+ 追加</button>
                 </div>
               </div>

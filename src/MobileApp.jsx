@@ -125,20 +125,40 @@ export default function MobileApp() {
       </div>
 
       <div style={{ background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px' }}>
-        <BottomTab icon="✏️" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />
-        <BottomTab icon="🏦" label="残高一覧" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
-          <BottomTab icon="📑" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} />
-          <BottomTab icon="📡" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} />
-      </div>
+          <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />        
+          <BottomTab icon="/S__32194590.jpg" label="残高" isActive={currentTab === 'balance'} onClick={() => setCurrentTab('balance')} />
+          <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} />
+          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} />      </div>
     </div>
   );
 }
 
 function BottomTab({ icon, label, isActive, onClick }) {
+  // 渡されたのが画像(.pngや.svgなど)か、絵文字かを判定するセンサー
+  const isImage = icon.includes('.png') || icon.includes('.svg') || icon.includes('.jpg');
+
   return (
-    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'color 0.2s', flex: 1 }}>
-      <div style={{ fontSize: '24px', marginBottom: '4px', textShadow: isActive ? '0 0 10px #00ff66' : 'none' }}>{icon}</div>
-      <div style={{ fontSize: '12px', fontWeight: isActive ? 'bold' : 'normal' }}>{label}</div>
+    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.5, transition: 'opacity 0.2s' }}>
+      
+      {/* 画像なら <img> タグで表示、絵文字ならそのまま表示 */}
+      {isImage ? (
+        <img 
+          src={icon} 
+          alt={label} 
+          style={{ 
+            width: '40px',  // 🌟 少し大きくする（足りなければ32pxにしてもOK）
+            height: '38px', // 🌟 幅と高さを合わせる
+            objectFit: 'contain', // 🌟 これを追加！枠の中で綺麗に収まるようにする
+            marginBottom: '4px',
+            // 🌟 ハッカー演出：アクティブな時は画像をサイバーブルーに光らせる！
+            filter: isActive ? 'drop-shadow(0 0 5px #00bfff)' : 'grayscale(100%) opacity(70%)'
+          }} 
+        />
+      ) : (
+        <div style={{ fontSize: '24px', marginBottom: '4px' }}>{icon}</div>
+      )}
+      
+      <div style={{ fontSize: '10px', color: isActive ? '#00bfff' : '#666', fontWeight: 'bold' }}>{label}</div>
     </div>
   );
 }
