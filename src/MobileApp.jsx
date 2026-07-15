@@ -225,8 +225,24 @@ export default function MobileApp() {
         <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: themeColor, textShadow: `0 0 10px ${themeColor}` }}>
           ☰
         </div>
-        <div style={{ fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '14px' }}>NEBULA <span style={{ color: themeColor }}>OS</span></div>
-        <div style={{ width: '24px' }}></div>
+<div 
+          onClick={() => {
+            if (!isStealthActive) {
+              setIsStealthActive(true); // ステルスを即時起動！
+              if (navigator.vibrate) navigator.vibrate(200); // 🔒 重いバイブでロック完了を通知
+              alert("🔒 ゴーストプロトコルを再起動しました");
+            }
+          }}
+          style={{ 
+            fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '14px', 
+            cursor: !isStealthActive ? 'pointer' : 'default',
+            // 🔓 解除されている時だけ、ロゴをコッソリ明滅させてタップ可能であることを示すハッキング演出
+            animation: !isStealthActive ? 'pulse 1.5s infinite ease-in-out' : 'none'
+          }}
+        >
+          NEBULA <span style={{ color: themeColor }}>OS</span>
+        </div>
+                <div style={{ width: '24px' }}></div>
       </div>
 
       {/* 🚀 サイドメニュー */}
