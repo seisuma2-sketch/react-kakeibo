@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from './firebase';
@@ -22,7 +22,7 @@ export default function MobileApp() {
   const [transactions, setTransactions] = useState([]);
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || 'morph'); // 3Dコアを初期に
+  const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || 'morph');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
   const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'neon');
   useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
@@ -36,15 +36,15 @@ export default function MobileApp() {
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
-  // 🌟 🔐 生体認証ホールド用 State
-  const [holdProgress, setHoldProgress] = useState(0); // 0 to 100
-  const [isHolding, setIsHolding] = useState(false);  // 指が置かれているか
-  const [isHoldCompleted, setIsHoldCompleted] = useState(false); // 100%溜まったか（指を離して認証呼び出し可能か）
-  const [isBiometricVerifying, setIsBiometricVerifying] = useState(false); // 生体認証プロンプトが表示されているか
-  
-  // タイマー管理用Ref
-  const holdTimerRef = useRef(null);
-  const touchStartPosRef = useRef({ x: 0, y: 0 }); // タップ開始位置
+  // 🌟 🎙️ 指パッチン検知（Web Audio API）用 Ref & State
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const microphoneRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const holdStartTimerRef = useRef(null); // 3秒長押しでマイクを起動するためのタイマー
+  const [isListening, setIsListening] = useState(false); // マイク起動状態の内部管理用（画面には一切出さない）
 
   useEffect(() => {
     signInWithEmailAndPassword(auth, "seisuma2@gmail.com", "Seisuma2")
@@ -63,10 +63,14 @@ export default function MobileApp() {
     const unsubscribeSettings = onSnapshot(doc(db, "user_settings", user.uid), (document) => {
       if (document.exists()) setStealthAccounts(document.data().stealthAccounts || []);
     });
-    return () => { unsubscribeTx(); unsubscribeSettings(); };
+    return () => { 
+      unsubscribeTx(); 
+      unsubscribeSettings(); 
+      stopSnappingDetection(); // クリーンアップ時に確実にマイクを解放
+    };
   }, [user]);
 
-  // 既存のダブルタップ切り替え（生体認証なし）
+  // 🔓 予備用の手動パスコード解除（ダブルタップ）
   const toggleStealth = () => {
     if (!isStealthActive) {
       setIsStealthActive(true); alert("🔒 ゴーストプロトコルを再起動しました");
@@ -77,101 +81,126 @@ export default function MobileApp() {
     }
   };
 
-  // 🌟 🔐 生体認証呼び出しロジック (WebAuthn API)
-  const authenticateWithBiometrics = async () => {
-    if (!navigator.credentials || !navigator.credentials.get) {
-      alert("❌ このデバイスは生体認証に対応していません（またはHTTPS環境ではありません）");
-      return;
-    }
-
-    try {
-      setIsBiometricVerifying(true); // 検証中State
-
-      // 🌟 WebAuthn API を直接呼び出す
-      // スパイ感演出のためのローカル設定
-      const publicKeyCredentialRequestOptions = {
-        challenge: Uint8Array.from("ダミーのチャレンジ文字列 (Nebula OS Access)", c => c.charCodeAt(0)), 
-        allowCredentials: [], // 空にすることで、デバイスに登録されているPasskey（生体認証）を要求する
-        userVerification: "required", // 生体認証（Face IDなど）を必須にする
-        timeout: 60000,
-      };
-
-      const credential = await navigator.credentials.get({
-        publicKey: publicKeyCredentialRequestOptions,
-      });
-
-      if (credential) {
-        // 🔓 認証成功！
-        setIsStealthActive(false);
-        
-        // 🔊 ハッカー演出：バイブレーション（iPhoneはPasskey認証成功時にシステム標準の短い振動が鳴ります）
-        // Vibration APIはSafariでは動作しない可能性があるが、システム標準が鳴るのでOK
-        if (navigator.vibrate) {
-          navigator.vibrate([100]); 
-        }
-        
-        alert("🔓 ゴーストプロトコルを解除しました (FaceID)");
-      }
-
-    } catch (err) {
-      console.error("生体認証エラー:", err);
-      if (err.name === "NotAllowedError") {
-        alert("❌ 認証がキャンセルされました");
-      } else {
-        alert(`❌ 認証中にエラーが発生しました: ${err.message}`);
-      }
-    } finally {
-      setIsBiometricVerifying(false);
-      setHoldProgress(0); // プログレスバーをリセット
-    }
-  };
-
-  // 🌟 🔐 ホールド検知ロジック (ポインターイベント)
-  const handleStartHold = (e, tabLabel) => {
-    // ロック中、かつ3Dモードの時、または通常モードで「残高」タブのみ有効
-    if (!isStealthActive) return;
-    if (uiMode === '2d' && tabLabel !== '残高') return;
-
-    // 3Dモードの時は、Canvas上の透明なオーバーレイで検知
-    if (uiMode !== '2d') {
-      // 3DモードではCanvasの右下のHUDスイッチを長押しする体験に
-      if (tabLabel !== '3D_CORE_HUD') return;
-    }
-
-    setIsHolding(true);
-    setHoldProgress(0);
-    setIsHoldCompleted(false);
-
-    // 1秒かけてプログレスバーを進めるタイマー
-    holdTimerRef.current = setInterval(() => {
-      setHoldProgress(prev => {
-        const next = prev + 5; // 50msごとに5%増やす (1000msで100%)
-        if (next >= 100) {
-          clearInterval(holdTimerRef.current);
-          setIsHoldCompleted(true); // 🌟 1秒経ったら指を離して認証呼び出し可能に
-          return 100;
-        }
-        return next;
-      });
-    }, 50); // 50msごとに実行
-  };
-
-  const handleEndHold = () => {
-    if (holdTimerRef.current) {
-      clearInterval(holdTimerRef.current);
+  // 🌟 🔓 ロック解除実行（指パッチン成功時）
+  const triggerStealthUnlock = () => {
+    setIsStealthActive(false);
+    stopSnappingDetection();
+    
+    // 🔊 ハッカー演出：iPhoneや端末を「ブルッ、ブルッ」と短く2回バイブレーションさせる
+    if (navigator.vibrate) {
+      navigator.vibrate([80, 50, 80]);
     }
     
-    // 🌟 指を離した瞬間、100%に達していたら生体認証を呼び出す（これならユーザーのジェスチャーとしてSafariが通す）
-    if (isHoldCompleted) {
-      setIsHoldCompleted(false);
-      setIsHolding(false);
-      authenticateWithBiometrics();
-    } else {
-      // 100%未満で離した場合はリセット
-      setIsHolding(false);
-      setHoldProgress(0);
-      setIsHoldCompleted(false);
+    // システムログ風のアラートをコッソリ表示
+    alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
+  };
+
+  // 🌟 🎙️ 音響解析・指パッチン検出処理（完全ステルス起動）
+  const startSnappingDetection = async () => {
+    if (isListening) return;
+
+    try {
+      // マイクのアクセスを要求してストリームを開始
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      
+      analyser.fftSize = 256; // リアルタイム性を高めるために小さめのバッファにする
+      microphone.connect(analyser);
+
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      microphoneRef.current = microphone;
+      setIsListening(true);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      let lastVolume = 0;
+
+      const detect = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        // 音量（全体の平均値）の算出
+        let total = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          total += dataArray[i];
+        }
+        const volume = total / bufferLength;
+
+        // 高音域成分の算出（周波数帯域の後半部分を抽出）
+        const highFreqStart = Math.floor(bufferLength * 0.5);
+        let highFreqTotal = 0;
+        for (let i = highFreqStart; i < bufferLength; i++) {
+          highFreqTotal += dataArray[i];
+        }
+        const highFreqVolume = highFreqTotal / (bufferLength - highFreqStart);
+
+        // 前のフレームからの「音量の立ち上がりの急激さ」を測定
+        const volumeDiff = volume - lastVolume;
+
+        // 🌟 指パッチン（スナップ）の特徴分析
+        // 「急激に音が立ち上がり（音量の差分 > 35）」かつ「高音域の成分が異常に強い（高域音量 > 55）」を判定
+        if (volumeDiff > 35 && highFreqVolume > 55) {
+          triggerStealthUnlock();
+          return; // 検出したらループを即終了
+        }
+
+        lastVolume = volume;
+        animationFrameRef.current = requestAnimationFrame(detect);
+      };
+
+      animationFrameRef.current = requestAnimationFrame(detect);
+
+    } catch (err) {
+      console.error("マイク接続エラー（ステルスロック維持）:", err);
     }
+  };
+
+  // 🎙️ 音響解析の安全な停止処理
+  const stopSnappingDetection = () => {
+    setIsListening(false);
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (microphoneRef.current) {
+      microphoneRef.current.disconnect();
+      microphoneRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  // 🌟 ⏱️ タップ・長押し（ホールド）開始処理
+  const handleStartHold = (e, tabLabel) => {
+    if (!isStealthActive) return; // 解除済みなら長押しイベントをスルー
+
+    // 2Dモードなら「残高」タブ、3Dモードなら画面下の透明オーバーレイ全体を対象にする
+    if (uiMode === '2d' && tabLabel !== '残高') return;
+    if (uiMode !== '2d' && tabLabel !== '3D_CORE_HUD') return;
+
+    // 3000ms（3秒）以上押し続けたタイミングで、裏マイクをコッソリ起動
+    holdStartTimerRef.current = setTimeout(() => {
+      startSnappingDetection();
+    }, 3000);
+  };
+
+  // ⏱️ タップ終了（離した・離脱した）処理
+  const handleEndHold = () => {
+    if (holdStartTimerRef.current) {
+      clearTimeout(holdStartTimerRef.current); // 3秒以内に離した場合はタイマーを即座に破棄
+    }
+    stopSnappingDetection(); // 指を離した時点でマイクも検知ループも安全にシャットダウン
   };
 
   const safeTransactions = transactions.map(tx => {
@@ -251,7 +280,7 @@ export default function MobileApp() {
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={themeColor} />        
           
-          {/* 🌟 🔐 通常2Dモードの「残高」タブにホールドイベントを装着！ */}
+          {/* 🌟 🔐 通常2Dモード：残高タブを3〜5秒長押ししている間に指パッチンを待ち受ける */}
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
             isActive={currentTab === 'balance'} 
@@ -268,61 +297,17 @@ export default function MobileApp() {
       ) : (
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
           
-          {/* 🌟 🔐 3Dモードの時は、 Canvas全体の上に透明なオーバーレイを置いて長押し検知 */}
+          {/* 🌟 🔐 3Dモード：Canvasの上面を3〜5秒長押ししている間に指パッチンを待ち受ける透明レイヤー */}
           {isStealthActive && (
             <div 
               onPointerDown={(e) => handleStartHold(e, '3D_CORE_HUD')}
               onPointerUp={handleEndHold}
               onPointerLeave={handleEndHold}
               style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 110, cursor: 'pointer' }}
-              title="HOLD TO ACTIVATE FaceID"
             />
           )}
 
           <NebulaCore3D currentTab={currentTab} setCurrentTab={setCurrentTab} uiMode={uiMode} setUiMode={setUiMode} />
-        </div>
-      )}
-
-      {/* 🌟 🔐 生体認証オーバーレイ (長押し中・検証中) */}
-      {(isHolding || isBiometricVerifying) && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-          background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)',
-          display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-          zIndex: 99999, animation: 'fadeIn 0.2s forwards' // 最高のZIndexで表示
-        }}>
-          <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
-          <style>{`@keyframes blink { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }`}</style>
-          
-          <div style={{ position: 'relative', width: '140px', height: '140px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            
-            {/* 🔮 円形のプログレスバー (SVG) */}
-            <svg width="100%" height="100%" viewBox="0 0 36 36" style={{ transform: 'rotate(-90deg)' }}>
-              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#333" strokeWidth="2" />
-              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={themeColor} strokeWidth="2" strokeDasharray={`${holdProgress}, 100`}
-                style={{ transition: 'stroke-dasharray 0.05s linear', strokeShadow: `0 0 10px ${themeColor}`, animation: isHoldCompleted ? 'blink 0.5s infinite ease-in-out' : 'none' }}
-              />
-            </svg>
-            
-            {/* 🔮 中央のアイコン・テキスト */}
-            <div style={{ position: 'absolute', color: themeColor, fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'center', textShadow: `0 0 10px ${themeColor}` }}>
-              {isBiometricVerifying ? (
-                <div><span style={{ fontSize: '40px' }}>👁️</span><br/>[VERIFYING...]</div>
-              ) : isHoldCompleted ? (
-                <div style={{ animation: 'blink 0.5s infinite ease-in-out' }}><span style={{ fontSize: '40px' }}>离</span><br/>[RELEASE]</div>
-              ) : (
-                <div><span style={{ fontSize: '40px' }}>🔒</span><br/>{holdProgress}%<br/>[HOLD]</div>
-              )}
-            </div>
-          </div>
-          
-          <div style={{ color: themeColor, marginTop: '20px', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace', textShadow: `0 0 10px ${themeColor}`, animation: isHoldCompleted ? 'blink 0.5s infinite ease-in-out' : 'none' }}>
-            AUTHENTICATING...
-          </div>
-          <div style={{ color: '#666', marginTop: '10px', fontSize: '12px' }}>
-            {isHoldCompleted ? '指を離して生体認証を呼び出します' : '長押ししてFaceIDを起動'}
-          </div>
-        
         </div>
       )}
       
