@@ -19,7 +19,7 @@ export default function MobileTransactionList({ transactions }) {
   return (
     <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px solid #252838', minHeight: '80vh' }}>
       <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px' }}>
-        <h2 style={{ fontSize: '18px', margin: 0, color: '#fff' }}>📑 決済履歴ログ</h2>
+        <h2 style={{ fontSize: '18px', margin: 0, color: '#fff' }}> 決済履歴</h2>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

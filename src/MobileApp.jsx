@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+// 🌟 変更点: signInWithEmailAndPassword を消し、signOut をインポート
+import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
 import MobileInputForm from './components/MobileInputForm';
@@ -8,6 +9,7 @@ import BalanceChart from './components/BalanceChart';
 import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList';
 import NebulaCore3D from './components/NebulaCore3D';
+import AuthScreen from './components/AuthScreen'; // 🌟 認証画面コンポーネント
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -21,8 +23,10 @@ export default function MobileApp() {
   const [transactions, setTransactions] = useState([]);
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || 'morph');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
+  
   const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'neon');
   useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
   const themeColor = THEMES[appTheme].color;
@@ -43,10 +47,12 @@ export default function MobileApp() {
   const holdStartTimerRef = useRef(null); 
   const [isListening, setIsListening] = useState(false); 
 
+  // 🌟 変更点: ログイン監視（自動ログインを廃止し、Firebaseの認証状態を監視）
   useEffect(() => {
-    signInWithEmailAndPassword(auth, "seisuma2@gmail.com", "Seisuma2")
-      .then((userCredential) => setUser(userCredential.user))
-      .catch((error) => console.error("ログイン失敗:", error));
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -67,6 +73,19 @@ export default function MobileApp() {
     };
   }, [user]);
 
+  // 🌟 新機能: ログアウト処理（システム切断）
+  const handleLogout = async () => {
+    if (window.confirm("システムから切断（ログアウト）しますか？")) {
+      try {
+        await signOut(auth);
+        setIsMenuOpen(false); // メニューを閉じる
+      } catch (error) {
+        console.error("ログアウトエラー:", error);
+        alert("システムの切断に失敗しました。");
+      }
+    }
+  };
+
   const toggleStealth = () => {
     if (!isStealthActive) {
       setIsStealthActive(true); alert("🔒 ゴーストプロトコルを再起動しました");
@@ -84,6 +103,7 @@ export default function MobileApp() {
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
   };
 
+  // 指パッチン検出処理...
   const startSnappingDetection = async () => {
     if (isListening) return;
     try {
@@ -143,15 +163,11 @@ export default function MobileApp() {
     if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; }
   };
 
-  // 🌟 長押しタイマー処理
   const handleStartHold = (e, tabLabel) => {
     if (!isStealthActive) return; 
     if (uiMode === '2d' && tabLabel !== '残高') return;
     if (uiMode !== '2d' && tabLabel !== '3D_CORE_HUD') return;
-
-    holdStartTimerRef.current = setTimeout(() => {
-      startSnappingDetection();
-    }, 3000);
+    holdStartTimerRef.current = setTimeout(() => { startSnappingDetection(); }, 3000);
   };
 
   const handleEndHold = () => {
@@ -159,49 +175,35 @@ export default function MobileApp() {
     stopSnappingDetection(); 
   };
 
-  // 🌟 🚀 3Dモード専用：タップ＆スワイプ＆長押しの「全能」検知ロジック
   const pointerStartRef = useRef({ x: 0, y: 0, time: 0 });
   const isDraggingRef = useRef(false);
 
   const handle3DPointerDown = (e) => {
-    // タッチ開始位置と時間を記録
     pointerStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     isDraggingRef.current = false;
-    // 長押し用タイマーも同時にセット
     handleStartHold(e, '3D_CORE_HUD');
   };
 
   const handle3DPointerMove = (e) => {
     const dx = Math.abs(e.clientX - pointerStartRef.current.x);
     const dy = Math.abs(e.clientY - pointerStartRef.current.y);
-    // 10px以上動かしたら「スワイプしている」と判定
     if (dx > 10 || dy > 10) {
       isDraggingRef.current = true;
-      handleEndHold(); // スワイプ中は長押しキャンセル
+      handleEndHold(); 
     }
   };
 
   const handle3DPointerUp = (e) => {
-    handleEndHold(); // まず長押しタイマーを確実にストップ
-
+    handleEndHold(); 
     const dx = e.clientX - pointerStartRef.current.x;
     const dt = Date.now() - pointerStartRef.current.time;
-
     const tabs = ['input', 'balance', 'history', 'feed'];
     const currentIndex = tabs.indexOf(currentTab);
 
-    // 🌟 右・左に50px以上動かした場合（スワイプ）
     if (Math.abs(dx) > 50) {
-      if (dx > 0) {
-        // 右スワイプ（前のタブへ）
-        setCurrentTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
-      } else {
-        // 左スワイプ（次のタブへ）
-        setCurrentTab(tabs[(currentIndex + 1) % tabs.length]);
-      }
-    } 
-    // 🌟 動かさずに0.5秒以内に指を離した場合（タップ）
-    else if (!isDraggingRef.current && dt < 500) {
+      if (dx > 0) setCurrentTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
+      else setCurrentTab(tabs[(currentIndex + 1) % tabs.length]);
+    } else if (!isDraggingRef.current && dt < 500) {
       setCurrentTab(tabs[(currentIndex + 1) % tabs.length]);
     }
   };
@@ -220,10 +222,15 @@ export default function MobileApp() {
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
+  // 🌟 変更点: ユーザーが存在しない（未ログイン）場合は認証画面を表示する絶対防壁
+  if (!user) {
+    return <AuthScreen />;
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
       
-      {/* 🚀 ヘッダーバー（パニック・ロック付き） */}
+      {/* 🚀 ヘッダーバー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${themeColor}44`, zIndex: 10 }}>
         <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: themeColor, textShadow: `0 0 10px ${themeColor}` }}>
           ☰
@@ -242,28 +249,31 @@ export default function MobileApp() {
             animation: !isStealthActive ? 'pulse 1.5s infinite ease-in-out' : 'none'
           }}
         >
-          NEBULA <span style={{ color: themeColor }}>OS</span>
+          M402 <span style={{ color: themeColor }}>家計簿</span>
         </div>
         <div style={{ width: '24px' }}></div>
       </div>
 
-      {/* 🚀 サイドメニュー */}
+      {/* 🚀 サイドメニュー（コントロールパネル） */}
       {isMenuOpen && (
         <>
           <div onClick={() => setIsMenuOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 9998 }} />
           <div style={{ position: 'fixed', top: 0, left: 0, width: '80%', maxWidth: '300px', height: '100vh', background: '#0a0c10', borderRight: `1px solid ${themeColor}`, boxShadow: `5px 0 30px ${themeColor}33`, zIndex: 9999, padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '40px', animation: 'slideIn 0.3s ease-out' }}>
             <style>{`@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
-            <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>⚙️ SYSTEM CONFIG</h2></div>
+            
+            <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
+            
             <div>
-              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>UI NAVIGATION MODE</div>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>タブバ―モード変更</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button onClick={() => setUiMode('2d')} style={menuBtnStyle(uiMode === '2d', themeColor)}>📱 2D CLASSIC</button>
-                <button onClick={() => setUiMode('morph')} style={menuBtnStyle(uiMode === 'morph', themeColor)}>🧊 3D MORPHING</button>
-                <button onClick={() => setUiMode('particle')} style={menuBtnStyle(uiMode === 'particle', themeColor)}>🌌 3D PARTICLE</button>
+                <button onClick={() => setUiMode('2d')} style={menuBtnStyle(uiMode === '2d', themeColor)}> 2Dモード</button>
+                <button onClick={() => setUiMode('morph')} style={menuBtnStyle(uiMode === 'morph', themeColor)}> 3Dモード</button>
+                <button onClick={() => setUiMode('particle')} style={menuBtnStyle(uiMode === 'particle', themeColor)}> 3D粒子モード</button>
               </div>
             </div>
+            
             <div>
-              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>SYSTEM THEME COLOR</div>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>テーマ変更</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 {Object.keys(THEMES).map(key => (
                   <div key={key} onClick={() => setAppTheme(key)} style={{ border: `1px solid ${appTheme === key ? THEMES[key].color : '#333'}`, background: appTheme === key ? `${THEMES[key].color}22` : '#111', padding: '10px', borderRadius: '6px', textAlign: 'center', cursor: 'pointer', color: appTheme === key ? THEMES[key].color : '#666', fontWeight: 'bold', fontSize: '10px', transition: 'all 0.2s', boxShadow: appTheme === key ? `0 0 10px ${THEMES[key].color}44` : 'none' }}>
@@ -273,7 +283,20 @@ export default function MobileApp() {
                 ))}
               </div>
             </div>
-            <div style={{ marginTop: 'auto' }}><button onClick={() => setIsMenuOpen(false)} style={{ width: '100%', padding: '15px', background: 'transparent', color: '#666', border: '1px solid #333', borderRadius: '8px', cursor: 'pointer' }}>CLOSE</button></div>
+
+            {/* 🌟 変更点: ログアウトボタンをメニュー下部に追加 */}
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <button 
+                onClick={handleLogout} 
+                style={{ width: '100%', padding: '15px', background: 'rgba(255, 51, 102, 0.1)', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', textShadow: '0 0 5px #ff3366' }}
+              >
+                ログアウト
+              </button>
+              <button onClick={() => setIsMenuOpen(false)} style={{ width: '100%', padding: '15px', background: 'transparent', color: '#666', border: '1px solid #333', borderRadius: '8px', cursor: 'pointer' }}>
+                閉じる
+               </button>
+            </div>
+
           </div>
         </>
       )}
@@ -284,7 +307,7 @@ export default function MobileApp() {
         {currentTab === 'balance' && (
           <div style={{ padding: '20px' }}>
             <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
-              <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}>🏦 口座・決済手段別の現在高</h2>
+              <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}> 口座・決済手段別の現在高</h2>
             </div>
             <BalanceChart transactions={safeTransactions} ghostAccounts={ghostAccountsList} />
           </div>
@@ -311,22 +334,18 @@ export default function MobileApp() {
         </div>
       ) : (
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
-          
-          {/* 🌟 🚀 3Dモード：常時表示のスマート・オーバーレイ */}
-          {/* これがタップ、スワイプ、長押しのすべてをスマートに仕分けしてくれます */}
           <div 
             onPointerDown={handle3DPointerDown}
             onPointerMove={handle3DPointerMove}
             onPointerUp={handle3DPointerUp}
-            onPointerLeave={handleEndHold} // 画面外に出た時は長押しだけキャンセル
+            onPointerLeave={handleEndHold} 
             style={{ 
               position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
               zIndex: 10, cursor: 'pointer', 
               WebkitTapHighlightColor: 'transparent',
-              touchAction: 'none' // スワイプ時のブラウザ標準スクロールを防止
+              touchAction: 'none' 
             }}
           />
-
           <NebulaCore3D currentTab={currentTab} setCurrentTab={setCurrentTab} uiMode={uiMode} setUiMode={setUiMode} />
         </div>
       )}
