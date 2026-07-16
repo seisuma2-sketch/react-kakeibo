@@ -232,13 +232,13 @@ export default function MobileInputForm() {
           </div>
 
           {/* 🌟 修正ポイント2: 発生日時のレイアウトを修正（width 100% と boxSizing border-box） */}
-          <div style={{ width: '100%' }}>
+         <div style={{ boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
             <div style={labelStyle}>発生日時</div>
             <input 
               type="datetime-local" 
               value={date} 
               onChange={(e) => setDate(e.target.value)} 
-              style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} 
+              style={{ ...inputStyle, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} 
             />
           </div>
 
@@ -414,8 +414,7 @@ export default function MobileInputForm() {
 
 const tabStyle = (isActive, activeColor, textColor) => ({ flex: 1, padding: '10px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', background: isActive ? activeColor : 'transparent', color: isActive ? (activeColor === '#ff3366' ? '#fff' : '#000') : textColor });
 const labelStyle = { color: '#aaa', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' };
-const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '16px', outline: 'none' };
-const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 15px', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '16px', outline: 'none' };const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 15px', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const addBtnStyle = { background: 'transparent', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 15px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
 
 // キーパッド用スタイル
