@@ -9,7 +9,6 @@ import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList';
 import NebulaCore3D from './components/NebulaCore3D';
 
-// 🎨 テーマカラー
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
   cyber: { name: 'CYBER BLUE', color: '#00bfff' },
@@ -28,7 +27,6 @@ export default function MobileApp() {
   useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
   const themeColor = THEMES[appTheme].color;
 
-  // 🌟 ステルスシステム State
   const [isStealthActive, setIsStealthActive] = useState(() => {
     const saved = localStorage.getItem('stealthActiveMobile');
     return saved !== null ? saved === 'true' : true;
@@ -36,15 +34,14 @@ export default function MobileApp() {
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
-  // 🌟 🎙️ 指パッチン検知（Web Audio API）用 Ref & State
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const microphoneRef = useRef(null);
   const animationFrameRef = useRef(null);
   const streamRef = useRef(null);
 
-  const holdStartTimerRef = useRef(null); // 3秒長押しでマイクを起動するためのタイマー
-  const [isListening, setIsListening] = useState(false); // マイク起動状態の内部管理用（画面には一切出さない）
+  const holdStartTimerRef = useRef(null); 
+  const [isListening, setIsListening] = useState(false); 
 
   useEffect(() => {
     signInWithEmailAndPassword(auth, "seisuma2@gmail.com", "Seisuma2")
@@ -66,11 +63,10 @@ export default function MobileApp() {
     return () => { 
       unsubscribeTx(); 
       unsubscribeSettings(); 
-      stopSnappingDetection(); // クリーンアップ時に確実にマイクを解放
+      stopSnappingDetection(); 
     };
   }, [user]);
 
-  // 🔓 予備用の手動パスコード解除（ダブルタップ）
   const toggleStealth = () => {
     if (!isStealthActive) {
       setIsStealthActive(true); alert("🔒 ゴーストプロトコルを再起動しました");
@@ -81,34 +77,23 @@ export default function MobileApp() {
     }
   };
 
-  // 🌟 🔓 ロック解除実行（指パッチン成功時）
   const triggerStealthUnlock = () => {
     setIsStealthActive(false);
     stopSnappingDetection();
-    
-    // 🔊 ハッカー演出：iPhoneや端末を「ブルッ、ブルッ」と短く2回バイブレーションさせる
-    if (navigator.vibrate) {
-      navigator.vibrate([80, 50, 80]);
-    }
-    
-    // システムログ風のアラートをコッソリ表示
+    if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
   };
 
-  // 🌟 🎙️ 音響解析・指パッチン検出処理（完全ステルス起動）
   const startSnappingDetection = async () => {
     if (isListening) return;
-
     try {
-      // マイクのアクセスを要求してストリームを開始
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
       
-      analyser.fftSize = 256; // リアルタイム性を高めるために小さめのバッファにする
+      analyser.fftSize = 256; 
       microphone.connect(analyser);
 
       audioContextRef.current = audioContext;
@@ -124,29 +109,20 @@ export default function MobileApp() {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
 
-        // 音量（全体の平均値）の算出
         let total = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          total += dataArray[i];
-        }
+        for (let i = 0; i < bufferLength; i++) total += dataArray[i];
         const volume = total / bufferLength;
 
-        // 高音域成分の算出（周波数帯域の後半部分を抽出）
         const highFreqStart = Math.floor(bufferLength * 0.5);
         let highFreqTotal = 0;
-        for (let i = highFreqStart; i < bufferLength; i++) {
-          highFreqTotal += dataArray[i];
-        }
+        for (let i = highFreqStart; i < bufferLength; i++) highFreqTotal += dataArray[i];
         const highFreqVolume = highFreqTotal / (bufferLength - highFreqStart);
 
-        // 前のフレームからの「音量の立ち上がりの急激さ」を測定
         const volumeDiff = volume - lastVolume;
 
-        // 🌟 指パッチン（スナップ）の特徴分析
-        // 「急激に音が立ち上がり（音量の差分 > 35）」かつ「高音域の成分が異常に強い（高域音量 > 55）」を判定
         if (volumeDiff > 35 && highFreqVolume > 55) {
           triggerStealthUnlock();
-          return; // 検出したらループを即終了
+          return; 
         }
 
         lastVolume = volume;
@@ -154,53 +130,80 @@ export default function MobileApp() {
       };
 
       animationFrameRef.current = requestAnimationFrame(detect);
-
     } catch (err) {
       console.error("マイク接続エラー（ステルスロック維持）:", err);
     }
   };
 
-  // 🎙️ 音響解析の安全な停止処理
   const stopSnappingDetection = () => {
     setIsListening(false);
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (microphoneRef.current) {
-      microphoneRef.current.disconnect();
-      microphoneRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
+    if (animationFrameRef.current) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; }
+    if (microphoneRef.current) { microphoneRef.current.disconnect(); microphoneRef.current = null; }
+    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; }
   };
 
-  // 🌟 ⏱️ タップ・長押し（ホールド）開始処理
+  // 🌟 長押しタイマー処理
   const handleStartHold = (e, tabLabel) => {
-    if (!isStealthActive) return; // 解除済みなら長押しイベントをスルー
-
-    // 2Dモードなら「残高」タブ、3Dモードなら画面下の透明オーバーレイ全体を対象にする
+    if (!isStealthActive) return; 
     if (uiMode === '2d' && tabLabel !== '残高') return;
     if (uiMode !== '2d' && tabLabel !== '3D_CORE_HUD') return;
 
-    // 3000ms（3秒）以上押し続けたタイミングで、裏マイクをコッソリ起動
     holdStartTimerRef.current = setTimeout(() => {
       startSnappingDetection();
     }, 3000);
   };
 
-  // ⏱️ タップ終了（離した・離脱した）処理
   const handleEndHold = () => {
-    if (holdStartTimerRef.current) {
-      clearTimeout(holdStartTimerRef.current); // 3秒以内に離した場合はタイマーを即座に破棄
+    if (holdStartTimerRef.current) clearTimeout(holdStartTimerRef.current); 
+    stopSnappingDetection(); 
+  };
+
+  // 🌟 🚀 3Dモード専用：タップ＆スワイプ＆長押しの「全能」検知ロジック
+  const pointerStartRef = useRef({ x: 0, y: 0, time: 0 });
+  const isDraggingRef = useRef(false);
+
+  const handle3DPointerDown = (e) => {
+    // タッチ開始位置と時間を記録
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+    isDraggingRef.current = false;
+    // 長押し用タイマーも同時にセット
+    handleStartHold(e, '3D_CORE_HUD');
+  };
+
+  const handle3DPointerMove = (e) => {
+    const dx = Math.abs(e.clientX - pointerStartRef.current.x);
+    const dy = Math.abs(e.clientY - pointerStartRef.current.y);
+    // 10px以上動かしたら「スワイプしている」と判定
+    if (dx > 10 || dy > 10) {
+      isDraggingRef.current = true;
+      handleEndHold(); // スワイプ中は長押しキャンセル
     }
-    stopSnappingDetection(); // 指を離した時点でマイクも検知ループも安全にシャットダウン
+  };
+
+  const handle3DPointerUp = (e) => {
+    handleEndHold(); // まず長押しタイマーを確実にストップ
+
+    const dx = e.clientX - pointerStartRef.current.x;
+    const dt = Date.now() - pointerStartRef.current.time;
+
+    const tabs = ['input', 'balance', 'history', 'feed'];
+    const currentIndex = tabs.indexOf(currentTab);
+
+    // 🌟 右・左に50px以上動かした場合（スワイプ）
+    if (Math.abs(dx) > 50) {
+      if (dx > 0) {
+        // 右スワイプ（前のタブへ）
+        setCurrentTab(tabs[(currentIndex - 1 + tabs.length) % tabs.length]);
+      } else {
+        // 左スワイプ（次のタブへ）
+        setCurrentTab(tabs[(currentIndex + 1) % tabs.length]);
+      }
+    } 
+    // 🌟 動かさずに0.5秒以内に指を離した場合（タップ）
+    else if (!isDraggingRef.current && dt < 500) {
+      setCurrentTab(tabs[(currentIndex + 1) % tabs.length]);
+    }
   };
 
   const safeTransactions = transactions.map(tx => {
@@ -220,29 +223,28 @@ export default function MobileApp() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
       
-      {/* 🚀 ヘッダーバー */}
+      {/* 🚀 ヘッダーバー（パニック・ロック付き） */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${themeColor}44`, zIndex: 10 }}>
         <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: themeColor, textShadow: `0 0 10px ${themeColor}` }}>
           ☰
         </div>
-<div 
+        <div 
           onClick={() => {
             if (!isStealthActive) {
-              setIsStealthActive(true); // ステルスを即時起動！
-              if (navigator.vibrate) navigator.vibrate(200); // 🔒 重いバイブでロック完了を通知
+              setIsStealthActive(true); 
+              if (navigator.vibrate) navigator.vibrate(200); 
               alert("🔒 ゴーストプロトコルを再起動しました");
             }
           }}
           style={{ 
             fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '14px', 
             cursor: !isStealthActive ? 'pointer' : 'default',
-            // 🔓 解除されている時だけ、ロゴをコッソリ明滅させてタップ可能であることを示すハッキング演出
             animation: !isStealthActive ? 'pulse 1.5s infinite ease-in-out' : 'none'
           }}
         >
           NEBULA <span style={{ color: themeColor }}>OS</span>
         </div>
-                <div style={{ width: '24px' }}></div>
+        <div style={{ width: '24px' }}></div>
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -295,8 +297,6 @@ export default function MobileApp() {
       {uiMode === '2d' ? (
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={themeColor} />        
-          
-          {/* 🌟 🔐 通常2Dモード：残高タブを3〜5秒長押ししている間に指パッチンを待ち受ける */}
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
             isActive={currentTab === 'balance'} 
@@ -306,22 +306,26 @@ export default function MobileApp() {
             onPointerUp={handleEndHold}
             onPointerLeave={handleEndHold}
           />
-          
           <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} themeColor={themeColor} />
           <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} themeColor={themeColor} />
         </div>
       ) : (
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
           
-          {/* 🌟 🔐 3Dモード：Canvasの上面を3〜5秒長押ししている間に指パッチンを待ち受ける透明レイヤー */}
-          {isStealthActive && (
-            <div 
-              onPointerDown={(e) => handleStartHold(e, '3D_CORE_HUD')}
-              onPointerUp={handleEndHold}
-              onPointerLeave={handleEndHold}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 110, cursor: 'pointer' }}
-            />
-          )}
+          {/* 🌟 🚀 3Dモード：常時表示のスマート・オーバーレイ */}
+          {/* これがタップ、スワイプ、長押しのすべてをスマートに仕分けしてくれます */}
+          <div 
+            onPointerDown={handle3DPointerDown}
+            onPointerMove={handle3DPointerMove}
+            onPointerUp={handle3DPointerUp}
+            onPointerLeave={handleEndHold} // 画面外に出た時は長押しだけキャンセル
+            style={{ 
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
+              zIndex: 10, cursor: 'pointer', 
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'none' // スワイプ時のブラウザ標準スクロールを防止
+            }}
+          />
 
           <NebulaCore3D currentTab={currentTab} setCurrentTab={setCurrentTab} uiMode={uiMode} setUiMode={setUiMode} />
         </div>
@@ -342,31 +346,13 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       onPointerDown={onPointerDown} 
       onPointerUp={onPointerUp} 
       onPointerLeave={onPointerLeave}
-      style={{ 
-        display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', 
-        opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '60px',
-        // 🌟 ハッキング：iPhoneの「長押しメニュー」と「テキスト選択」を完全に無効化する呪文
-        WebkitTouchCallout: 'none',
-        WebkitUserSelect: 'none',
-        userSelect: 'none',
-      }}>
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '60px', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
       {isImage ? (
-        <img 
-          src={icon} 
-          alt={label} 
-          style={{ 
-            width: '40px', height: '38px', objectFit: 'contain', marginBottom: '4px', 
-            filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)',
-            // 🌟 画像自体のドラッグやタップ判定を消し、親のdivに判定を全て任せる
-            pointerEvents: 'none' 
-          }} 
-        />
+        <img src={icon} alt={label} style={{ width: '40px', height: '38px', objectFit: 'contain', marginBottom: '4px', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)', pointerEvents: 'none' }} />
       ) : (
         <div style={{ fontSize: '24px', marginBottom: '4px', pointerEvents: 'none' }}>{icon}</div>
       )}
-      <div style={{ fontSize: '10px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>
-        {label}
-      </div>
+      <div style={{ fontSize: '10px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
   );
 }
