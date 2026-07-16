@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
-// 画像パスと名前を切り分けるヘルパー関数
 function renderIconOrText(item, imgSize = '20px') {
   if (item && item.startsWith('/')) {
     const spaceIndex = item.indexOf(' ');
@@ -18,12 +17,10 @@ function renderIconOrText(item, imgSize = '20px') {
   return item;
 }
 
-// 🌟 安全に文字列の数式を計算するハッカー関数
 const evaluateMath = (expr) => {
   try {
     const sanitized = expr.replace(/[^0-9+\-*/.]/g, '');
     if (!sanitized) return '';
-    // eslint-disable-next-line no-new-func
     const result = new Function(`return ${sanitized}`)();
     if (!isFinite(result) || isNaN(result)) return '';
     return Math.floor(result).toString();
@@ -34,8 +31,8 @@ const evaluateMath = (expr) => {
 
 export default function MobileInputForm() {
   const [type, setType] = useState('expense');
-  const [amount, setAmount] = useState(''); // 最終的な金額
-  const [calcStr, setCalcStr] = useState(''); // 計算中の文字列 (例: "1000+500")
+  const [amount, setAmount] = useState('');
+  const [calcStr, setCalcStr] = useState('');
   const [category, setCategory] = useState('/icon-food.png 食費');
   const [paymentMethod, setPaymentMethod] = useState('/icon-cash.png 現金');
   const [memo, setMemo] = useState('');
@@ -47,10 +44,9 @@ export default function MobileInputForm() {
 
   const fileInputRef = useRef(null);
 
-  // 🌟 カスタムキーパッド用のState
   const [isKeypadOpen, setIsKeypadOpen] = useState(false);
-  const [calcHistory, setCalcHistory] = useState([]); // 直近5件の履歴
-  const [pinnedAmount, setPinnedAmount] = useState(null); // 固定した金額
+  const [calcHistory, setCalcHistory] = useState([]);
+  const [pinnedAmount, setPinnedAmount] = useState(null);
 
   const [expenseCategories, setExpenseCategories] = useState([
     '/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', 
@@ -91,7 +87,6 @@ export default function MobileInputForm() {
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
 
-  // OCR処理 (変更なし)
   const processReceipt = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -135,9 +130,7 @@ export default function MobileInputForm() {
   };
 
   const handleSubmit = async () => {
-    // 🌟 未計算の数式が残っていれば確定させる
     const finalAmount = calcStr ? evaluateMath(calcStr) : amount;
-    
     if (!finalAmount || Number(finalAmount) <= 0) { showAlert("金額を入力してください！", "error"); return; }
     if (!auth.currentUser) { showAlert("ログインしていません！", "error"); return; }
     if (type === 'transfer' && paymentMethod === category) { showAlert("出金元と入金先が同じです！", "error"); return; }
@@ -164,8 +157,6 @@ export default function MobileInputForm() {
       if (pos) { txData.lat = pos.lat; txData.lng = pos.lng; }
 
       await addDoc(collection(db, "transactions"), txData);
-
-      // 送信成功時に履歴に保存
       addToHistory(finalAmount);
 
       setAmount(''); setCalcStr(''); setMemo('');
@@ -180,7 +171,6 @@ export default function MobileInputForm() {
     if (newType === 'transfer') { setPaymentMethod(accounts[0]); setCategory(accounts[1] || accounts[0]); }
   };
 
-  // 🌟 カスタムキーパッドのロジック
   const handleKeypadPress = (key) => {
     if (key === 'C') {
       setCalcStr(''); setAmount('');
@@ -192,7 +182,7 @@ export default function MobileInputForm() {
         setAmount(result);
         setCalcStr(result);
         addToHistory(result);
-        setIsKeypadOpen(false); // 計算完了で閉じる
+        setIsKeypadOpen(false); 
       }
     } else {
       setCalcStr(prev => prev + key);
@@ -212,15 +202,14 @@ export default function MobileInputForm() {
     if (currentVal) setPinnedAmount(currentVal);
   };
 
-  // リアルタイムプレビュー計算
   const livePreview = calcStr ? evaluateMath(calcStr) : amount;
 
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative' }}>
       
-      {/* アラート・プロンプト・OCR (既存コード) */}
+      {/* アラート等 */}
       {customAlert.isOpen && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: customAlert.type === 'success' ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 51, 102, 0.1)', border: `1px solid ${customAlert.type === 'success' ? '#00ff66' : '#ff3366'}`, color: customAlert.type === 'success' ? '#00ff66' : '#ff3366', padding: '12px 24px', borderRadius: '30px', fontWeight: 'bold', fontSize: '14px', backdropFilter: 'blur(10px)', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', zIndex: 10000, animation: 'fadeInOut 3s forwards' }}>
+        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: customAlert.type === 'success' ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 51, 102, 0.1)', border: `1px solid ${customAlert.type === 'success' ? '#00ff66' : '#ff3366'}`, color: customAlert.type === 'success' ? '#00ff66' : '#ff3366', padding: '12px 24px', borderRadius: '30px', fontWeight: 'bold', fontSize: '14px', backdropFilter: 'blur(10px)', zIndex: 10000 }}>
           {customAlert.type === 'success' ? '✅' : '⚠️'} {customAlert.message}
         </div>
       )}
@@ -242,9 +231,15 @@ export default function MobileInputForm() {
             <button onClick={() => handleTypeChange('transfer')} style={tabStyle(type === 'transfer', '#b666ff', '#aaa')}>振替</button>
           </div>
 
-          <div>
+          {/* 🌟 修正ポイント2: 発生日時のレイアウトを修正（width 100% と boxSizing border-box） */}
+          <div style={{ width: '100%' }}>
             <div style={labelStyle}>発生日時</div>
-            <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+            <input 
+              type="datetime-local" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+              style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} 
+            />
           </div>
 
           <div>
@@ -255,16 +250,13 @@ export default function MobileInputForm() {
                 <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
               </button>
               
-              {/* 🌟 変更点: input readOnly にしてOSキーボードをブロックし、タップでカスタムキーパッドを開く */}
               <div 
                 onClick={() => setIsKeypadOpen(true)}
                 style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text', position: 'relative' }}
               >
-                {/* 上段：計算式 */}
                 <div style={{ fontSize: '12px', color: '#888', height: '14px', fontFamily: 'monospace' }}>
                   {calcStr || '0'}
                 </div>
-                {/* 下段：リアルタイムプレビュー (最終金額) */}
                 <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold', fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#555', marginRight: '4px', fontSize: '20px' }}>¥</span>
                   {livePreview ? Number(livePreview).toLocaleString() : '0'}
@@ -273,7 +265,7 @@ export default function MobileInputForm() {
             </div>
           </div>
 
-          {/* セレクトボックス群 (変更なし) */}
+          {/* セレクトボックス群 */}
           {type === 'transfer' ? (
             <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
               <div style={{ marginBottom: '15px' }}>
@@ -340,13 +332,28 @@ export default function MobileInputForm() {
         </div>
       </div>
 
-      {/* 🌟 ハッカー仕様 カスタムキーパッド (下からスライド) */}
+      {/* 🌟 ハッカー仕様 カスタムキーパッド */}
       <div style={{
         position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', 
         background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)',
         transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 1000, padding: '15px 10px 30px 10px'
       }}>
         
+        {/* 🌟 修正ポイント1: キーパッド上部のHUD（入力状況ディスプレイ） */}
+        <div style={{ 
+          background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '10px 15px', 
+          marginBottom: '15px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+          boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)'
+        }}>
+          <div style={{ fontSize: '14px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>
+            {calcStr || '0'}
+          </div>
+          <div style={{ color: '#fff', fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+            <span style={{ color: '#555', marginRight: '5px' }}>¥</span>
+            {livePreview ? Number(livePreview).toLocaleString() : '0'}
+          </div>
+        </div>
+
         {/* メモリー＆アクションバー */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
           <button onClick={togglePin} style={{ ...memBtnStyle, borderColor: '#ff9900', color: '#ff9900' }}>
@@ -387,7 +394,7 @@ export default function MobileInputForm() {
               </button>
             );
           })}
-          {/* クリアボタン類はグリッドの隙間に配置 */}
+          {/* クリアボタン類 */}
           <button onClick={() => handleKeypadPress('C')} style={{ ...keyBtnStyle, color: '#ff3366', background: '#11141a', border: '1px solid #252838', height: '55px' }}>C</button>
           <button onClick={() => handleKeypadPress('BS')} style={{ ...keyBtnStyle, color: '#ff9900', background: '#11141a', border: '1px solid #252838', height: '55px' }}>BS</button>
         </div>
