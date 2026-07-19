@@ -40,7 +40,15 @@ export default function MobileInputForm() {
   const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
 
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
+  
+  // 🌟 カテゴリ追加用のプロンプト（復活）
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
+
+  // 🌟 💳 新規口座・カード追加（予算設定機能付き）の専用パネル用State
+  const [showAccountPanel, setShowAccountPanel] = useState(false);
+  const [newAccName, setNewAccName] = useState('');
+  const [isCreditCard, setIsCreditCard] = useState(false);
+  const [newAccBudget, setNewAccBudget] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -57,7 +65,7 @@ export default function MobileInputForm() {
   ]);
   const [accounts, setAccounts] = useState([
     '/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', 
-    '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING'
+    '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'
   ]);
 
   const now = new Date();
@@ -70,21 +78,44 @@ export default function MobileInputForm() {
   };
 
   const handleAddCategory = () => setCustomPrompt({ isOpen: true, title: '新しいカテゴリ名を入力', target: 'category', text: '' });
-  const handleAddAccount = () => setCustomPrompt({ isOpen: true, title: '新しい口座・決済手段を入力', target: 'account', text: '' });
+  
+  // 🌟 変更点：口座追加ボタンを押したら専用パネルを開く
+  const handleAddAccount = () => {
+    setNewAccName('');
+    setIsCreditCard(false);
+    setNewAccBudget('');
+    setShowAccountPanel(true);
+  };
 
   const handlePromptSubmit = () => {
     if (!customPrompt.text.trim()) { setCustomPrompt({ ...customPrompt, isOpen: false }); return; }
-    if (customPrompt.target === 'category') {
-      const newItem = `✨ ${customPrompt.text}`;
-      if (type === 'expense') setExpenseCategories([...expenseCategories, newItem]);
-      else setIncomeCategories([...incomeCategories, newItem]);
-      setCategory(newItem);
-    } else if (customPrompt.target === 'account') {
-      const newItem = `💳 ${customPrompt.text}`;
-      setAccounts([...accounts, newItem]);
-      setPaymentMethod(newItem);
-    }
+    const newItem = `✨ ${customPrompt.text}`;
+    if (type === 'expense') setExpenseCategories([...expenseCategories, newItem]);
+    else setIncomeCategories([...incomeCategories, newItem]);
+    setCategory(newItem);
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
+  };
+
+  // 🌟 カード＆予算登録ロジック
+  const handleSaveAccount = () => {
+    if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
+    
+    // アイコンを適当に割り当ててリストに追加
+    const newItem = `/icon-other.png ${newAccName.trim()}`;
+    setAccounts([...accounts, newItem]);
+    setPaymentMethod(newItem);
+
+    // 🌟 クレジットカードとして予算を設定した場合はローカルに記憶する
+    if (isCreditCard && newAccBudget > 0) {
+      const currentBudgets = JSON.parse(localStorage.getItem('cardBudgets') || '{}');
+      currentBudgets[newAccName.trim()] = Number(newAccBudget);
+      localStorage.setItem('cardBudgets', JSON.stringify(currentBudgets));
+      showAlert(`予算 ¥${Number(newAccBudget).toLocaleString()} で登録完了！`, "success");
+    } else {
+      showAlert("決済手段を追加しました", "success");
+    }
+    
+    setShowAccountPanel(false);
   };
 
   const processReceipt = async (e) => {
@@ -172,29 +203,17 @@ export default function MobileInputForm() {
   };
 
   const handleKeypadPress = (key) => {
-    if (key === 'C') {
-      setCalcStr(''); setAmount('');
-    } else if (key === 'BS') {
-      setCalcStr(prev => prev.slice(0, -1));
-    } else if (key === '=') {
+    if (key === 'C') { setCalcStr(''); setAmount(''); } 
+    else if (key === 'BS') { setCalcStr(prev => prev.slice(0, -1)); } 
+    else if (key === '=') {
       const result = evaluateMath(calcStr);
-      if (result) {
-        setAmount(result);
-        setCalcStr(result);
-        addToHistory(result);
-        setIsKeypadOpen(false); 
-      }
-    } else {
-      setCalcStr(prev => prev + key);
-    }
+      if (result) { setAmount(result); setCalcStr(result); addToHistory(result); setIsKeypadOpen(false); }
+    } else { setCalcStr(prev => prev + key); }
   };
 
   const addToHistory = (val) => {
     if (!val) return;
-    setCalcHistory(prev => {
-      const updated = [val, ...prev.filter(item => item !== val)].slice(0, 5);
-      return updated;
-    });
+    setCalcHistory(prev => [val, ...prev.filter(item => item !== val)].slice(0, 5));
   };
 
   const togglePin = () => {
@@ -207,10 +226,65 @@ export default function MobileInputForm() {
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative' }}>
       
-      {/* アラート等 */}
       {customAlert.isOpen && (
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: customAlert.type === 'success' ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 51, 102, 0.1)', border: `1px solid ${customAlert.type === 'success' ? '#00ff66' : '#ff3366'}`, color: customAlert.type === 'success' ? '#00ff66' : '#ff3366', padding: '12px 24px', borderRadius: '30px', fontWeight: 'bold', fontSize: '14px', backdropFilter: 'blur(10px)', zIndex: 10000 }}>
           {customAlert.type === 'success' ? '✅' : '⚠️'} {customAlert.message}
+        </div>
+      )}
+
+      {/* 🌟 復活：カテゴリ追加用プロンプト */}
+      {customPrompt.isOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#11141a', border: '1px solid #00bfff', borderRadius: '12px', padding: '20px', width: '80%', maxWidth: '320px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.2)' }}>
+            <h3 style={{ margin: '0 0 15px 0', color: '#fff', fontSize: '16px' }}>{customPrompt.title}</h3>
+            <input type="text" autoFocus value={customPrompt.text} onChange={(e) => setCustomPrompt({...customPrompt, text: e.target.value})} onKeyDown={(e) => e.key === 'Enter' && handlePromptSubmit()} placeholder="入力してください..." style={{ ...inputStyle, marginBottom: '20px' }} />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setCustomPrompt({ ...customPrompt, isOpen: false })} style={{ flex: 1, padding: '10px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px' }}>キャンセル</button>
+              <button onClick={handlePromptSubmit} style={{ flex: 1, padding: '10px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>追加</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 新規搭載：カード＆予算登録パネル */}
+      {showAccountPanel && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', padding: '25px', width: '85%', maxWidth: '340px', boxShadow: '0 0 40px rgba(0, 255, 102, 0.2)', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            
+            <h3 style={{ margin: 0, color: '#00ff66', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>⚙️</span> SYSTEM CONFIG // 決済追加
+            </h3>
+
+            <div>
+              <div style={labelStyle}>[1] 口座・カード名</div>
+              <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder="例：リクルートカード" style={inputStyle} />
+            </div>
+
+            <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid ${isCreditCard ? '#ff9900' : '#252838'}`, transition: 'all 0.3s' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', color: isCreditCard ? '#ff9900' : '#fff', fontWeight: 'bold', fontSize: '14px' }}>
+                <input type="checkbox" checked={isCreditCard} onChange={e => setIsCreditCard(e.target.checked)} style={{ width: '18px', height: '18px', accentColor: '#ff9900' }} />
+                💳 予算（HP）を管理する
+              </label>
+              
+              {isCreditCard && (
+                <div style={{ marginTop: '15px', animation: 'fadeIn 0.3s ease-out' }}>
+                  <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                  <div style={{ ...labelStyle, color: '#ff9900' }}>[2] 今月の利用上限（予算）</div>
+                  <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff990055', borderRadius: '6px', padding: '0 10px' }}>
+                    <span style={{ color: '#ff9900', fontSize: '18px' }}>¥</span>
+                    <input type="number" value={newAccBudget} onChange={e => setNewAccBudget(e.target.value)} placeholder="20000" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff9900', fontSize: '20px', fontWeight: 'bold' }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button onClick={() => setShowAccountPanel(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold' }}>CANCEL</button>
+              <button onClick={handleSaveAccount} style={{ flex: 1, padding: '12px', background: isCreditCard ? '#ff9900' : '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', boxShadow: `0 0 15px ${isCreditCard ? 'rgba(255,153,0,0.4)' : 'rgba(0,255,102,0.4)'}` }}>
+                登録完了
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -218,7 +292,7 @@ export default function MobileInputForm() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
           <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
-            収支入力欄
+            支出・収入クイック入力
           </h2>    
        </div>
 
@@ -231,15 +305,9 @@ export default function MobileInputForm() {
             <button onClick={() => handleTypeChange('transfer')} style={tabStyle(type === 'transfer', '#b666ff', '#aaa')}>振替</button>
           </div>
 
-          {/* 🌟 修正ポイント2: 発生日時のレイアウトを修正（width 100% と boxSizing border-box） */}
-         <div style={{ boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
+          <div style={{ boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
             <div style={labelStyle}>発生日時</div>
-            <input 
-              type="datetime-local" 
-              value={date} 
-              onChange={(e) => setDate(e.target.value)} 
-              style={{ ...inputStyle, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} 
-            />
+            <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} />
           </div>
 
           <div>
@@ -250,13 +318,8 @@ export default function MobileInputForm() {
                 <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
               </button>
               
-              <div 
-                onClick={() => setIsKeypadOpen(true)}
-                style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text', position: 'relative' }}
-              >
-                <div style={{ fontSize: '12px', color: '#888', height: '14px', fontFamily: 'monospace' }}>
-                  {calcStr || '0'}
-                </div>
+              <div onClick={() => setIsKeypadOpen(true)} style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text', position: 'relative' }}>
+                <div style={{ fontSize: '12px', color: '#888', height: '14px', fontFamily: 'monospace' }}>{calcStr || '0'}</div>
                 <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold', fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#555', marginRight: '4px', fontSize: '20px' }}>¥</span>
                   {livePreview ? Number(livePreview).toLocaleString() : '0'}
@@ -333,91 +396,36 @@ export default function MobileInputForm() {
       </div>
 
       {/* 🌟 ハッカー仕様 カスタムキーパッド */}
-      <div style={{
-        position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', 
-        background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)',
-        transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 1000, padding: '15px 10px 30px 10px'
-      }}>
-        
-        {/* 🌟 修正ポイント1: キーパッド上部のHUD（入力状況ディスプレイ） */}
-        <div style={{ 
-          background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '10px 15px', 
-          marginBottom: '15px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
-          boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)'
-        }}>
-          <div style={{ fontSize: '14px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>
-            {calcStr || '0'}
-          </div>
-          <div style={{ color: '#fff', fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-            <span style={{ color: '#555', marginRight: '5px' }}>¥</span>
-            {livePreview ? Number(livePreview).toLocaleString() : '0'}
-          </div>
+      <div style={{ position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)', transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 10000, padding: '15px 10px 30px 10px' }}>
+        <div style={{ background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '10px 15px', marginBottom: '15px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)' }}>
+          <div style={{ fontSize: '14px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>{calcStr || '0'}</div>
+          <div style={{ color: '#fff', fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace' }}><span style={{ color: '#555', marginRight: '5px' }}>¥</span>{livePreview ? Number(livePreview).toLocaleString() : '0'}</div>
         </div>
-
-        {/* メモリー＆アクションバー */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
-          <button onClick={togglePin} style={{ ...memBtnStyle, borderColor: '#ff9900', color: '#ff9900' }}>
-            📌 記憶 {pinnedAmount ? `(¥${Number(pinnedAmount).toLocaleString()})` : ''}
-          </button>
-          {pinnedAmount && (
-            <button onClick={() => setCalcStr(pinnedAmount)} style={{ ...memBtnStyle, background: '#ff990022' }}>呼出</button>
-          )}
-          <div style={{ flex: 1, display: 'flex', gap: '5px' }}>
-            {calcHistory.map((h, i) => (
-              <button key={i} onClick={() => setCalcStr(h)} style={histBtnStyle}>¥{Number(h).toLocaleString()}</button>
-            ))}
-          </div>
+          <button onClick={togglePin} style={{ ...memBtnStyle, borderColor: '#ff9900', color: '#ff9900' }}>📌 記憶 {pinnedAmount ? `(¥${Number(pinnedAmount).toLocaleString()})` : ''}</button>
+          {pinnedAmount && <button onClick={() => setCalcStr(pinnedAmount)} style={{ ...memBtnStyle, background: '#ff990022' }}>呼出</button>}
+          <div style={{ flex: 1, display: 'flex', gap: '5px' }}>{calcHistory.map((h, i) => <button key={i} onClick={() => setCalcStr(h)} style={histBtnStyle}>¥{Number(h).toLocaleString()}</button>)}</div>
           <button onClick={() => setIsKeypadOpen(false)} style={{ ...memBtnStyle, borderColor: '#ff3366', color: '#ff3366' }}>閉じる</button>
         </div>
-
-        {/* テンキーグリッド */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
           {['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '-', '0', '00', '+', '='].map((key) => {
-            const isOp = ['÷', '×', '-', '+'].includes(key);
-            const isEq = key === '=';
-            const val = key === '÷' ? '/' : key === '×' ? '*' : key;
-
-            return (
-              <button 
-                key={key} 
-                onClick={() => handleKeypadPress(val)}
-                style={{
-                  ...keyBtnStyle, 
-                  background: isEq ? '#00ff66' : isOp ? '#1a1d24' : '#11141a',
-                  color: isEq ? '#000' : isOp ? '#00bfff' : '#fff',
-                  border: `1px solid ${isEq ? '#00ff66' : '#252838'}`,
-                  gridRow: isEq ? 'span 2' : 'auto',
-                  height: isEq ? '100%' : '55px'
-                }}
-              >
-                {key}
-              </button>
-            );
+            const isOp = ['÷', '×', '-', '+'].includes(key); const isEq = key === '='; const val = key === '÷' ? '/' : key === '×' ? '*' : key;
+            return <button key={key} onClick={() => handleKeypadPress(val)} style={{ ...keyBtnStyle, background: isEq ? '#00ff66' : isOp ? '#1a1d24' : '#11141a', color: isEq ? '#000' : isOp ? '#00bfff' : '#fff', border: `1px solid ${isEq ? '#00ff66' : '#252838'}`, gridRow: isEq ? 'span 2' : 'auto', height: isEq ? '100%' : '55px' }}>{key}</button>;
           })}
-          {/* クリアボタン類 */}
           <button onClick={() => handleKeypadPress('C')} style={{ ...keyBtnStyle, color: '#ff3366', background: '#11141a', border: '1px solid #252838', height: '55px' }}>C</button>
           <button onClick={() => handleKeypadPress('BS')} style={{ ...keyBtnStyle, color: '#ff9900', background: '#11141a', border: '1px solid #252838', height: '55px' }}>BS</button>
         </div>
       </div>
-      
-      {/* 背景暗幕 (キーパッドが開いている時) */}
-      {isKeypadOpen && (
-        <div 
-          onClick={() => setIsKeypadOpen(false)}
-          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 999 }}
-        />
-      )}
-
+      {isKeypadOpen && <div onClick={() => setIsKeypadOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 9999 }} />}
     </div>
   );
 }
 
 const tabStyle = (isActive, activeColor, textColor) => ({ flex: 1, padding: '10px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', background: isActive ? activeColor : 'transparent', color: isActive ? (activeColor === '#ff3366' ? '#fff' : '#000') : textColor });
 const labelStyle = { color: '#aaa', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' };
-const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '16px', outline: 'none' };const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 15px', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '16px', outline: 'none' };
+const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 15px', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const addBtnStyle = { background: 'transparent', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 15px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
-
-// キーパッド用スタイル
 const keyBtnStyle = { borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', transition: 'all 0.1s active:scale-95' };
 const memBtnStyle = { background: '#11141a', border: '1px solid #333', color: '#aaa', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
 const histBtnStyle = { background: '#1a1d24', border: '1px solid #00bfff44', color: '#00bfff', padding: '8px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
