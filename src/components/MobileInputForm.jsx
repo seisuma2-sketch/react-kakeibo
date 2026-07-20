@@ -40,18 +40,17 @@ export default function MobileInputForm() {
   const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
 
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
-  
-  // 🌟 カテゴリ追加用のプロンプト（復活）
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
 
-  // 🌟 💳 新規口座・カード追加（予算設定機能付き）の専用パネル用State
+  // 🌟 💳 新規口座・カード追加用（クレジット設定強化版）
   const [showAccountPanel, setShowAccountPanel] = useState(false);
+  const [newAccType, setNewAccType] = useState('bank'); // 'bank' or 'credit'
   const [newAccName, setNewAccName] = useState('');
-  const [isCreditCard, setIsCreditCard] = useState(false);
   const [newAccBudget, setNewAccBudget] = useState('');
+  const [newAccResetDay, setNewAccResetDay] = useState('1'); // 更新日
+  const [newAccPaymentDay, setNewAccPaymentDay] = useState('27'); // 支払日
 
   const fileInputRef = useRef(null);
-
   const [isKeypadOpen, setIsKeypadOpen] = useState(false);
   const [calcHistory, setCalcHistory] = useState([]);
   const [pinnedAmount, setPinnedAmount] = useState(null);
@@ -79,11 +78,12 @@ export default function MobileInputForm() {
 
   const handleAddCategory = () => setCustomPrompt({ isOpen: true, title: '新しいカテゴリ名を入力', target: 'category', text: '' });
   
-  // 🌟 変更点：口座追加ボタンを押したら専用パネルを開く
   const handleAddAccount = () => {
     setNewAccName('');
-    setIsCreditCard(false);
+    setNewAccType('bank');
     setNewAccBudget('');
+    setNewAccResetDay('1');
+    setNewAccPaymentDay('27');
     setShowAccountPanel(true);
   };
 
@@ -96,23 +96,30 @@ export default function MobileInputForm() {
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
 
-  // 🌟 カード＆予算登録ロジック
+  // 🌟 クレジットカードのフル設定を保存するロジック
   const handleSaveAccount = () => {
     if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
     
-    // アイコンを適当に割り当ててリストに追加
-    const newItem = `/icon-other.png ${newAccName.trim()}`;
-    setAccounts([...accounts, newItem]);
+    const iconPath = newAccType === 'credit' ? '/icon-other.png' : '/icon-cash.png';
+    const newItem = `${iconPath} ${newAccName.trim()}`;
+    
+    if (!accounts.includes(newItem)) {
+        setAccounts([...accounts, newItem]);
+    }
     setPaymentMethod(newItem);
 
-    // 🌟 クレジットカードとして予算を設定した場合はローカルに記憶する
-    if (isCreditCard && newAccBudget > 0) {
-      const currentBudgets = JSON.parse(localStorage.getItem('cardBudgets') || '{}');
-      currentBudgets[newAccName.trim()] = Number(newAccBudget);
-      localStorage.setItem('cardBudgets', JSON.stringify(currentBudgets));
-      showAlert(`予算 ¥${Number(newAccBudget).toLocaleString()} で登録完了！`, "success");
+    if (newAccType === 'credit') {
+      // データベース（ローカル）にカードの詳細設定をオブジェクトとして保存
+      const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+      currentSettings[newAccName.trim()] = {
+        budget: Number(newAccBudget) || 0,
+        resetDay: Number(newAccResetDay) || 1,
+        paymentDay: Number(newAccPaymentDay) || 27
+      };
+      localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+      showAlert(`💳 ${newAccName.trim()} を残枠管理に登録しました！`, "success");
     } else {
-      showAlert("決済手段を追加しました", "success");
+      showAlert("口座を追加しました", "success");
     }
     
     setShowAccountPanel(false);
@@ -232,7 +239,6 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* 🌟 復活：カテゴリ追加用プロンプト */}
       {customPrompt.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
           <div style={{ background: '#11141a', border: '1px solid #00bfff', borderRadius: '12px', padding: '20px', width: '80%', maxWidth: '320px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.2)' }}>
@@ -246,7 +252,7 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* 🌟 新規搭載：カード＆予算登録パネル */}
+      {/* 🌟 完全に書き直された決済追加パネル */}
       {showAccountPanel && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', padding: '25px', width: '85%', maxWidth: '340px', boxShadow: '0 0 40px rgba(0, 255, 102, 0.2)', display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -255,32 +261,53 @@ export default function MobileInputForm() {
               <span>⚙️</span> SYSTEM CONFIG // 決済追加
             </h3>
 
-            <div>
-              <div style={labelStyle}>[1] 口座・カード名</div>
-              <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder="例：リクルートカード" style={inputStyle} />
+            <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #252838' }}>
+              <button onClick={() => setNewAccType('bank')} style={tabStyle(newAccType === 'bank', '#00bfff', '#aaa')}>🏦 一般口座</button>
+              <button onClick={() => setNewAccType('credit')} style={tabStyle(newAccType === 'credit', '#ff9900', '#aaa')}>💳 クレジット</button>
             </div>
 
-            <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid ${isCreditCard ? '#ff9900' : '#252838'}`, transition: 'all 0.3s' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', color: isCreditCard ? '#ff9900' : '#fff', fontWeight: 'bold', fontSize: '14px' }}>
-                <input type="checkbox" checked={isCreditCard} onChange={e => setIsCreditCard(e.target.checked)} style={{ width: '18px', height: '18px', accentColor: '#ff9900' }} />
-                💳 予算（HP）を管理する
-              </label>
-              
-              {isCreditCard && (
-                <div style={{ marginTop: '15px', animation: 'fadeIn 0.3s ease-out' }}>
-                  <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-                  <div style={{ ...labelStyle, color: '#ff9900' }}>[2] 今月の利用上限（予算）</div>
+            <div>
+              <div style={labelStyle}>[1] {newAccType === 'credit' ? 'クレジットカード名' : '口座名'}</div>
+              <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder={newAccType === 'credit' ? "例：リクルートカード" : "例：PayPay銀行"} style={inputStyle} />
+            </div>
+
+            {/* 💳 クレジットカード専用のハッキング設定フォーム */}
+            {newAccType === 'credit' && (
+              <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, animation: 'fadeIn 0.3s ease-out', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                
+                <div>
+                  <div style={{ ...labelStyle, color: '#ff9900' }}>[2] 今月の利用枠（予算上限）</div>
                   <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff990055', borderRadius: '6px', padding: '0 10px' }}>
                     <span style={{ color: '#ff9900', fontSize: '18px' }}>¥</span>
                     <input type="number" value={newAccBudget} onChange={e => setNewAccBudget(e.target.value)} placeholder="20000" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff9900', fontSize: '20px', fontWeight: 'bold' }} />
                   </div>
                 </div>
-              )}
-            </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ ...labelStyle, color: '#00ff66', fontSize: '10px' }}>[3] 更新日 (リセット)</div>
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #00ff6655', borderRadius: '6px', padding: '0 10px' }}>
+                      <span style={{ color: '#00ff66', fontSize: '12px' }}>毎月</span>
+                      <input type="number" value={newAccResetDay} onChange={e => setNewAccResetDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#00ff66', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
+                      <span style={{ color: '#00ff66', fontSize: '12px' }}>日</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ ...labelStyle, color: '#ff3366', fontSize: '10px' }}>[4] 支払日 (引き落とし)</div>
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff336655', borderRadius: '6px', padding: '0 10px' }}>
+                      <span style={{ color: '#ff3366', fontSize: '12px' }}>毎月</span>
+                      <input type="number" value={newAccPaymentDay} onChange={e => setNewAccPaymentDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff3366', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
+                      <span style={{ color: '#ff3366', fontSize: '12px' }}>日</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <button onClick={() => setShowAccountPanel(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold' }}>CANCEL</button>
-              <button onClick={handleSaveAccount} style={{ flex: 1, padding: '12px', background: isCreditCard ? '#ff9900' : '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', boxShadow: `0 0 15px ${isCreditCard ? 'rgba(255,153,0,0.4)' : 'rgba(0,255,102,0.4)'}` }}>
+              <button onClick={handleSaveAccount} style={{ flex: 1, padding: '12px', background: newAccType === 'credit' ? '#ff9900' : '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', boxShadow: `0 0 15px ${newAccType === 'credit' ? 'rgba(255,153,0,0.4)' : 'rgba(0,255,102,0.4)'}` }}>
                 登録完了
               </button>
             </div>
