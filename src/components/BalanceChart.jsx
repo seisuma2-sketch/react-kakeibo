@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as echarts from 'echarts';
 
-// 🌟 クレジットカードの更新日から今月の開始・終了日時を割り出すエンジン
 const getCycleBounds = (resetDay, currentDate = new Date()) => {
   const rd = parseInt(resetDay, 10);
   const year = currentDate.getFullYear();
@@ -19,56 +18,52 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
   return { startDate, endDate };
 };
 
-export default function BalanceChart({ transactions = [], ghostAccounts = [] }) {
+export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey }) {
   const chartRef = useRef(null);
   const [now, setNow] = useState(new Date());
 
-  // 1分ごとに時計を動かし、日付が変わった瞬間のリセットを検知する
+  // 🌟 長押し編集モードと履歴モーダル用のState
+  const [reorderMode, setReorderMode] = useState(false);
+  const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
+  const pressTimer = useRef(null);
+
+  const [selectedAccHistory, setSelectedAccHistory] = useState(null); // タップした口座名
+
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
 
-  // 🌟 名前と画像パスを自動で結びつける対応表（辞書）
   const iconMap = {
-    '現金': '/icon-cash.png',
-    '三井住友銀行': '/icon-smbc.png',
-    '三菱UFJ銀行': '/icon-mufg.png',
-    'ゆうちょ銀行': '/icon-yucho.png',
-    'PayPay': '/icon-paypay.png',
-    'EVERING': '/icon-evering.png',
-    '食費': '/icon-food.png',
-    'リクルートカード': '/icon-other.png'
+    '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
+    'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
+    '食費': '/icon-food.png', 'リクルートカード': '/icon-other.png'
   };
 
-  // 🌟 核心：グラフ用の計算 ＆ クレジットカードのサイクル計算を一網打尽にするマルチエンジン
   const systemData = useMemo(() => {
-    // ローカルから最新のカード設定を取得
     const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-    
     const cardData = {};
     Object.keys(creditSettings).forEach(name => {
       if (ghostAccounts.includes(name)) return;
-      cardData[name] = { ...creditSettings[name], used: 0 };
+      cardData[name] = { ...creditSettings[name], used: 0, usageCount: 0 };
     });
 
-    const finalBalances = {};
     const chronologicalTx = [...transactions].reverse();
     const runningBalances = {};
+    const usageCounts = {}; 
     const dLabels = [];
     const bData = [];
 
-    // 1️⃣ グラフ用の時系列データ と 最終残高の同時計算
     chronologicalTx.forEach(tx => {
       if (!tx.date) return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
-      
       const amount = Number(tx.amount) || 0;
       const method = tx.paymentMethod || '不明';
       const category = tx.category || '不明';
 
       if (!runningBalances[method]) runningBalances[method] = 0;
+      usageCounts[method] = (usageCounts[method] || 0) + 1;
 
       if (tx.type === 'income') {
         runningBalances[method] += amount;
@@ -76,28 +71,26 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
         runningBalances[method] -= amount;
       } else if (tx.type === 'transfer') {
         if (!runningBalances[category]) runningBalances[category] = 0;
+        usageCounts[category] = (usageCounts[category] || 0) + 1;
         runningBalances[method] -= amount;
         runningBalances[category] += amount;
       }
 
-      // グラフの縦軸（ゴースト口座を除外したその時点の総資産）
       let currentVisibleTotal = 0;
       for (const [accName, accBalance] of Object.entries(runningBalances)) {
-        if (!ghostAccounts.includes(accName)) {
-          currentVisibleTotal += accBalance;
-        }
+        if (!ghostAccounts.includes(accName)) currentVisibleTotal += accBalance;
       }
       dLabels.push(dateStr);
       bData.push(currentVisibleTotal);
     });
 
-    // 2️⃣ クレジットカードの「今サイクル内」の使用額を精密に計算
     transactions.forEach(tx => {
       if (!tx.date || tx.type !== 'expense') return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const method = tx.paymentMethod || '不明';
 
       if (cardData[method]) {
+        cardData[method].usageCount = usageCounts[method] || 0;
         const bounds = getCycleBounds(cardData[method].resetDay, now);
         if (txDate >= bounds.startDate && txDate <= bounds.endDate) {
           cardData[method].used += Number(tx.amount) || 0;
@@ -105,58 +98,59 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
       }
     });
 
-    // 3️⃣ 一般口座だけの残高を抽出（全期間の計算結果からカードとゴーストを除外）
-    // 最終的な runningBalances（ループ終了時の一番最新の状態）を使用
     const bankData = {};
     let totalBank = 0;
     Object.entries(runningBalances).forEach(([name, bal]) => {
       if (ghostAccounts.includes(name)) return;
-      if (cardData[name]) return; // クレジットカードは除外
-      bankData[name] = bal;
+      if (cardData[name]) return; 
+      bankData[name] = { balance: bal, usageCount: usageCounts[name] || 0 };
       totalBank += bal;
     });
 
+    // 🌟 魔法のソートアルゴリズム
+    const applySort = (entriesArray) => {
+      if (sortKey === 'custom') {
+        return entriesArray.sort((a, b) => {
+          let ia = customOrder.indexOf(a[0]); let ib = customOrder.indexOf(b[0]);
+          if (ia === -1) ia = 999; if (ib === -1) ib = 999;
+          return ia - ib;
+        });
+      }
+      return entriesArray.sort((a, b) => {
+        let valA, valB;
+        if (sortKey === 'amount') {
+          valA = a[1].budget !== undefined ? a[1].budget - a[1].used : a[1].balance;
+          valB = b[1].budget !== undefined ? b[1].budget - b[1].used : b[1].balance;
+        } else if (sortKey === 'name') {
+          valA = a[0]; valB = b[0];
+        } else if (sortKey === 'usage') {
+          valA = a[1].usageCount; valB = b[1].usageCount;
+        }
+        if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    };
+
     return {
-      cards: cardData,
-      banks: bankData,
+      cards: applySort(Object.entries(cardData)),
+      banks: applySort(Object.entries(bankData)),
       totalBankBalance: totalBank,
       dateLabels: dLabels,
       balanceData: bData
     };
-  }, [transactions, ghostAccounts, now]);
+  }, [transactions, ghostAccounts, now, sortKey, sortOrder, customOrder]);
 
-  // 🌟 EChartsグラフの描画処理（完全に復活）
   useEffect(() => {
     if (!chartRef.current) return;
     const chartInstance = echarts.init(chartRef.current);
     const option = {
       backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        borderColor: '#00ff66',
-        textStyle: { color: '#fff' },
-        formatter: function (params) {
-          const val = params[0].value.toLocaleString();
-          return `${params[0].name}<br/>表示総資産: <span style="color:#00ff66;font-weight:bold;">¥${val}</span>`;
-        }
-      },
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(0,0,0,0.8)', borderColor: '#00ff66', textStyle: { color: '#fff' }, formatter: function (params) { return `${params[0].name}<br/>表示総資産: <span style="color:#00ff66;font-weight:bold;">¥${params[0].value.toLocaleString()}</span>`; } },
       grid: { left: '2%', right: '4%', bottom: '5%', containLabel: true },
       xAxis: { type: 'category', boundaryGap: false, data: systemData.dateLabels, axisLine: { lineStyle: { color: 'rgba(0, 255, 102, 0.5)' } }, axisLabel: { color: '#aaa' } },
       yAxis: { type: 'value', axisLine: { show: false }, splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } }, axisLabel: { color: '#aaa' } },
-      series: [
-        {
-          name: '総資産残高', type: 'line', smooth: true, data: systemData.balanceData,
-          itemStyle: { color: '#00ff66' },
-          lineStyle: { width: 3, shadowColor: '#00ff66', shadowBlur: 10 },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(0, 255, 102, 0.4)' },
-              { offset: 1, color: 'rgba(0, 255, 102, 0.0)' }
-            ])
-          }
-        }
-      ]
+      series: [{ name: '総資産残高', type: 'line', smooth: true, data: systemData.balanceData, itemStyle: { color: '#00ff66' }, lineStyle: { width: 3, shadowColor: '#00ff66', shadowBlur: 10 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(0, 255, 102, 0.4)' }, { offset: 1, color: 'rgba(0, 255, 102, 0.0)' }]) } }]
     };
     chartInstance.setOption(option);
     const handleResize = () => chartInstance.resize();
@@ -164,12 +158,90 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
     return () => { window.removeEventListener('resize', handleResize); chartInstance.dispose(); };
   }, [systemData]);
 
+  // 🌟 長押しハンドラー
+  const handlePointerDown = () => {
+    pressTimer.current = setTimeout(() => {
+      setReorderMode(prev => !prev);
+      setSortKey('custom'); // 長押しした瞬間にカスタム配置モードに強制オーバーライド
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    }, 800);
+  };
+  const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
+
+  // 🌟 並び替え矢印のロジック
+  const moveItem = (index, array, direction) => {
+    const newArray = [...array];
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= newArray.length) return;
+    const temp = newArray[index];
+    newArray[index] = newArray[swapIndex];
+    newArray[swapIndex] = temp;
+    
+    const combinedOrder = [...newArray.map(n => n[0])]; // 銀行とカードは別々で動かすが、キーリストとしては保存
+    const merged = Array.from(new Set([...customOrder, ...combinedOrder]));
+    setCustomOrder(merged);
+    localStorage.setItem('customOrderConfig', JSON.stringify(merged));
+  };
+
+  // 🌟 1ヶ月の履歴を計算
+  const getOneMonthHistory = (accName) => {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    
+    return transactions.filter(tx => {
+      const isMatch = tx.paymentMethod === accName || tx.category === accName;
+      const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
+      return isMatch && txDate >= oneMonthAgo;
+    }).sort((a, b) => b.date - a.date);
+  };
+
   const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative' }}>
       
-      {/* 🚀 セクション1：グラフ（完全維持） */}
+      {/* 履歴ホログラムモーダル */}
+      {selectedAccHistory && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '400px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 30px rgba(0,255,102,0.2)' }}>
+            <div style={{ padding: '20px', borderBottom: '1px solid #00ff6644', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#00ff66', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>📡</span> [{selectedAccHistory}] 過去1ヶ月の通信ログ
+              </h3>
+              <button onClick={() => setSelectedAccHistory(null)} style={{ background: 'transparent', border: 'none', color: '#ff3366', fontSize: '20px', cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {getOneMonthHistory(selectedAccHistory).length === 0 ? (
+                <div style={{ color: '#666', textAlign: 'center', fontFamily: 'monospace' }}>NO DATA FOUND IN RECENT 30 DAYS</div>
+              ) : (
+                getOneMonthHistory(selectedAccHistory).map(tx => {
+                  const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
+                  const isExpense = tx.type === 'expense' || (tx.type === 'transfer' && tx.paymentMethod === selectedAccHistory);
+                  return (
+                    <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', background: '#11141a', padding: '12px', borderRadius: '6px', borderLeft: `3px solid ${isExpense ? '#ff3366' : '#00bfff'}` }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>{txDate.toLocaleDateString()}</div>
+                        <div style={{ fontSize: '14px', color: '#ccc' }}>{tx.type === 'transfer' ? (isExpense ? `▶ ${tx.category}へ` : `◀ ${tx.paymentMethod}から`) : tx.category}</div>
+                      </div>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace', color: isExpense ? '#ff3366' : '#00bfff' }}>
+                        {isExpense ? '-' : '+'}¥{Number(tx.amount).toLocaleString()}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 編集モードアラート */}
+      {reorderMode && (
+        <div style={{ background: '#ff990022', border: '1px dashed #ff9900', color: '#ff9900', padding: '10px', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', animation: 'pulse 2s infinite' }}>
+          ⚠️ CONFIG OVERRIDE MODE (配列編集中)
+        </div>
+      )}
+
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838' }}>
         <h2 style={{ fontSize: '18px', borderBottom: '1px solid #252838', paddingBottom: '10px', marginTop: 0, color: '#fff', fontFamily: 'monospace', letterSpacing: '1px' }}>
           📈 📊 総合残高推移トレンド
@@ -177,40 +249,47 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
         <div ref={chartRef} style={{ width: '100%', height: '240px', marginTop: '10px' }}></div>
       </div>
 
-      {/* 🚀 セクション2：クレジットカード残枠（HPゲージ） */}
-      {Object.keys(systemData.cards).length > 0 && (
+      {systemData.cards.length > 0 && (
         <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838' }}>
           <h2 style={{ fontSize: '16px', borderBottom: '1px solid #252838', paddingBottom: '10px', marginTop: 0, color: '#ff9900', marginBottom: '20px', fontFamily: 'monospace' }}>
             💳 CREDIT CARD HP // クレジット残枠
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
-            {Object.entries(systemData.cards).map(([name, data]) => {
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {systemData.cards.map(([name, data], idx) => {
               const bounds = getCycleBounds(data.resetDay, now);
               const remain = Math.max(0, data.budget - data.used);
               const isOver = data.used > data.budget;
               const percent = data.budget > 0 ? Math.max(0, Math.min(100, (remain / data.budget) * 100)) : 0;
-
               let barColor = '#00ff66';
               if (percent <= 20 || isOver) barColor = '#ff3366';
               else if (percent <= 50) barColor = '#ff9900';
 
               return (
-                <div key={name} className="account-cartridge" style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={name} className={reorderMode ? 'shake' : 'account-cartridge'} 
+                     onPointerDown={handlePointerDown} onPointerUp={cancelPress} onPointerLeave={cancelPress}
+                     onClick={() => !reorderMode && setSelectedAccHistory(name)}
+                     style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer' }}>
+                  
+                  {reorderMode && (
+                    <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
+                      <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.cards, 'up'); }} style={arrowBtnStyle}>▲</button>
+                      <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.cards, 'down'); }} style={arrowBtnStyle}>▼</button>
+                    </div>
+                  )}
+
+                  <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: reorderMode ? '40px' : '0' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span style={{ fontSize: '18px' }}>💳</span>}
+                      {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💳</span>}
                       <span>{name}</span>
                     </span>
-                    <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
-                      {formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}
-                    </span>
+                    <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>
                   </div>
 
-                  <div style={{ color: barColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: `0 0 10px ${barColor}44` }}>
+                  <div style={{ color: barColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: `0 0 10px ${barColor}44`, paddingRight: reorderMode ? '40px' : '0' }}>
                     {isOver ? 'OVER!' : `¥${remain.toLocaleString()}`}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace', paddingRight: reorderMode ? '40px' : '0' }}>
                     <span>LIMIT: ¥{data.budget.toLocaleString()}</span>
                     <span>{percent.toFixed(0)}% HP</span>
                   </div>
@@ -225,31 +304,40 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
         </div>
       )}
 
-      {/* 🚀 セクション3：一般口座（データカートリッジ） */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#00bfff', fontFamily: 'monospace' }}>
-            🏦 BANK ACCOUNTS // 資金残高
-          </h2>
+          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#00bfff', fontFamily: 'monospace' }}>🏦 BANK ACCOUNTS // 資金残高</h2>
           <span style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
         </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-          {Object.entries(systemData.banks).sort((a, b) => b[1] - a[1]).map(([name, amount]) => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {systemData.banks.map(([name, data], idx) => {
+            const amount = data.balance;
             const percent = systemData.totalBankBalance > 0 ? Math.min(100, Math.max(0, (amount / systemData.totalBankBalance) * 100)) : 0;
             const isNegative = amount < 0;
 
             return (
-              <div key={name} className="account-cartridge" style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+              <div key={name} className={reorderMode ? 'shake' : 'account-cartridge'}
+                   onPointerDown={handlePointerDown} onPointerUp={cancelPress} onPointerLeave={cancelPress}
+                   onClick={() => !reorderMode && setSelectedAccHistory(name)}
+                   style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer' }}>
+                
+                {reorderMode && (
+                  <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
+                    <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.banks, 'up'); }} style={arrowBtnStyle}>▲</button>
+                    <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.banks, 'down'); }} style={arrowBtnStyle}>▼</button>
+                  </div>
+                )}
+
+                <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', paddingRight: reorderMode ? '40px' : '0' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span style={{ fontSize: '18px' }}>💽</span>}
+                    {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💽</span>}
                     <span>{name}</span>
                   </span>    
                   <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
                 </div>
                 
-                <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>
+                <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', paddingRight: reorderMode ? '40px' : '0' }}>
                   ¥{amount.toLocaleString()}
                 </div>
 
@@ -266,8 +354,18 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [] }) 
         .account-cartridge { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
         .account-cartridge:hover { transform: translateY(-4px); border-color: #00bfff !important; box-shadow: 0 4px 20px rgba(0, 191, 255, 0.15); }
         .energy-bar { animation: pulse 2.5s infinite ease-in-out; transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .shake { animation: tilt-shaking 0.5s infinite; border-color: #ff9900 !important; }
         @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+        @keyframes tilt-shaking {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(0.5deg); }
+          50% { transform: rotate(0eg); }
+          75% { transform: rotate(-0.5deg); }
+          100% { transform: rotate(0deg); }
+        }
       `}</style>
     </div>
   );
 }
+
+const arrowBtnStyle = { background: '#11141a', color: '#ff9900', border: '1px solid #ff9900', borderRadius: '4px', padding: '6px', cursor: 'pointer', fontWeight: 'bold' };

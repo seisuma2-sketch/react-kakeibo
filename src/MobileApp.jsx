@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
-// 🌟 変更点: signInWithEmailAndPassword を消し、signOut をインポート
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -8,8 +7,9 @@ import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
 import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList';
+import MobileCalendar from './components/MobileCalendar'; // 🌟 カレンダー
 import NebulaCore3D from './components/NebulaCore3D';
-import AuthScreen from './components/AuthScreen'; // 🌟 認証画面コンポーネント
+import AuthScreen from './components/AuthScreen'; 
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -38,6 +38,14 @@ export default function MobileApp() {
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
+  // 🌟 ソート（並び替え）用のState
+  const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
+  const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'desc');
+  useEffect(() => {
+    localStorage.setItem('sortKey', sortKey);
+    localStorage.setItem('sortOrder', sortOrder);
+  }, [sortKey, sortOrder]);
+
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const microphoneRef = useRef(null);
@@ -47,7 +55,6 @@ export default function MobileApp() {
   const holdStartTimerRef = useRef(null); 
   const [isListening, setIsListening] = useState(false); 
 
-  // 🌟 変更点: ログイン監視（自動ログインを廃止し、Firebaseの認証状態を監視）
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -73,12 +80,11 @@ export default function MobileApp() {
     };
   }, [user]);
 
-  // 🌟 新機能: ログアウト処理（システム切断）
   const handleLogout = async () => {
     if (window.confirm("システムから切断（ログアウト）しますか？")) {
       try {
         await signOut(auth);
-        setIsMenuOpen(false); // メニューを閉じる
+        setIsMenuOpen(false); 
       } catch (error) {
         console.error("ログアウトエラー:", error);
         alert("システムの切断に失敗しました。");
@@ -103,7 +109,6 @@ export default function MobileApp() {
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
   };
 
-  // 指パッチン検出処理...
   const startSnappingDetection = async () => {
     if (isListening) return;
     try {
@@ -165,7 +170,7 @@ export default function MobileApp() {
 
   const handleStartHold = (e, tabLabel) => {
     if (!isStealthActive) return; 
-    if (uiMode === '2d' && tabLabel !== '残高') return;
+    if (uiMode === '2d' && (tabLabel !== '残高' && tabLabel !== 'カレンダー')) return;
     if (uiMode !== '2d' && tabLabel !== '3D_CORE_HUD') return;
     holdStartTimerRef.current = setTimeout(() => { startSnappingDetection(); }, 3000);
   };
@@ -197,7 +202,7 @@ export default function MobileApp() {
     handleEndHold(); 
     const dx = e.clientX - pointerStartRef.current.x;
     const dt = Date.now() - pointerStartRef.current.time;
-    const tabs = ['input', 'balance', 'history', 'feed'];
+    const tabs = ['input', 'balance', 'calendar', 'history', 'feed'];
     const currentIndex = tabs.indexOf(currentTab);
 
     if (Math.abs(dx) > 50) {
@@ -222,7 +227,6 @@ export default function MobileApp() {
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
-  // 🌟 変更点: ユーザーが存在しない（未ログイン）場合は認証画面を表示する絶対防壁
   if (!user) {
     return <AuthScreen />;
   }
@@ -254,15 +258,30 @@ export default function MobileApp() {
         <div style={{ width: '24px' }}></div>
       </div>
 
-      {/* 🚀 サイドメニュー（コントロールパネル） */}
+      {/* 🚀 サイドメニュー */}
       {isMenuOpen && (
         <>
           <div onClick={() => setIsMenuOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 9998 }} />
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '80%', maxWidth: '300px', height: '100vh', background: '#0a0c10', borderRight: `1px solid ${themeColor}`, boxShadow: `5px 0 30px ${themeColor}33`, zIndex: 9999, padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '40px', animation: 'slideIn 0.3s ease-out' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '80%', maxWidth: '300px', height: '100vh', background: '#0a0c10', borderRight: `1px solid ${themeColor}`, boxShadow: `5px 0 30px ${themeColor}33`, zIndex: 9999, padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '25px', overflowY: 'auto', animation: 'slideIn 0.3s ease-out' }}>
             <style>{`@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
             
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
+            {/* 🌟 残高の並び替え設定 */}
+            <div>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>残高並び替え</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', marginBottom: '10px' }}>
+                <button onClick={() => setSortKey('amount')} style={menuBtnStyle(sortKey === 'amount', '#ff9900')}>金額順</button>
+                <button onClick={() => setSortKey('name')} style={menuBtnStyle(sortKey === 'name', '#ff9900')}>名前順</button>
+                <button onClick={() => setSortKey('usage')} style={menuBtnStyle(sortKey === 'usage', '#ff9900')}>使用頻度</button>
+              </div>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button onClick={() => setSortOrder('desc')} style={{ ...menuBtnStyle(sortOrder === 'desc', '#00bfff'), flex: 1 }}>▼ 降順</button>
+                <button onClick={() => setSortOrder('asc')} style={{ ...menuBtnStyle(sortOrder === 'asc', '#00bfff'), flex: 1 }}>▲ 昇順</button>
+              </div>
+              <div style={{ fontSize: '9px', color: '#555', marginTop: '5px' }}>※残高画面で長押しすると手動配置になります</div>
+            </div>
+
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>タブバ―モード変更</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -284,7 +303,6 @@ export default function MobileApp() {
               </div>
             </div>
 
-            {/* 🌟 変更点: ログアウトボタンをメニュー下部に追加 */}
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <button 
                 onClick={handleLogout} 
@@ -294,7 +312,7 @@ export default function MobileApp() {
               </button>
               <button onClick={() => setIsMenuOpen(false)} style={{ width: '100%', padding: '15px', background: 'transparent', color: '#666', border: '1px solid #333', borderRadius: '8px', cursor: 'pointer' }}>
                 閉じる
-               </button>
+              </button>
             </div>
 
           </div>
@@ -309,9 +327,11 @@ export default function MobileApp() {
             <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
               <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}> 口座・決済手段別の現在高</h2>
             </div>
-            <BalanceChart transactions={safeTransactions} ghostAccounts={ghostAccountsList} />
+            {/* 🌟 ソート情報を渡す */}
+            <BalanceChart transactions={safeTransactions} ghostAccounts={ghostAccountsList} sortKey={sortKey} sortOrder={sortOrder} setSortKey={setSortKey} />
           </div>
         )}
+        {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={themeColor} />}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
         {currentTab === 'feed' && <NewsFeed />}
       </div>
@@ -326,6 +346,15 @@ export default function MobileApp() {
             onClick={() => setCurrentTab('balance')} 
             themeColor={themeColor} 
             onPointerDown={(e) => handleStartHold(e, '残高')}
+            onPointerUp={handleEndHold}
+            onPointerLeave={handleEndHold}
+          />
+          <BottomTab 
+            icon="📅" label="暦" 
+            isActive={currentTab === 'calendar'} 
+            onClick={() => setCurrentTab('calendar')} 
+            themeColor={themeColor} 
+            onPointerDown={(e) => handleStartHold(e, 'カレンダー')}
             onPointerUp={handleEndHold}
             onPointerLeave={handleEndHold}
           />
@@ -354,7 +383,7 @@ export default function MobileApp() {
   );
 }
 
-const menuBtnStyle = (isActive, themeColor) => ({ background: isActive ? `${themeColor}22` : '#11141a', color: isActive ? themeColor : '#888', border: `1px solid ${isActive ? themeColor : '#333'}`, padding: '12px 15px', borderRadius: '8px', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', boxShadow: isActive ? `0 0 10px ${themeColor}33` : 'none' });
+const menuBtnStyle = (isActive, color) => ({ background: isActive ? `${color}22` : '#11141a', color: isActive ? color : '#888', border: `1px solid ${isActive ? color : '#333'}`, padding: '10px', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', fontSize: '12px' });
 
 function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, onPointerUp, onPointerLeave }) {
   const isImage = icon.includes('.png') || icon.includes('.svg') || icon.includes('.jpg');
@@ -365,13 +394,13 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       onPointerDown={onPointerDown} 
       onPointerUp={onPointerUp} 
       onPointerLeave={onPointerLeave}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '60px', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '52px', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
       {isImage ? (
-        <img src={icon} alt={label} style={{ width: '40px', height: '38px', objectFit: 'contain', marginBottom: '4px', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)', pointerEvents: 'none' }} />
+        <img src={icon} alt={label} style={{ width: '38px', height: '36px', objectFit: 'contain', marginBottom: '4px', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)', pointerEvents: 'none' }} />
       ) : (
-        <div style={{ fontSize: '24px', marginBottom: '4px', pointerEvents: 'none' }}>{icon}</div>
+        <div style={{ fontSize: '24px', marginBottom: '4px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'none' }}>{icon}</div>
       )}
-      <div style={{ fontSize: '10px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
+      <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
   );
 }
