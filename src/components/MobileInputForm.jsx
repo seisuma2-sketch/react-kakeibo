@@ -39,20 +39,17 @@ export default function MobileInputForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
 
-  // 🌟 Chrome標準アラートを封印し、すべてこのカスタムアラートを使用
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
 
-  // 🌟 💳 新規追加 ＆ 修正パネル用のState
   const [showAccountPanel, setShowAccountPanel] = useState(false);
-  const [accountPanelMode, setAccountPanelMode] = useState('add'); // 'add' (新規) or 'edit' (編集)
+  const [accountPanelMode, setAccountPanelMode] = useState('add'); 
   const [newAccType, setNewAccType] = useState('bank');
   const [newAccName, setNewAccName] = useState('');
   const [newAccBudget, setNewAccBudget] = useState('');
   const [newAccResetDay, setNewAccResetDay] = useState('1');
   const [newAccPaymentDay, setNewAccPaymentDay] = useState('27');
   
-  // 編集モード用のState
   const [savedCards, setSavedCards] = useState({});
   const [editTargetCard, setEditTargetCard] = useState('');
 
@@ -68,6 +65,8 @@ export default function MobileInputForm() {
   const [incomeCategories, setIncomeCategories] = useState([
     '/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'
   ]);
+  
+  // 🌟 アプリ内の既存口座・カードリスト
   const [accounts, setAccounts] = useState([
     '/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', 
     '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'
@@ -84,7 +83,6 @@ export default function MobileInputForm() {
 
   const handleAddCategory = () => setCustomPrompt({ isOpen: true, title: '新しいカテゴリ名を入力', target: 'category', text: '' });
   
-  // 🌟 追加・編集パネルを開く
   const handleOpenAccountPanel = () => {
     setNewAccName('');
     setNewAccType('bank');
@@ -94,14 +92,13 @@ export default function MobileInputForm() {
     setAccountPanelMode('add');
     setEditTargetCard('');
     
-    // 登録済みのクレジットカード情報を取得してStateにセット
     const cards = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     setSavedCards(cards);
     
     setShowAccountPanel(true);
   };
 
-  // 🌟 編集対象のカードを選んだ時の処理
+  // 🌟 修正ポイント1：既存リストから選択した時に、データがあれば読み込み、無ければ新規設定させる
   const handleSelectEditCard = (e) => {
     const cardName = e.target.value;
     setEditTargetCard(cardName);
@@ -110,14 +107,13 @@ export default function MobileInputForm() {
       setNewAccResetDay(savedCards[cardName].resetDay);
       setNewAccPaymentDay(savedCards[cardName].paymentDay);
     } else {
+      // 登録がない（初期からあるリクルートカード等）場合はデフォルト値を入れる
       setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
     }
   };
 
-  // 🌟 カード＆予算設定を保存（新規 ＆ 修正）
   const handleSaveAccount = () => {
     if (accountPanelMode === 'add') {
-      // --- 新規登録モード ---
       if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
       
       const iconPath = newAccType === 'credit' ? '/icon-other.png' : '/icon-cash.png';
@@ -140,7 +136,7 @@ export default function MobileInputForm() {
       }
     } else {
       // --- 編集モード ---
-      if (!editTargetCard) { showAlert("修正するカードを選択してください", "error"); return; }
+      if (!editTargetCard) { showAlert("修正する項目を選択してください", "error"); return; }
       
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
       currentSettings[editTargetCard] = {
@@ -149,7 +145,7 @@ export default function MobileInputForm() {
         paymentDay: Number(newAccPaymentDay) || 27
       };
       localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
-      showAlert(`💳 ${editTargetCard} の設定を更新しました！`, "success");
+      showAlert(`💳 ${editTargetCard} に予算設定を適用しました！`, "success");
     }
     
     setShowAccountPanel(false);
@@ -163,6 +159,9 @@ export default function MobileInputForm() {
     setCategory(newItem);
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
+
+  // アイコンパスを取り除いて純粋な名前にするヘルパー
+  const getCleanName = (val) => val.startsWith('/') ? val.slice(val.indexOf(' ') + 1) : val.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
 
   const processReceipt = async (e) => {
     const file = e.target.files[0];
@@ -214,7 +213,6 @@ export default function MobileInputForm() {
 
     setIsSubmitting(true);
     try {
-      const getCleanName = (val) => val.startsWith('/') ? val.slice(val.indexOf(' ') + 1) : val.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
       const cleanCategory = getCleanName(category);
       const cleanPaymentMethod = getCleanName(paymentMethod);
 
@@ -272,7 +270,6 @@ export default function MobileInputForm() {
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative' }}>
       
-      {/* 🌟 全てのアラートをオリジナル（ネオン）に統一 */}
       {customAlert.isOpen && (
         <div style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', background: customAlert.type === 'success' ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 51, 102, 0.1)', border: `1px solid ${customAlert.type === 'success' ? '#00ff66' : '#ff3366'}`, color: customAlert.type === 'success' ? '#00ff66' : '#ff3366', padding: '12px 24px', borderRadius: '30px', fontWeight: 'bold', fontSize: '14px', backdropFilter: 'blur(10px)', zIndex: 999999 }}>
           {customAlert.type === 'success' ? '✅' : '⚠️'} {customAlert.message}
@@ -292,7 +289,6 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* 🌟 追加 / 編集 マルチパネル */}
       {showAccountPanel && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', padding: '25px', width: '85%', maxWidth: '340px', boxShadow: '0 0 40px rgba(0, 255, 102, 0.2)', display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -301,25 +297,21 @@ export default function MobileInputForm() {
               <span>⚙️</span> SYSTEM CONFIG // 決済管理
             </h3>
 
-            {/* 🌟 新規 / 編集 タブ切り替え */}
             <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #252838' }}>
               <button onClick={() => setAccountPanelMode('add')} style={tabStyle(accountPanelMode === 'add', '#00ff66', '#aaa')}>✨ 新規登録</button>
               <button onClick={() => setAccountPanelMode('edit')} style={tabStyle(accountPanelMode === 'edit', '#ff9900', '#aaa')}>⚙️ 予算・日付修正</button>
             </div>
 
             {accountPanelMode === 'add' ? (
-              // ━━━ 🌟 新規追加モード ━━━
               <>
                 <div style={{ display: 'flex', background: '#1a1d24', borderRadius: '6px', padding: '4px', border: '1px solid #333' }}>
                   <button onClick={() => setNewAccType('bank')} style={tabStyle(newAccType === 'bank', '#00bfff', '#aaa')}>🏦 一般口座</button>
                   <button onClick={() => setNewAccType('credit')} style={tabStyle(newAccType === 'credit', '#ff9900', '#aaa')}>💳 クレジット</button>
                 </div>
-
                 <div>
                   <div style={labelStyle}>[1] {newAccType === 'credit' ? 'クレジットカード名' : '口座名'}</div>
                   <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder={newAccType === 'credit' ? "例：リクルートカード" : "例：PayPay銀行"} style={inputStyle} />
                 </div>
-
                 {newAccType === 'credit' && (
                   <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, animation: 'fadeIn 0.3s ease-out', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
@@ -352,17 +344,22 @@ export default function MobileInputForm() {
                 )}
               </>
             ) : (
-              // ━━━ 🌟 編集（修正）モード ━━━
+              // ━━━ 🌟 編集（修正）モード：すべての登録済み口座リストを表示 ━━━
               <>
                 <div>
-                  <div style={{...labelStyle, color: '#ff9900'}}>[1] 修正するカードを選択</div>
+                  <div style={{...labelStyle, color: '#ff9900'}}>[1] 修正する項目を選択</div>
                   <div style={{ position: 'relative' }}>
                     <select value={editTargetCard} onChange={handleSelectEditCard} style={{ ...inputStyle, appearance: 'none', cursor: 'pointer' }}>
                       <option value="">-- 選択してください --</option>
-                      {Object.keys(savedCards).map(card => <option key={card} value={card}>{card}</option>)}
+                      {/* 🌟 変更点：accountsリストから全ての名前を抽出して選択肢にする */}
+                      {accounts.map(acc => {
+                        const cleanName = getCleanName(acc);
+                        return <option key={cleanName} value={cleanName}>{cleanName}</option>;
+                      })}
                     </select>
                     <div style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#888' }}>▼</div>
                   </div>
+                  <div style={{ fontSize: '9px', color: '#888', marginTop: '5px' }}>※一般口座を選択して予算を設定すると、HP管理対象にアップグレードされます。</div>
                 </div>
 
                 {editTargetCard && (
