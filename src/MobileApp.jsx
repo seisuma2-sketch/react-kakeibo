@@ -402,5 +402,5 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       )}
       <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
-  );
-}
+  );                                                                  
+}                                                                  
