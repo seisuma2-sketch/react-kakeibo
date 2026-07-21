@@ -27,9 +27,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
   const pressTimer = useRef(null);
   
-  // スワイプ移動用トラッカー
+  // 🌟 スワイプ移動用トラッカー（指に吸い付かせるためのOffset追加）
   const dragData = useRef({ active: false, startY: 0, currentIndex: -1, type: null });
-  const [dragRefresh, setDragRefresh] = useState(0); 
+  const [dragOffset, setDragOffset] = useState(0); 
 
   const [selectedAccHistory, setSelectedAccHistory] = useState(null); 
 
@@ -167,11 +167,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       setReorderMode(prev => !prev);
       setSortKey('custom'); 
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    }, 800);
+    }, 600); // 800msから600msに短縮し、よりサクサク発動
   };
   const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
 
-  // 🌟 スライド移動処理のコアロジック
+  // 🌟 スライド移動処理のコアロジック（指に吸い付くように改良）
   const handleDragStart = (e, index, type) => {
     dragData.current = {
       active: true,
@@ -179,7 +179,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       currentIndex: index,
       type: type
     };
-    setDragRefresh(prev => prev + 1);
+    setDragOffset(0);
     if (navigator.vibrate) navigator.vibrate(20);
   };
 
@@ -209,17 +209,23 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     
     const currentY = e.touches ? e.touches[0].clientY : e.clientY;
     const diff = currentY - dragData.current.startY;
-    const threshold = 65; // このピクセル分指を動かしたら入れ替える
+    
+    // 指の動きに合わせてオフセットを更新（吸い付き効果）
+    setDragOffset(diff);
+
+    const threshold = 70; // アイテムの高さに合わせて入れ替え判定を調整
 
     if (diff > threshold) {
       moveItem(dragData.current.currentIndex, array, 'down');
-      dragData.current.startY = currentY;
+      dragData.current.startY += threshold;
       dragData.current.currentIndex += 1;
+      setDragOffset(diff - threshold);
       if (navigator.vibrate) navigator.vibrate(20);
     } else if (diff < -threshold) {
       moveItem(dragData.current.currentIndex, array, 'up');
-      dragData.current.startY = currentY;
+      dragData.current.startY -= threshold;
       dragData.current.currentIndex -= 1;
+      setDragOffset(diff + threshold);
       if (navigator.vibrate) navigator.vibrate(20);
     }
   };
@@ -228,7 +234,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     dragData.current.active = false;
     dragData.current.currentIndex = -1;
     dragData.current.type = null;
-    setDragRefresh(prev => prev + 1);
+    setDragOffset(0); // 指を離したら元の位置にスナップ
   };
 
   const getOneMonthHistory = (accName) => {
@@ -244,8 +250,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
 
+  // 🌟 全体のスタイル：テキスト選択やコンテキストメニューの完全ブロック
+  const containerStyle = {
+    display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative',
+    WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' // 青い選択と長押しメニューを禁止
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative' }}>
+    <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
       {selectedAccHistory && (
         <div onClick={() => setSelectedAccHistory(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
@@ -326,14 +338,16 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                      style={{ 
                        background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer',
                        touchAction: reorderMode ? 'none' : 'auto', // ドラッグ中はスクロール無効
-                       transform: isDragging ? 'scale(1.05)' : 'none',
+                       // 🌟 指に追従させるトランスフォーム
+                       transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : 'none',
                        zIndex: isDragging ? 100 : 1,
-                       boxShadow: isDragging ? '0 10px 30px rgba(255, 153, 0, 0.4)' : 'none'
+                       boxShadow: isDragging ? '0 10px 30px rgba(255, 153, 0, 0.4)' : 'none',
+                       transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)' // 離した時にスムーズに戻る
                      }}>
                   
                   <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💳</span>}
+                      {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>💳</span>}
                       <span>{name}</span>
                     </span>
                     <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>
@@ -386,14 +400,16 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                    style={{ 
                      background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer',
                      touchAction: reorderMode ? 'none' : 'auto',
-                     transform: isDragging ? 'scale(1.05)' : 'none',
+                     // 🌟 指に追従させるトランスフォーム
+                     transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : 'none',
                      zIndex: isDragging ? 100 : 1,
-                     boxShadow: isDragging ? '0 10px 30px rgba(0, 191, 255, 0.4)' : 'none'
+                     boxShadow: isDragging ? '0 10px 30px rgba(0, 191, 255, 0.4)' : 'none',
+                     transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                    }}>
                 
                 <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💽</span>}
+                    {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>💽</span>}
                     <span>{name}</span>
                   </span>    
                   <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
@@ -413,7 +429,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       </div>
 
       <style>{`
-        .account-cartridge { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .account-cartridge { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s; }
         .account-cartridge:hover { transform: translateY(-4px); border-color: #00bfff !important; box-shadow: 0 4px 20px rgba(0, 191, 255, 0.15); }
         .energy-bar { animation: pulse 2.5s infinite ease-in-out; transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
         .shake { animation: tilt-shaking 0.5s infinite; border-color: #ff9900 !important; }
