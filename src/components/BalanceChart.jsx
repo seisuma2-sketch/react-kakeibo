@@ -22,12 +22,16 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const chartRef = useRef(null);
   const [now, setNow] = useState(new Date());
 
-  // 🌟 長押し編集モードと履歴モーダル用のState
+  // 🌟 ドラッグ＆ドロップ編集用のState
   const [reorderMode, setReorderMode] = useState(false);
   const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
   const pressTimer = useRef(null);
+  
+  // スワイプ移動用トラッカー
+  const dragData = useRef({ active: false, startY: 0, currentIndex: -1, type: null });
+  const [dragRefresh, setDragRefresh] = useState(0); 
 
-  const [selectedAccHistory, setSelectedAccHistory] = useState(null); // タップした口座名
+  const [selectedAccHistory, setSelectedAccHistory] = useState(null); 
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -107,7 +111,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       totalBank += bal;
     });
 
-    // 🌟 魔法のソートアルゴリズム
     const applySort = (entriesArray) => {
       if (sortKey === 'custom') {
         return entriesArray.sort((a, b) => {
@@ -158,32 +161,76 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     return () => { window.removeEventListener('resize', handleResize); chartInstance.dispose(); };
   }, [systemData]);
 
-  // 🌟 長押しハンドラー
+  // 🌟 長押し検知（編集モードへ切り替え）
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
       setReorderMode(prev => !prev);
-      setSortKey('custom'); // 長押しした瞬間にカスタム配置モードに強制オーバーライド
+      setSortKey('custom'); 
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     }, 800);
   };
   const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
 
-  // 🌟 並び替え矢印のロジック
-  const moveItem = (index, array, direction) => {
-    const newArray = [...array];
-    const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    if (swapIndex < 0 || swapIndex >= newArray.length) return;
-    const temp = newArray[index];
-    newArray[index] = newArray[swapIndex];
-    newArray[swapIndex] = temp;
-    
-    const combinedOrder = [...newArray.map(n => n[0])]; // 銀行とカードは別々で動かすが、キーリストとしては保存
-    const merged = Array.from(new Set([...customOrder, ...combinedOrder]));
-    setCustomOrder(merged);
-    localStorage.setItem('customOrderConfig', JSON.stringify(merged));
+  // 🌟 スライド移動処理のコアロジック
+  const handleDragStart = (e, index, type) => {
+    dragData.current = {
+      active: true,
+      startY: e.touches ? e.touches[0].clientY : e.clientY,
+      currentIndex: index,
+      type: type
+    };
+    setDragRefresh(prev => prev + 1);
+    if (navigator.vibrate) navigator.vibrate(20);
   };
 
-  // 🌟 1ヶ月の履歴を計算
+  const moveItem = (index, array, direction) => {
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= array.length) return;
+
+    const itemA = array[index][0];
+    const itemB = array[swapIndex][0];
+
+    let newCustomOrder = [...customOrder];
+    if (!newCustomOrder.includes(itemA)) newCustomOrder.push(itemA);
+    if (!newCustomOrder.includes(itemB)) newCustomOrder.push(itemB);
+
+    const idxA = newCustomOrder.indexOf(itemA);
+    const idxB = newCustomOrder.indexOf(itemB);
+
+    newCustomOrder[idxA] = itemB;
+    newCustomOrder[idxB] = itemA;
+
+    setCustomOrder(newCustomOrder);
+    localStorage.setItem('customOrderConfig', JSON.stringify(newCustomOrder));
+  };
+
+  const handleDragMove = (e, array, type) => {
+    if (!dragData.current.active || dragData.current.type !== type) return;
+    
+    const currentY = e.touches ? e.touches[0].clientY : e.clientY;
+    const diff = currentY - dragData.current.startY;
+    const threshold = 65; // このピクセル分指を動かしたら入れ替える
+
+    if (diff > threshold) {
+      moveItem(dragData.current.currentIndex, array, 'down');
+      dragData.current.startY = currentY;
+      dragData.current.currentIndex += 1;
+      if (navigator.vibrate) navigator.vibrate(20);
+    } else if (diff < -threshold) {
+      moveItem(dragData.current.currentIndex, array, 'up');
+      dragData.current.startY = currentY;
+      dragData.current.currentIndex -= 1;
+      if (navigator.vibrate) navigator.vibrate(20);
+    }
+  };
+
+  const handleDragEnd = () => {
+    dragData.current.active = false;
+    dragData.current.currentIndex = -1;
+    dragData.current.type = null;
+    setDragRefresh(prev => prev + 1);
+  };
+
   const getOneMonthHistory = (accName) => {
     const oneMonthAgo = new Date();
     oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
@@ -200,10 +247,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative' }}>
       
-      {/* 履歴ホログラムモーダル */}
       {selectedAccHistory && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
-          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '400px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 30px rgba(0,255,102,0.2)' }}>
+        <div onClick={() => setSelectedAccHistory(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '400px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 30px rgba(0,255,102,0.2)' }}>
             <div style={{ padding: '20px', borderBottom: '1px solid #00ff6644', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, color: '#00ff66', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '20px' }}>📡</span> [{selectedAccHistory}] 過去1ヶ月の通信ログ
@@ -235,10 +281,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         </div>
       )}
 
-      {/* 編集モードアラート */}
       {reorderMode && (
-        <div style={{ background: '#ff990022', border: '1px dashed #ff9900', color: '#ff9900', padding: '10px', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', animation: 'pulse 2s infinite' }}>
-          ⚠️ CONFIG OVERRIDE MODE (配列編集中)
+        <div onClick={() => setReorderMode(false)} style={{ background: '#ff990022', border: '1px dashed #ff9900', color: '#ff9900', padding: '12px', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', animation: 'pulse 2s infinite', cursor: 'pointer' }}>
+          ⚠️ CONFIG OVERRIDE MODE (指でスライドして配置変更) <br/><span style={{fontSize: '10px', color: '#fff'}}>※タップで終了</span>
         </div>
       )}
 
@@ -264,20 +309,29 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               if (percent <= 20 || isOver) barColor = '#ff3366';
               else if (percent <= 50) barColor = '#ff9900';
 
-              return (
-                <div key={name} className={reorderMode ? 'shake' : 'account-cartridge'} 
-                     onPointerDown={handlePointerDown} onPointerUp={cancelPress} onPointerLeave={cancelPress}
-                     onClick={() => !reorderMode && setSelectedAccHistory(name)}
-                     style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer' }}>
-                  
-                  {reorderMode && (
-                    <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
-                      <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.cards, 'up'); }} style={arrowBtnStyle}>▲</button>
-                      <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.cards, 'down'); }} style={arrowBtnStyle}>▼</button>
-                    </div>
-                  )}
+              const isDragging = reorderMode && dragData.current.currentIndex === idx && dragData.current.type === 'card';
 
-                  <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: reorderMode ? '40px' : '0' }}>
+              return (
+                <div key={name} className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'} 
+                     onPointerDown={(e) => { if (!reorderMode) handlePointerDown(); }} 
+                     onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
+                     onPointerLeave={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }}
+                     
+                     // 🌟 スライド検知用のタッチイベント
+                     onTouchStart={(e) => { if (reorderMode) handleDragStart(e, idx, 'card'); }}
+                     onTouchMove={(e) => { if (reorderMode) handleDragMove(e, systemData.cards, 'card'); }}
+                     onTouchEnd={handleDragEnd}
+
+                     onClick={() => !reorderMode && setSelectedAccHistory(name)}
+                     style={{ 
+                       background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer',
+                       touchAction: reorderMode ? 'none' : 'auto', // ドラッグ中はスクロール無効
+                       transform: isDragging ? 'scale(1.05)' : 'none',
+                       zIndex: isDragging ? 100 : 1,
+                       boxShadow: isDragging ? '0 10px 30px rgba(255, 153, 0, 0.4)' : 'none'
+                     }}>
+                  
+                  <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💳</span>}
                       <span>{name}</span>
@@ -285,11 +339,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                     <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>
                   </div>
 
-                  <div style={{ color: barColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: `0 0 10px ${barColor}44`, paddingRight: reorderMode ? '40px' : '0' }}>
+                  <div style={{ color: barColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: `0 0 10px ${barColor}44` }}>
                     {isOver ? 'OVER!' : `¥${remain.toLocaleString()}`}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace', paddingRight: reorderMode ? '40px' : '0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace' }}>
                     <span>LIMIT: ¥{data.budget.toLocaleString()}</span>
                     <span>{percent.toFixed(0)}% HP</span>
                   </div>
@@ -316,20 +370,28 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             const percent = systemData.totalBankBalance > 0 ? Math.min(100, Math.max(0, (amount / systemData.totalBankBalance) * 100)) : 0;
             const isNegative = amount < 0;
 
-            return (
-              <div key={name} className={reorderMode ? 'shake' : 'account-cartridge'}
-                   onPointerDown={handlePointerDown} onPointerUp={cancelPress} onPointerLeave={cancelPress}
-                   onClick={() => !reorderMode && setSelectedAccHistory(name)}
-                   style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer' }}>
-                
-                {reorderMode && (
-                  <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: '5px', zIndex: 10 }}>
-                    <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.banks, 'up'); }} style={arrowBtnStyle}>▲</button>
-                    <button onClick={(e) => { e.stopPropagation(); moveItem(idx, systemData.banks, 'down'); }} style={arrowBtnStyle}>▼</button>
-                  </div>
-                )}
+            const isDragging = reorderMode && dragData.current.currentIndex === idx && dragData.current.type === 'bank';
 
-                <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', paddingRight: reorderMode ? '40px' : '0' }}>
+            return (
+              <div key={name} className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
+                   onPointerDown={(e) => { if (!reorderMode) handlePointerDown(); }} 
+                   onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
+                   onPointerLeave={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }}
+                   
+                   onTouchStart={(e) => { if (reorderMode) handleDragStart(e, idx, 'bank'); }}
+                   onTouchMove={(e) => { if (reorderMode) handleDragMove(e, systemData.banks, 'bank'); }}
+                   onTouchEnd={handleDragEnd}
+
+                   onClick={() => !reorderMode && setSelectedAccHistory(name)}
+                   style={{ 
+                     background: '#0a0c10', border: '1px solid #252838', borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer',
+                     touchAction: reorderMode ? 'none' : 'auto',
+                     transform: isDragging ? 'scale(1.05)' : 'none',
+                     zIndex: isDragging ? 100 : 1,
+                     boxShadow: isDragging ? '0 10px 30px rgba(0, 191, 255, 0.4)' : 'none'
+                   }}>
+                
+                <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} /> : <span>💽</span>}
                     <span>{name}</span>
@@ -337,7 +399,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                   <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
                 </div>
                 
-                <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', paddingRight: reorderMode ? '40px' : '0' }}>
+                <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>
                   ¥{amount.toLocaleString()}
                 </div>
 
@@ -359,7 +421,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         @keyframes tilt-shaking {
           0% { transform: rotate(0deg); }
           25% { transform: rotate(0.5deg); }
-          50% { transform: rotate(0eg); }
+          50% { transform: rotate(0deg); }
           75% { transform: rotate(-0.5deg); }
           100% { transform: rotate(0deg); }
         }
@@ -367,5 +429,3 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     </div>
   );
 }
-
-const arrowBtnStyle = { background: '#11141a', color: '#ff9900', border: '1px solid #ff9900', borderRadius: '4px', padding: '6px', cursor: 'pointer', fontWeight: 'bold' };

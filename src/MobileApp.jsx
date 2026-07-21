@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
+// 🌟 変更点: signInWithEmailAndPassword を消し、signOut をインポート
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -9,7 +10,7 @@ import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList';
 import MobileCalendar from './components/MobileCalendar'; // 🌟 カレンダー
 import NebulaCore3D from './components/NebulaCore3D';
-import AuthScreen from './components/AuthScreen'; 
+import AuthScreen from './components/AuthScreen'; // 🌟 認証画面コンポーネント
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -24,12 +25,19 @@ export default function MobileApp() {
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
-  const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || 'morph');
+  // 🌟 修正ポイント: デフォルトの UI モードを '2d' に変更しました
+  const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || '2d');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
   
   const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'neon');
   useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
   const themeColor = THEMES[appTheme].color;
+
+  const [timeTreeToken, setTimeTreeToken] = useState(() => localStorage.getItem('timeTreeToken') || '');
+  const handleSaveToken = (val) => {
+    setTimeTreeToken(val);
+    localStorage.setItem('timeTreeToken', val);
+  };
 
   const [isStealthActive, setIsStealthActive] = useState(() => {
     const saved = localStorage.getItem('stealthActiveMobile');
@@ -55,6 +63,7 @@ export default function MobileApp() {
   const holdStartTimerRef = useRef(null); 
   const [isListening, setIsListening] = useState(false); 
 
+  // 🌟 変更点: ログイン監視（自動ログインを廃止し、Firebaseの認証状態を監視）
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -80,11 +89,12 @@ export default function MobileApp() {
     };
   }, [user]);
 
+  // 🌟 新機能: ログアウト処理（システム切断）
   const handleLogout = async () => {
     if (window.confirm("システムから切断（ログアウト）しますか？")) {
       try {
         await signOut(auth);
-        setIsMenuOpen(false); 
+        setIsMenuOpen(false); // メニューを閉じる
       } catch (error) {
         console.error("ログアウトエラー:", error);
         alert("システムの切断に失敗しました。");
@@ -109,6 +119,7 @@ export default function MobileApp() {
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
   };
 
+  // 指パッチン検出処理...
   const startSnappingDetection = async () => {
     if (isListening) return;
     try {
@@ -227,6 +238,7 @@ export default function MobileApp() {
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
+  // 🌟 変更点: ユーザーが存在しない（未ログイン）場合は認証画面を表示する絶対防壁
   if (!user) {
     return <AuthScreen />;
   }
@@ -402,5 +414,5 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       )}
       <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
-  );                                                                  
-}                                                                  
+  );                                                                 
+}
