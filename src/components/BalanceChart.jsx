@@ -50,7 +50,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const iconMap = {
     '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
     'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
-    '食費': '/icon-food.png', 'リクルートカード': '/icon-other.png'
+    '食費': '/icon-food.png', 'リクルートカード': '/S__32391170.jpg'
   };
 
   const systemData = useMemo(() => {
@@ -442,22 +442,22 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       {reorderMode && (
         <div onClick={() => setReorderMode(false)} style={{ background: '#ff990022', border: '1px dashed #ff9900', color: '#ff9900', padding: '12px', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', animation: 'pulse 2s infinite', cursor: 'pointer' }}>
-          ⚠️ CONFIG OVERRIDE MODE (指でスライドして配置変更) <br/><span style={{fontSize: '10px', color: '#fff'}}>※タップで終了</span>
+          スライドで配置変更 <br/><span style={{fontSize: '10px', color: '#fff'}}>※タップで終了</span>
         </div>
       )}
       {routingMode && (
         <div onClick={() => { setRoutingMode(false); setRoutingSource(null); }} style={{ background: '#00bfff22', border: '1px dashed #00bfff', color: '#00bfff', padding: '12px', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace', animation: 'pulse 2s infinite', cursor: 'pointer' }}>
-          ⚡ ROUTING MODE ACTIVE <br/>
+          振替機能実行中 <br/>
           <span style={{fontSize: '10px', color: '#fff'}}>{!routingSource ? '1. 出金元ノードをタップしてください' : '2. 入金先ノードをタップしてください'} (タップで解除)</span>
         </div>
       )}
 
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '10px' }}>
-          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', letterSpacing: '1px' }}>📈 📊 総合残高推移トレンド</h2>
+          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', letterSpacing: '1px' }}>総合残高推移</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => { setRoutingMode(!routingMode); setRoutingSource(null); setReorderMode(false); }} style={{ background: routingMode ? '#00bfff22' : 'transparent', color: routingMode ? '#00bfff' : '#666', border: `1px solid ${routingMode ? '#00bfff' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: routingMode ? '0 0 10px rgba(0,191,255,0.3)' : 'none' }}>⚡ ルーティング</button>
-            <button onClick={() => setIsAIPredictionActive(!isAIPredictionActive)} style={{ background: isAIPredictionActive ? '#ffeb3b22' : 'transparent', color: isAIPredictionActive ? '#ffeb3b' : '#666', border: `1px solid ${isAIPredictionActive ? '#ffeb3b' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: isAIPredictionActive ? '0 0 10px rgba(255,235,59,0.3)' : 'none' }}>🤖 AI予測</button>
+            <button onClick={() => { setRoutingMode(!routingMode); setRoutingSource(null); setReorderMode(false); }} style={{ background: routingMode ? '#00bfff22' : 'transparent', color: routingMode ? '#00bfff' : '#666', border: `1px solid ${routingMode ? '#00bfff' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: routingMode ? '0 0 10px rgba(0,191,255,0.3)' : 'none' }}>振替</button>
+            <button onClick={() => setIsAIPredictionActive(!isAIPredictionActive)} style={{ background: isAIPredictionActive ? '#ffeb3b22' : 'transparent', color: isAIPredictionActive ? '#ffeb3b' : '#666', border: `1px solid ${isAIPredictionActive ? '#ffeb3b' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: isAIPredictionActive ? '0 0 10px rgba(255,235,59,0.3)' : 'none' }}>AI予測</button>
           </div>
         </div>
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
@@ -509,7 +509,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#00bfff', fontFamily: 'monospace' }}>🏦 BANK ACCOUNTS // 資金残高</h2>
+          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#00bfff', fontFamily: 'monospace' }}>資金残高</h2>
           <span style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
