@@ -2,33 +2,57 @@ import React, { useState, useEffect, useRef } from 'react';
 
 export default function DailyBriefingOverlay({ transactions, ghostAccounts, onComplete }) {
   const [displayedLines, setDisplayedLines] = useState([]);
-  const [isTyping, setIsTyping] = useState(true);
   
-  // 🌟 音声設定の保存・読み込み
+  // 🌟 自動終了のフラグ管理
+  const [isTyping, setIsTyping] = useState(true); // 文字を打ち込んでいるか
+  const [isSpeaking, setIsSpeaking] = useState(false); // 音声が読み上げ中か
+  
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
-    return localStorage.getItem('briefingVoice') !== 'false'; // デフォルトはON
+    return localStorage.getItem('briefingVoice') !== 'false'; 
   });
   const speechTextRef = useRef('');
+
+  // 🌟 文字表示と音声の両方が終わったら、自動で終了させる監視ロジック
+  useEffect(() => {
+    if (!isTyping && !isSpeaking) {
+      // 読み上げも文字表示も終わったら、1秒の余韻のあとにシステム終了
+      const timer = setTimeout(() => {
+        handleComplete();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isTyping, isSpeaking]);
 
   // 音声を読み上げるハッカー関数
   const speakReport = (text) => {
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel(); // 前の音声をリセット
+    window.speechSynthesis.cancel(); 
+    
+    setIsSpeaking(true); // 音声再生スタート
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ja-JP';
-    utterance.rate = 1.15; // 少し早口でAIっぽく
-    utterance.pitch = 0.95; // 少し低めの落ち着いた声
+    utterance.rate = 1.15; 
+    utterance.pitch = 0.95; 
+
+    // 🌟 読み上げが最後まで終わった時のイベント
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+    };
+
     window.speechSynthesis.speak(utterance);
   };
 
-  // 途中でスキップされたら音声を止める
   const handleComplete = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     onComplete();
   };
 
   const toggleVoice = (e) => {
-    e.stopPropagation(); // 画面タップ（スキップ）を防止
+    e.stopPropagation(); 
     const nextState = !isVoiceEnabled;
     setIsVoiceEnabled(nextState);
     localStorage.setItem('briefingVoice', nextState);
@@ -37,16 +61,16 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
       speakReport(speechTextRef.current);
     } else {
       window.speechSynthesis.cancel();
+      setIsSpeaking(false); // 手動で切ったのでフラグを下ろす
     }
   };
 
   useEffect(() => {
-    // 🌟 1. データの事前計算（プロファイリング）
     const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     let totalBank = 0;
     let monthlyOutflow = 0;
     let alerts = [];
-    let speechAlerts = []; // 読み上げ用のテキスト
+    let speechAlerts = []; 
 
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -98,16 +122,15 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
     if (hour >= 12 && hour < 18) { greeting = "GOOD AFTERNOON"; jpGreeting = "こんにちは"; }
     else if (hour >= 18) { greeting = "GOOD EVENING"; jpGreeting = "こんばんは"; }
 
-    // 🌟 2. 読み上げ用スクリプトの構築（重要なところだけ抽出）
     const finalSpeech = `${jpGreeting}、オペレーター。現在の純資産は、${totalBank}円。今月の総流出額は、${monthlyOutflow}円です。${speechAlerts.join('。')}本日も、ミッションを遂行してください。`;
     speechTextRef.current = finalSpeech;
 
-    // 音声がONなら喋らせる（※ブラウザの自動再生ブロック回避のため、テストボタンからの起動時は確実に鳴ります）
     if (isVoiceEnabled) {
       speakReport(finalSpeech);
+    } else {
+      setIsSpeaking(false);
     }
 
-    // 🌟 3. ターミナルに表示するシナリオスクリプト
     const script = [
       "SYSTEM BOOT SEQUENCE INITIATED...",
       "DECRYPTING MAINFRAME ENCRYPTION... [OK]",
@@ -127,7 +150,6 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
       "HAVE A PRODUCTIVE DAY."
     ];
 
-    // 🌟 4. タイプライター演出
     let currentLine = 0;
     const interval = setInterval(() => {
       if (currentLine < script.length) {
@@ -136,10 +158,7 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
         if (navigator.vibrate) navigator.vibrate(10);
       } else {
         clearInterval(interval);
-        setIsTyping(false);
-        setTimeout(() => {
-          handleComplete(); // 自動で閉じる
-        }, 3000);
+        setIsTyping(false); // 文字表示の終了フラグを下ろす
       }
     }, 400);
 
@@ -161,7 +180,6 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,102,0.05) 2px, rgba(0,255,102,0.05) 4px)', pointerEvents: 'none' }} />
       
-      {/* 🌟 音声トグルボタン */}
       <button 
         onClick={toggleVoice}
         style={{
@@ -188,7 +206,8 @@ export default function DailyBriefingOverlay({ transactions, ghostAccounts, onCo
       </div>
 
       <div style={{ position: 'absolute', bottom: '20px', left: '0', width: '100%', textAlign: 'center', color: '#00ff6655', fontSize: '10px', zIndex: 2 }}>
-        [ TAP ANYWHERE TO SKIP ]
+        {/* 🌟 状況に応じてフッターの文字を変える演出 */}
+        {isSpeaking ? '[ WAITING FOR AUDIO TO COMPLETE... ]' : '[ TAP ANYWHERE TO SKIP ]'}
       </div>
 
       <style>{`
