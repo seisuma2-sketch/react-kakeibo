@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
-// 🌟 変更点: signInWithEmailAndPassword を消し、signOut をインポート
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -11,6 +10,7 @@ import MobileTransactionList from './components/MobileTransactionList';
 import MobileCalendar from './components/MobileCalendar'; // 🌟 カレンダー
 import NebulaCore3D from './components/NebulaCore3D';
 import AuthScreen from './components/AuthScreen'; // 🌟 認証画面コンポーネント
+import DailyBriefingOverlay from './components/DailyBriefingOverlay'; // 🌟 AIブリーフィング
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -25,7 +25,6 @@ export default function MobileApp() {
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
-  // 🌟 修正ポイント: デフォルトの UI モードを '2d' に変更しました
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || '2d');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
   
@@ -46,7 +45,6 @@ export default function MobileApp() {
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
 
-  // 🌟 ソート（並び替え）用のState
   const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
   const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'desc');
   useEffect(() => {
@@ -63,13 +61,29 @@ export default function MobileApp() {
   const holdStartTimerRef = useRef(null); 
   const [isListening, setIsListening] = useState(false); 
 
-  // 🌟 変更点: ログイン監視（自動ログインを廃止し、Firebaseの認証状態を監視）
+  // 🌟 デイリーブリーフィングの表示管理
+  const [showBriefing, setShowBriefing] = useState(false);
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
+      // 🌟 ログイン時に、今日すでにブリーフィングを見たかチェック
+      if (currentUser) {
+        const todayStr = new Date().toLocaleDateString();
+        const lastBriefing = localStorage.getItem('lastBriefingDate');
+        if (lastBriefing !== todayStr) {
+          setShowBriefing(true);
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
+
+  // 🌟 ブリーフィング終了時の処理
+  const handleBriefingComplete = () => {
+    localStorage.setItem('lastBriefingDate', new Date().toLocaleDateString());
+    setShowBriefing(false);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -89,12 +103,11 @@ export default function MobileApp() {
     };
   }, [user]);
 
-  // 🌟 新機能: ログアウト処理（システム切断）
   const handleLogout = async () => {
     if (window.confirm("システムから切断（ログアウト）しますか？")) {
       try {
         await signOut(auth);
-        setIsMenuOpen(false); // メニューを閉じる
+        setIsMenuOpen(false); 
       } catch (error) {
         console.error("ログアウトエラー:", error);
         alert("システムの切断に失敗しました。");
@@ -119,7 +132,6 @@ export default function MobileApp() {
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
   };
 
-  // 指パッチン検出処理...
   const startSnappingDetection = async () => {
     if (isListening) return;
     try {
@@ -238,7 +250,6 @@ export default function MobileApp() {
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
-  // 🌟 変更点: ユーザーが存在しない（未ログイン）場合は認証画面を表示する絶対防壁
   if (!user) {
     return <AuthScreen />;
   }
@@ -246,6 +257,15 @@ export default function MobileApp() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
       
+      {/* 🌟 1日1回のAIブリーフィングオーバーレイ */}
+      {showBriefing && (
+        <DailyBriefingOverlay 
+          transactions={safeTransactions} 
+          ghostAccounts={ghostAccountsList} 
+          onComplete={handleBriefingComplete} 
+        />
+      )}
+
       {/* 🚀 ヘッダーバー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${themeColor}44`, zIndex: 10 }}>
         <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: themeColor, textShadow: `0 0 10px ${themeColor}` }}>
@@ -279,7 +299,16 @@ export default function MobileApp() {
             
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
-            {/* 🌟 残高の並び替え設定 */}
+            {/* 🌟 ブリーフィングのテスト起動ボタン */}
+            <div style={{ marginBottom: '10px' }}>
+              <button 
+                onClick={() => { setIsMenuOpen(false); setShowBriefing(true); }} 
+                style={{ width: '100%', padding: '10px', background: 'rgba(0, 255, 102, 0.1)', color: '#00ff66', border: '1px dashed #00ff66', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                📡 朝のAI報告をテスト起動
+              </button>
+            </div>
+
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>残高並び替え</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', marginBottom: '10px' }}>
@@ -339,7 +368,6 @@ export default function MobileApp() {
             <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
               <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}> 口座・決済手段別の現在高</h2>
             </div>
-            {/* 🌟 ソート情報を渡す */}
             <BalanceChart transactions={safeTransactions} ghostAccounts={ghostAccountsList} sortKey={sortKey} sortOrder={sortOrder} setSortKey={setSortKey} />
           </div>
         )}

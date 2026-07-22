@@ -408,7 +408,7 @@ export default function MobileInputForm() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
           <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
-            支出・収入クイック入力
+            収支入力画面
           </h2>    
        </div>
 
@@ -422,7 +422,7 @@ export default function MobileInputForm() {
           </div>
 
           <div style={{ boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
-            <div style={labelStyle}>発生日時</div>
+            <div style={labelStyle}>決済時刻</div>
             <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} />
           </div>
 
@@ -448,7 +448,7 @@ export default function MobileInputForm() {
           {type === 'transfer' ? (
             <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
               <div style={{ marginBottom: '15px' }}>
-                <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
+                <div style={{...labelStyle, color: '#ff3366'}}>出金元 </div>
                 <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
                   <div style={{ pointerEvents: 'none' }}>{renderIconOrText(paymentMethod, '24px')}</div>
                   <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
@@ -459,7 +459,7 @@ export default function MobileInputForm() {
               </div>
               <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '20px', marginBottom: '15px' }}>⬇️</div>
               <div>
-                <div style={{...labelStyle, color: '#00ff66'}}>📥 入金先 (増える口座)</div>
+                <div style={{...labelStyle, color: '#00ff66'}}>入金先</div>
                 <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
                   <div style={{ pointerEvents: 'none' }}>{renderIconOrText(category, '24px')}</div>
                   <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
@@ -494,7 +494,7 @@ export default function MobileInputForm() {
                       {accounts.map(acc => <option key={acc} value={acc}>{acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc}</option>)}
                     </select>
                   </div>
-                  <button onClick={handleOpenAccountPanel} style={addBtnStyle}>⚙️ 追加 / 編集</button>
+                  <button onClick={handleOpenAccountPanel} style={addBtnStyle}>追加 / 編集</button>
                 </div>
               </div>
             </>

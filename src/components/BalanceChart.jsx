@@ -387,27 +387,27 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               {/* 解析ロード中 or 解析結果表示 */}
               {isAnalyzing ? (
                 <div style={{ textAlign: 'center', color: '#00ff66', fontFamily: 'monospace', padding: '30px 0' }}>
-                  <div style={{ fontSize: '30px', animation: 'spin 1s linear infinite' }}>⚙️</div>
-                  <div style={{ marginTop: '15px', fontWeight: 'bold' }}>RUNNING DEEP PROFILE ANALYSIS...</div>
-                  <div style={{ fontSize: '10px', color: '#555', marginTop: '5px' }}>DECRYPTING TRANSACTION LOGS (PAST 30 DAYS)</div>
+                  {/*<div style={{ fontSize: '30px', animation: 'spin 1s linear infinite' }}>⚙️</div>*/}
+                  <div style={{ marginTop: '15px', fontWeight: 'bold' }}>詳細プロファイリングを実行中...</div>
+                  <div style={{ fontSize: '10px', color: '#555', marginTop: '5px' }}>取引記録を解読中</div>
                 </div>
               ) : (
                 analysisResult && (
                   <div style={{ background: '#11141a', border: '1px dashed #00bfff', borderRadius: '8px', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ fontSize: '10px', color: '#00bfff', fontWeight: 'bold', letterSpacing: '1px' }}>[ PROFILING RESULTS ]</div>
+                    <div style={{ fontSize: '10px', color: '#00bfff', fontWeight: 'bold', letterSpacing: '1px' }}>[ 分析結果 ]</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontFamily: 'monospace' }}>
                       <div style={{ background: '#0a0c10', padding: '10px', borderRadius: '6px', borderLeft: '2px solid #ff3366' }}>
-                        <div style={{ fontSize: '10px', color: '#888' }}>TOTAL OUTFLOW</div>
+                        <div style={{ fontSize: '10px', color: '#888' }}>支出合計</div>
                         <div style={{ color: '#ff3366', fontSize: '16px', fontWeight: 'bold' }}>-¥{analysisResult.totalOutflow.toLocaleString()}</div>
                       </div>
                       <div style={{ background: '#0a0c10', padding: '10px', borderRadius: '6px', borderLeft: '2px solid #00ff66' }}>
-                        <div style={{ fontSize: '10px', color: '#888' }}>TOTAL INFLOW</div>
+                        <div style={{ fontSize: '10px', color: '#888' }}>収入合計</div>
                         <div style={{ color: '#00ff66', fontSize: '16px', fontWeight: 'bold' }}>+¥{analysisResult.totalInflow.toLocaleString()}</div>
                       </div>
                     </div>
                     <div style={{ background: '#0a0c10', padding: '10px', borderRadius: '6px', borderLeft: '2px solid #ff9900', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <div style={{ color: '#ff9900', fontSize: '10px', fontWeight: 'bold' }}>⚠️ FREQUENT TARGET (頻出): {analysisResult.freqTarget} ({analysisResult.maxCount}回)</div>
-                      <div style={{ color: '#ff9900', fontSize: '10px', fontWeight: 'bold' }}>💥 MAX DAMAGE (最大出費): {analysisResult.maxHit.category} (¥{analysisResult.maxHit.amount.toLocaleString()})</div>
+                      <div style={{ color: '#ff9900', fontSize: '10px', fontWeight: 'bold' }}> 頻出: {analysisResult.freqTarget} ({analysisResult.maxCount}回)</div>
+                      <div style={{ color: '#ff9900', fontSize: '10px', fontWeight: 'bold' }}>最大出費: {analysisResult.maxHit.category} (¥{analysisResult.maxHit.amount.toLocaleString()})</div>
                     </div>
                   </div>
                 )
