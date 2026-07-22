@@ -27,12 +27,17 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [isAIPredictionActive, setIsAIPredictionActive] = useState(false);
   const [reorderMode, setReorderMode] = useState(false);
   const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
+  
+  // 🌟 手動の更新トリガー（編集・削除後に画面を再計算させるため）
+  const [localUpdate, setLocalUpdate] = useState(0);
+  // 🌟 削除（非表示）された口座リスト
+  const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem('deletedAccountsConfig') || '[]'));
+
   const pressTimer = useRef(null);
   const dragData = useRef({ active: false, startY: 0, currentIndex: -1, type: null });
   const [dragOffset, setDragOffset] = useState(0); 
   const [selectedAccHistory, setSelectedAccHistory] = useState(null); 
 
-  // 🌟 AIプロファイリング解析用のState
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
 
@@ -41,6 +46,13 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [routingTarget, setRoutingTarget] = useState(null);
   const [transferAmount, setTransferAmount] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
+
+  // 🌟 編集モーダル用のState
+  const [editingAcc, setEditingAcc] = useState(null);
+  const [editType, setEditType] = useState('bank');
+  const [editBudget, setEditBudget] = useState('');
+  const [editResetDay, setEditResetDay] = useState('1');
+  const [editPayDay, setEditPayDay] = useState('27');
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -57,8 +69,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     const cardData = {};
     Object.keys(creditSettings).forEach(name => {
-      if (ghostAccounts.includes(name)) return;
-      cardData[name] = { ...creditSettings[name], used: 0, usageCount: 0 };
+      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
+      // 🌟 バグ修正：確実に数値(Number)として取り込む
+      cardData[name] = { 
+        budget: Number(creditSettings[name].budget) || 0,
+        resetDay: Number(creditSettings[name].resetDay) || 1,
+        paymentDay: Number(creditSettings[name].paymentDay) || 27,
+        used: 0, usageCount: 0 
+      };
     });
 
     const chronologicalTx = [...transactions].reverse();
@@ -91,7 +109,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       let currentVisibleTotal = 0;
       for (const [accName, accBalance] of Object.entries(runningBalances)) {
-        if (!ghostAccounts.includes(accName)) currentVisibleTotal += accBalance;
+        if (!ghostAccounts.includes(accName) && !deletedAccounts.includes(accName)) currentVisibleTotal += accBalance;
       }
       dLabels.push(dateStr);
       bData.push(currentVisibleTotal);
@@ -114,10 +132,19 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const bankData = {};
     let totalBank = 0;
     Object.entries(runningBalances).forEach(([name, bal]) => {
-      if (ghostAccounts.includes(name)) return;
+      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
       if (cardData[name]) return; 
       bankData[name] = { balance: bal, usageCount: usageCounts[name] || 0 };
       totalBank += bal;
+    });
+
+    // 🌟 統合リストの作成
+    const combined = [];
+    Object.entries(cardData).forEach(([name, data]) => {
+      combined.push({ id: name, name, type: 'card', ...data });
+    });
+    Object.entries(bankData).forEach(([name, data]) => {
+      combined.push({ id: name, name, type: 'bank', ...data });
     });
 
     const lastBalance = bData.length > 0 ? bData[bData.length - 1] : 0;
@@ -149,35 +176,34 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       pValues.push(Math.round(currentSimulatedBalance));
     }
 
-    const applySort = (entriesArray) => {
-      if (sortKey === 'custom') {
-        return entriesArray.sort((a, b) => {
-          let ia = customOrder.indexOf(a[0]); let ib = customOrder.indexOf(b[0]);
-          if (ia === -1) ia = 999; if (ib === -1) ib = 999;
-          return ia - ib;
-        });
-      }
-      return entriesArray.sort((a, b) => {
+    // ソート処理（統合リストに対して実行）
+    if (sortKey === 'custom') {
+      combined.sort((a, b) => {
+        let ia = customOrder.indexOf(a.name); let ib = customOrder.indexOf(b.name);
+        if (ia === -1) ia = 999; if (ib === -1) ib = 999;
+        return ia - ib;
+      });
+    } else {
+      combined.sort((a, b) => {
         let valA, valB;
         if (sortKey === 'amount') {
-          valA = a[1].budget !== undefined ? a[1].budget - a[1].used : a[1].balance;
-          valB = b[1].budget !== undefined ? b[1].budget - b[1].used : b[1].balance;
+          valA = a.type === 'card' ? a.budget - a.used : a.balance;
+          valB = b.type === 'card' ? b.budget - b.used : b.balance;
         } else if (sortKey === 'name') {
-          valA = a[0]; valB = b[0];
+          valA = a.name; valB = b.name;
         } else if (sortKey === 'usage') {
-          valA = a[1].usageCount; valB = b[1].usageCount;
+          valA = a.usageCount; valB = b.usageCount;
         }
         if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
         if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-    };
+    }
 
     return {
-      cards: applySort(Object.entries(cardData)), banks: applySort(Object.entries(bankData)),
-      totalBankBalance: totalBank, dateLabels: dLabels, balanceData: bData, pLabels, pValues
+      combined, totalBankBalance: totalBank, dateLabels: dLabels, balanceData: bData, pLabels, pValues
     };
-  }, [transactions, ghostAccounts, now, sortKey, sortOrder, customOrder]);
+  }, [transactions, ghostAccounts, deletedAccounts, now, sortKey, sortOrder, customOrder, localUpdate]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -226,15 +252,15 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   };
   const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
 
-  const handleDragStart = (e, index, type) => {
-    dragData.current = { active: true, startY: e.touches ? e.touches[0].clientY : e.clientY, currentIndex: index, type: type };
+  const handleDragStart = (e, index) => {
+    dragData.current = { active: true, startY: e.touches ? e.touches[0].clientY : e.clientY, currentIndex: index };
     setDragOffset(0); if (navigator.vibrate) navigator.vibrate(20);
   };
 
   const moveItem = (index, array, direction) => {
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
     if (swapIndex < 0 || swapIndex >= array.length) return;
-    const itemA = array[index][0]; const itemB = array[swapIndex][0];
+    const itemA = array[index].name; const itemB = array[swapIndex].name;
     let newCustomOrder = [...customOrder];
     if (!newCustomOrder.includes(itemA)) newCustomOrder.push(itemA);
     if (!newCustomOrder.includes(itemB)) newCustomOrder.push(itemB);
@@ -243,8 +269,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     setCustomOrder(newCustomOrder); localStorage.setItem('customOrderConfig', JSON.stringify(newCustomOrder));
   };
 
-  const handleDragMove = (e, array, type) => {
-    if (!dragData.current.active || dragData.current.type !== type) return;
+  const handleDragMove = (e, array) => {
+    if (!dragData.current.active) return;
     const currentY = e.touches ? e.touches[0].clientY : e.clientY;
     const diff = currentY - dragData.current.startY;
     setDragOffset(diff);
@@ -260,7 +286,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  const handleDragEnd = () => { dragData.current.active = false; dragData.current.currentIndex = -1; dragData.current.type = null; setDragOffset(0); };
+  const handleDragEnd = () => { dragData.current.active = false; dragData.current.currentIndex = -1; setDragOffset(0); };
 
   const getOneMonthHistory = (accName) => {
     const oneMonthAgo = new Date(); oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
@@ -271,7 +297,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }).sort((a, b) => b.date - a.date);
   };
 
-  // 🌟 分析ロジックの発動（履歴を開いた時）
   useEffect(() => {
     if (selectedAccHistory) {
       setIsAnalyzing(true);
@@ -304,7 +329,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       setAnalysisResult({ totalOutflow, totalInflow, freqTarget, maxCount, maxHit });
 
-      // ローディング演出のためのタイマー
       const timer = setTimeout(() => {
         setIsAnalyzing(false);
         if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
@@ -327,6 +351,53 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
+  // 🌟 編集モーダルを開く処理
+  const openEditModal = (e, item) => {
+    e.stopPropagation(); 
+    setEditingAcc(item.name);
+    setEditType(item.type);
+    if (item.type === 'card') {
+      setEditBudget(item.budget.toString());
+      setEditResetDay(item.resetDay.toString());
+      setEditPayDay(item.paymentDay.toString());
+    } else {
+      setEditBudget(''); setEditResetDay('1'); setEditPayDay('27');
+    }
+  };
+
+  // 🌟 編集を保存する処理
+  const saveEdit = () => {
+    const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+    if (editType === 'card') {
+      currentSettings[editingAcc] = {
+        budget: Number(editBudget) || 0,
+        resetDay: Number(editResetDay) || 1,
+        paymentDay: Number(editPayDay) || 27
+      };
+    } else {
+      delete currentSettings[editingAcc];
+    }
+    localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+    setEditingAcc(null);
+    setLocalUpdate(prev => prev + 1); 
+  };
+
+  // 🌟 削除（非表示）処理
+  const deleteAccount = () => {
+    if (window.confirm(`⚠️ ${editingAcc} をシステムから非表示にしますか？\n(過去の履歴データは消えません)`)) {
+      const newDeleted = [...deletedAccounts, editingAcc];
+      setDeletedAccounts(newDeleted);
+      localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+      
+      const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+      delete currentSettings[editingAcc];
+      localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+      
+      setEditingAcc(null);
+      setLocalUpdate(prev => prev + 1);
+    }
+  };
+
   const executeTransfer = async () => {
     const numAmount = Number(transferAmount);
     if (!transferAmount || isNaN(numAmount) || numAmount <= 0) { alert("⚠️ 正しい金額を入力してください"); return; }
@@ -346,6 +417,49 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   return (
     <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
+      {/* 🌟 設定・編集モーダル */}
+      {editingAcc && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '340px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.3)' }}>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+              ⚙️ [{editingAcc}] 設定
+            </h3>
+            
+            <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #333' }}>
+              <button onClick={() => setEditType('bank')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'bank' ? '#00bfff' : 'transparent', color: editType === 'bank' ? '#000' : '#888' }}>🏦 一般口座</button>
+              <button onClick={() => setEditType('card')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'card' ? '#ff9900' : 'transparent', color: editType === 'card' ? '#000' : '#888' }}>💳 クレジット</button>
+            </div>
+
+            {editType === 'card' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>予算上限 (HP)</div>
+                  <input type="number" value={editBudget} onChange={e => setEditBudget(e.target.value)} style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff9900', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', outline: 'none' }} />
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>更新日</div>
+                    <input type="number" value={editResetDay} onChange={e => setEditResetDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#00ff66', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>支払日</div>
+                    <input type="number" value={editPayDay} onChange={e => setEditPayDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff3366', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+              <button onClick={saveEdit} style={{ width: '100%', padding: '12px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '16px' }}>保存する</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setEditingAcc(null)} style={{ flex: 1, padding: '10px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold' }}>キャンセル</button>
+                <button onClick={deleteAccount} style={{ flex: 1, padding: '10px', background: 'rgba(255,51,102,0.1)', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '6px', fontWeight: 'bold' }}>🗑️ 削除(非表示)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {routingSource && routingTarget && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(10px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '350px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0, 191, 255, 0.3)' }}>
@@ -370,7 +484,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         </div>
       )}
 
-      {/* 🌟 履歴＆解析パネルの魔改造 */}
       {selectedAccHistory && (
         <div onClick={() => setSelectedAccHistory(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '400px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 30px rgba(0,255,102,0.2)' }}>
@@ -384,10 +497,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             
             <div style={{ overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
               
-              {/* 解析ロード中 or 解析結果表示 */}
               {isAnalyzing ? (
                 <div style={{ textAlign: 'center', color: '#00ff66', fontFamily: 'monospace', padding: '30px 0' }}>
-                  {/*<div style={{ fontSize: '30px', animation: 'spin 1s linear infinite' }}>⚙️</div>*/}
                   <div style={{ marginTop: '15px', fontWeight: 'bold' }}>詳細プロファイリングを実行中...</div>
                   <div style={{ fontSize: '10px', color: '#555', marginTop: '5px' }}>取引記録を解読中</div>
                 </div>
@@ -413,7 +524,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                 )
               )}
 
-              {/* 履歴リスト */}
               {!isAnalyzing && (
                 <>
                   <div style={{ fontSize: '10px', color: '#888', fontWeight: 'bold', letterSpacing: '1px', borderBottom: '1px solid #333', paddingBottom: '5px' }}>[ RAW TRANSACTION DATA ]</div>
@@ -463,85 +573,87 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
-      {systemData.cards.length > 0 && (
-        <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838' }}>
-          <h2 style={{ fontSize: '16px', borderBottom: '1px solid #252838', paddingBottom: '10px', marginTop: 0, color: '#ff9900', marginBottom: '20px', fontFamily: 'monospace' }}>💳 CREDIT CARD HP // クレジット残枠</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {systemData.cards.map(([name, data], idx) => {
-              const bounds = getCycleBounds(data.resetDay, now);
-              const remain = Math.max(0, data.budget - data.used);
-              const isOver = data.used > data.budget;
-              const percent = data.budget > 0 ? Math.max(0, Math.min(100, (remain / data.budget) * 100)) : 0;
-              let barColor = '#00ff66'; if (percent <= 20 || isOver) barColor = '#ff3366'; else if (percent <= 50) barColor = '#ff9900';
-              const isDragging = reorderMode && dragData.current.currentIndex === idx && dragData.current.type === 'card';
-              const isRoutingSource = routingMode && routingSource === name;
-              const isRoutingTarget = routingMode && routingSource && routingSource !== name;
-
-              return (
-                <div key={name} className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'} 
-                     onPointerDown={(e) => { if (!reorderMode && !routingMode) handlePointerDown(); }} 
-                     onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
-                     onPointerLeave={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }}
-                     onTouchStart={(e) => { if (reorderMode) handleDragStart(e, idx, 'card'); }}
-                     onTouchMove={(e) => { if (reorderMode) handleDragMove(e, systemData.cards, 'card'); }}
-                     onTouchEnd={handleDragEnd}
-                     onClick={() => handleCartridgeClick(name)}
-                     style={{ 
-                       background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, 
-                       borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer',
-                       touchAction: reorderMode ? 'none' : 'auto', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : 'none', zIndex: isDragging ? 100 : 1, 
-                       boxShadow: isDragging ? '0 10px 30px rgba(255, 153, 0, 0.4)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), 
-                       transition: isDragging ? 'none' : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', opacity: (routingMode && routingSource && routingSource !== name) ? 0.7 : 1
-                     }}>
-                  <div style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>💳</span>}<span>{name}</span></span>
-                    <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>
-                  </div>
-                  <div style={{ color: barColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: `0 0 10px ${barColor}44` }}>{isOver ? 'OVER!' : `¥${remain.toLocaleString()}`}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace' }}><span>LIMIT: ¥{data.budget.toLocaleString()}</span><span>{percent.toFixed(0)}% HP</span></div>
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, height: '5px', width: '100%', background: '#1a1d24' }}><div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: barColor, boxShadow: `0 0 10px ${barColor}` }}></div></div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* 🌟 統合された口座・カードリストエリア */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#00bfff', fontFamily: 'monospace' }}>資金残高</h2>
-          <span style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
+          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#fff', fontFamily: 'monospace' }}>資金残高</h2>
+          <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
         </div>
+        
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {systemData.banks.map(([name, data], idx) => {
-            const amount = data.balance; const percent = systemData.totalBankBalance > 0 ? Math.min(100, Math.max(0, (amount / systemData.totalBankBalance) * 100)) : 0; const isNegative = amount < 0;
-            const isDragging = reorderMode && dragData.current.currentIndex === idx && dragData.current.type === 'bank';
-            const isRoutingSource = routingMode && routingSource === name;
-            const isRoutingTarget = routingMode && routingSource && routingSource !== name;
+          {systemData.combined.map((item, idx) => {
+            const isCard = item.type === 'card';
+            const isDragging = reorderMode && dragData.current.currentIndex === idx;
+            const isRoutingSource = routingMode && routingSource === item.name;
+            const isRoutingTarget = routingMode && routingSource && routingSource !== item.name;
+            
+            let amountText, mainColor, percent, remain, isOver, bounds;
+            
+            if (isCard) {
+              bounds = getCycleBounds(item.resetDay, now);
+              remain = Math.max(0, item.budget - item.used);
+              isOver = item.used > item.budget;
+              percent = item.budget > 0 ? Math.max(0, Math.min(100, (remain / item.budget) * 100)) : 0;
+              mainColor = '#00ff66';
+              if (percent <= 20 || isOver) mainColor = '#ff3366'; else if (percent <= 50) mainColor = '#ff9900';
+              amountText = isOver ? 'OVER!' : `¥${remain.toLocaleString()}`;
+            } else {
+              const bal = item.balance;
+              percent = systemData.totalBankBalance > 0 ? Math.min(100, Math.max(0, (bal / systemData.totalBankBalance) * 100)) : 0;
+              const isNegative = bal < 0;
+              mainColor = isNegative ? '#ff3366' : '#00bfff';
+              amountText = `¥${bal.toLocaleString()}`;
+            }
 
             return (
-              <div key={name} className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
+              <div key={item.name} className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
                    onPointerDown={(e) => { if (!reorderMode && !routingMode) handlePointerDown(); }} 
                    onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
                    onPointerLeave={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }}
-                   onTouchStart={(e) => { if (reorderMode) handleDragStart(e, idx, 'bank'); }} 
-                   onTouchMove={(e) => { if (reorderMode) handleDragMove(e, systemData.banks, 'bank'); }} 
+                   onTouchStart={(e) => { if (reorderMode) handleDragStart(e, idx); }} 
+                   onTouchMove={(e) => { if (reorderMode) handleDragMove(e, systemData.combined); }} 
                    onTouchEnd={handleDragEnd}
-                   onClick={() => handleCartridgeClick(name)}
+                   onClick={() => handleCartridgeClick(item.name)}
                    style={{ 
-                     background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, 
-                     borderRadius: '6px', padding: '20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'pointer', 
+                     background: isRoutingSource ? '#ff336611' : '#0a0c10', 
+                     border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, 
+                     borderRadius: '6px', padding: '15px 20px', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: isCard ? '8px' : '10px', cursor: 'pointer', 
                      touchAction: reorderMode ? 'none' : 'auto', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : 'none', 
                      zIndex: isDragging ? 100 : 1, 
-                     boxShadow: isDragging ? '0 10px 30px rgba(0, 191, 255, 0.4)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), 
-                     transition: isDragging ? 'none' : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', opacity: (routingMode && routingSource && routingSource !== name) ? 0.7 : 1
+                     boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), 
+                     transition: isDragging ? 'none' : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1
                    }}>
-                <div style={{ color: '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>{iconMap[name] ? <img src={iconMap[name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>💽</span>}<span>{name}</span></span>    
-                  <span style={{ color: '#555', fontSize: '12px' }}>{percent.toFixed(1)}%</span>
+                
+                <div style={{ color: isCard ? '#ff9900' : '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {iconMap[item.name] ? <img src={iconMap[item.name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>{isCard ? '💳' : '💽'}</span>}
+                    <span>{item.name}</span>
+                  </span>    
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {isCard && <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>}
+                    {!reorderMode && !routingMode && (
+                      <div onClick={(e) => openEditModal(e, item)} style={{ fontSize: '16px', color: '#666', padding: '2px 5px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', transition: 'all 0.2s', cursor: 'pointer' }}>⚙️</div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ color: isNegative ? '#ff3366' : '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right' }}>¥{amount.toLocaleString()}</div>
-                <div style={{ position: 'absolute', bottom: 0, left: 0, height: '4px', width: '100%', background: '#1a1d24' }}><div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: isNegative ? '#ff3366' : '#00bfff', boxShadow: isNegative ? '0 0 10px #ff3366' : '0 0 10px #00bfff' }}></div></div>
+                
+                <div style={{ color: mainColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: isCard ? `0 0 10px ${mainColor}44` : 'none' }}>
+                  {amountText}
+                </div>
+
+                {isCard ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace' }}>
+                    <span>LIMIT: ¥{item.budget.toLocaleString()}</span><span>{percent.toFixed(0)}% HP</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '12px', color: '#555' }}>
+                    {percent.toFixed(1)}%
+                  </div>
+                )}
+
+                <div style={{ position: 'absolute', bottom: 0, left: 0, height: '4px', width: '100%', background: '#1a1d24' }}>
+                  <div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: mainColor, boxShadow: `0 0 10px ${mainColor}` }}></div>
+                </div>
               </div>
             );
           })}
@@ -549,7 +661,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       </div>
       <style>{`
         .account-cartridge { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s, border-color 0.2s, background 0.2s; }
-        .account-cartridge:hover { transform: translateY(-4px); border-color: #00bfff !important; box-shadow: 0 4px 20px rgba(0, 191, 255, 0.15); }
+        .account-cartridge:hover { transform: translateY(-4px); border-color: #555 !important; box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1); }
         .energy-bar { animation: pulse 2.5s infinite ease-in-out; transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
         .shake { animation: tilt-shaking 0.5s infinite; border-color: #ff9900 !important; }
         @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
