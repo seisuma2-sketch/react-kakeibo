@@ -7,10 +7,10 @@ import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
 import NewsFeed from './components/NewsFeed';
 import MobileTransactionList from './components/MobileTransactionList';
-import MobileCalendar from './components/MobileCalendar'; // 🌟 カレンダー
+import MobileCalendar from './components/MobileCalendar';
 import NebulaCore3D from './components/NebulaCore3D';
-import AuthScreen from './components/AuthScreen'; // 🌟 認証画面コンポーネント
-import DailyBriefingOverlay from './components/DailyBriefingOverlay'; // 🌟 AIブリーフィング
+import AuthScreen from './components/AuthScreen';
+import DailyBriefingOverlay from './components/DailyBriefingOverlay';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -25,6 +25,9 @@ export default function MobileApp() {
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
+  // 🌟 情報タブ内の切り替えモード ('map' ⇔ 'news')
+  const [feedMode, setFeedMode] = useState('map');
+
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || '2d');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
   
@@ -61,13 +64,11 @@ export default function MobileApp() {
   const holdStartTimerRef = useRef(null); 
   const [isListening, setIsListening] = useState(false); 
 
-  // 🌟 デイリーブリーフィングの表示管理
   const [showBriefing, setShowBriefing] = useState(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
-      // 🌟 ログイン時に、今日すでにブリーフィングを見たかチェック
       if (currentUser) {
         const todayStr = new Date().toLocaleDateString();
         const lastBriefing = localStorage.getItem('lastBriefingDate');
@@ -79,7 +80,6 @@ export default function MobileApp() {
     return () => unsubscribe();
   }, []);
 
-  // 🌟 ブリーフィング終了時の処理
   const handleBriefingComplete = () => {
     localStorage.setItem('lastBriefingDate', new Date().toLocaleDateString());
     setShowBriefing(false);
@@ -236,6 +236,16 @@ export default function MobileApp() {
     }
   };
 
+  // 🌟 情報タブクリック時の特別処理（もう一度押したらトグル）
+  const handleFeedTabClick = () => {
+    if (currentTab === 'feed') {
+      setFeedMode(prev => prev === 'map' ? 'news' : 'map');
+      if (navigator.vibrate) navigator.vibrate(20);
+    } else {
+      setCurrentTab('feed');
+    }
+  };
+
   const safeTransactions = transactions.map(tx => {
     if (!isStealthActive) return tx;
     const isFromGhost = stealthAccounts.includes(tx.paymentMethod);
@@ -257,7 +267,6 @@ export default function MobileApp() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
       
-      {/* 🌟 1日1回のAIブリーフィングオーバーレイ */}
       {showBriefing && (
         <DailyBriefingOverlay 
           transactions={safeTransactions} 
@@ -299,7 +308,6 @@ export default function MobileApp() {
             
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
-            {/* 🌟 ブリーフィングのテスト起動ボタン */}
             <div style={{ marginBottom: '10px' }}>
               <button 
                 onClick={() => { setIsMenuOpen(false); setShowBriefing(true); }} 
@@ -373,7 +381,8 @@ export default function MobileApp() {
         )}
         {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={themeColor} />}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
-        {currentTab === 'feed' && <NewsFeed />}
+        {/* 🌟 NewsFeedに feedMode と setFeedMode を渡す */}
+        {currentTab === 'feed' && <NewsFeed feedMode={feedMode} setFeedMode={setFeedMode} />}
       </div>
 
       {/* 🚀 ハイブリッド・タブバーエリア */}
@@ -399,7 +408,8 @@ export default function MobileApp() {
             onPointerLeave={handleEndHold}
           />
           <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} themeColor={themeColor} />
-          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} themeColor={themeColor} />
+          {/* 🌟 情報タブに handleFeedTabClick を割り当て */}
+          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={handleFeedTabClick} themeColor={themeColor} />
         </div>
       ) : (
         <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
