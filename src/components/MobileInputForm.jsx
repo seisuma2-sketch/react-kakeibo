@@ -37,7 +37,13 @@ export default function MobileInputForm() {
   const [paymentMethod, setPaymentMethod] = useState('/icon-cash.png 現金');
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false); 
+
+  // 🌟 ARターゲティング・スコープ用 State
+  const [isArModalOpen, setIsArModalOpen] = useState(false);
+  const [arImageSrc, setArImageSrc] = useState(null);
+  const [arStatus, setArStatus] = useState('idle'); // 'idle' | 'scanning' | 'locked' | 'error'
+  const [arLog, setArLog] = useState('[SYSTEM] OPTICAL SENSOR ONLINE... READY.');
+  const [arTargetData, setArTargetData] = useState({ amount: '', memo: '' });
 
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
@@ -66,7 +72,6 @@ export default function MobileInputForm() {
     '/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'
   ]);
   
-  // 🌟 アプリ内の既存口座・カードリスト
   const [accounts, setAccounts] = useState([
     '/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', 
     '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'
@@ -84,21 +89,13 @@ export default function MobileInputForm() {
   const handleAddCategory = () => setCustomPrompt({ isOpen: true, title: '新しいカテゴリ名を入力', target: 'category', text: '' });
   
   const handleOpenAccountPanel = () => {
-    setNewAccName('');
-    setNewAccType('bank');
-    setNewAccBudget('');
-    setNewAccResetDay('1');
-    setNewAccPaymentDay('27');
-    setAccountPanelMode('add');
-    setEditTargetCard('');
-    
+    setNewAccName(''); setNewAccType('bank'); setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
+    setAccountPanelMode('add'); setEditTargetCard('');
     const cards = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     setSavedCards(cards);
-    
     setShowAccountPanel(true);
   };
 
-  // 🌟 修正ポイント1：既存リストから選択した時に、データがあれば読み込み、無ければ新規設定させる
   const handleSelectEditCard = (e) => {
     const cardName = e.target.value;
     setEditTargetCard(cardName);
@@ -107,7 +104,6 @@ export default function MobileInputForm() {
       setNewAccResetDay(savedCards[cardName].resetDay);
       setNewAccPaymentDay(savedCards[cardName].paymentDay);
     } else {
-      // 登録がない（初期からあるリクルートカード等）場合はデフォルト値を入れる
       setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
     }
   };
@@ -115,39 +111,25 @@ export default function MobileInputForm() {
   const handleSaveAccount = () => {
     if (accountPanelMode === 'add') {
       if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
-      
       const iconPath = newAccType === 'credit' ? '/icon-other.png' : '/icon-cash.png';
       const newItem = `${iconPath} ${newAccName.trim()}`;
-      
       if (!accounts.includes(newItem)) setAccounts([...accounts, newItem]);
       setPaymentMethod(newItem);
-
       if (newAccType === 'credit') {
         const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-        currentSettings[newAccName.trim()] = {
-          budget: Number(newAccBudget) || 0,
-          resetDay: Number(newAccResetDay) || 1,
-          paymentDay: Number(newAccPaymentDay) || 27
-        };
+        currentSettings[newAccName.trim()] = { budget: Number(newAccBudget) || 0, resetDay: Number(newAccResetDay) || 1, paymentDay: Number(newAccPaymentDay) || 27 };
         localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
         showAlert(`💳 ${newAccName.trim()} を登録しました`, "success");
       } else {
         showAlert("口座を追加しました", "success");
       }
     } else {
-      // --- 編集モード ---
       if (!editTargetCard) { showAlert("修正する項目を選択してください", "error"); return; }
-      
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-      currentSettings[editTargetCard] = {
-        budget: Number(newAccBudget) || 0,
-        resetDay: Number(newAccResetDay) || 1,
-        paymentDay: Number(newAccPaymentDay) || 27
-      };
+      currentSettings[editTargetCard] = { budget: Number(newAccBudget) || 0, resetDay: Number(newAccResetDay) || 1, paymentDay: Number(newAccPaymentDay) || 27 };
       localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
       showAlert(`💳 ${editTargetCard} に予算設定を適用しました！`, "success");
     }
-    
     setShowAccountPanel(false);
   };
 
@@ -160,28 +142,56 @@ export default function MobileInputForm() {
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
 
-  // アイコンパスを取り除いて純粋な名前にするヘルパー
   const getCleanName = (val) => val.startsWith('/') ? val.slice(val.indexOf(' ') + 1) : val.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
 
-  const processReceipt = async (e) => {
+  // 🌟 ARスコープ起動 ＆ 画像読み込み
+  const handleOpenArScanner = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsOcrProcessing(true);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = async () => {
-        const base64Image = reader.result.split(',')[1];
-        const API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
+    setArStatus('scanning');
+    setArLog('[SYSTEM] INITIATING TARGETING SCAN...');
+    setIsArModalOpen(true);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+      const base64Data = reader.result;
+      setArImageSrc(base64Data);
+      
+      const base64Image = base64Data.split(',')[1];
+      const API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
+
+      // エラー発生時やAPIキーがない場合もサイバーに処理するフォールバック
+      if (!API_KEY || API_KEY === 'undefined') {
+        setTimeout(() => {
+          setArStatus('error');
+          setArLog('[WARN] VISION API KEY NOT FOUND. SWITCHING TO MANUAL TARGETING MODE.');
+          if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        }, 1500);
+        return;
+      }
+
+      try {
+        setArLog('[OCR] DECRYPTING OPTICAL DATA VIA NEBULA SATELLITE...');
         const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
         const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ image: { content: base64Image }, features: [{ type: 'TEXT_DETECTION' }] }] }) });
         const data = await response.json();
-        if (data.error) { showAlert(`AIエラー: ${data.error.message}`, "error"); setIsOcrProcessing(false); return; }
+        
+        if (data.error) {
+          throw new Error(data.error.message);
+        }
+
         const text = data.responses[0]?.textAnnotations[0]?.description;
-        if (!text) { showAlert("文字が読めませんでした。", "error"); setIsOcrProcessing(false); return; }
+        if (!text) {
+          setArStatus('error');
+          setArLog('[ERROR] NO READABLE CHARACTERS DETECTED IN TARGET AREA.');
+          return;
+        }
+
         const lines = text.split('\n');
-        if (lines.length > 0) setMemo(lines[0].trim());
+        let foundMemo = lines[0]?.trim() || 'スキャン店舗';
         let foundAmount = "";
+
         for (let i = lines.length - 1; i >= 0; i--) {
           const match = lines[i].match(/(?:合計|合\s*計|小計|お買上額|支払|¥|￥)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)/);
           if (match) { foundAmount = match[1].replace(/,/g, ''); break; }
@@ -193,16 +203,38 @@ export default function MobileInputForm() {
             if (maxNum > 0 && maxNum < 1000000) foundAmount = maxNum.toString();
           }
         }
+
         if (foundAmount) {
-          setAmount(foundAmount);
-          setCalcStr(foundAmount);
-          showAlert("金額抽出成功！", "success");
+          setArTargetData({ amount: foundAmount, memo: foundMemo });
+          setArStatus('locked');
+          setArLog(`[LOCKED] TARGET CAPTURED: ¥${Number(foundAmount).toLocaleString()} // READY TO TRANSFER.`);
+          if (navigator.vibrate) navigator.vibrate([50, 50, 200]); // ターゲット捕捉の激しい振動
         } else {
-          showAlert("合計が見つかりません", "error");
+          setArStatus('error');
+          setArLog('[WARN] AMOUNT NOT DETECTED. PLEASE ENTER MANUAL TARGET.');
+          if (navigator.vibrate) navigator.vibrate([80, 80]);
         }
-        setIsOcrProcessing(false); 
-      };
-    } catch (error) { showAlert("解析失敗", "error"); setIsOcrProcessing(false); } finally { e.target.value = ''; }
+      } catch (err) {
+        console.error(err);
+        setArStatus('error');
+        setArLog('[ERROR] CONNECTION INTERRUPTED. MANUAL OVERRIDE REQUIRED.');
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      }
+    };
+    e.target.value = ''; // Inputリセット
+  };
+
+  // 🌟 捕捉データを入力フォームに転送してスコープを閉じる
+  const handleApplyArTarget = () => {
+    if (arTargetData.amount) {
+      setAmount(arTargetData.amount);
+      setCalcStr(arTargetData.amount);
+    }
+    if (arTargetData.memo) {
+      setMemo(arTargetData.memo);
+    }
+    setIsArModalOpen(false);
+    showAlert("⚡ TARGET DATA TRANSFERRED!", "success");
   };
 
   const handleSubmit = async () => {
@@ -233,7 +265,6 @@ export default function MobileInputForm() {
 
       await addDoc(collection(db, "transactions"), txData);
       addToHistory(finalAmount);
-
       setAmount(''); setCalcStr(''); setMemo('');
       showAlert("記録完了！", "success");
     } catch (error) { showAlert("エラー発生", "error"); } finally { setIsSubmitting(false); }
@@ -268,8 +299,95 @@ export default function MobileInputForm() {
   const livePreview = calcStr ? evaluateMath(calcStr) : amount;
 
   return (
-    <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative' }}>
+    <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
+      {/* 🌟 究極SF演出：ARターゲティング・スコープ・モーダル */}
+      {isArModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', zIndex: 999999, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease-out' }}>
+          
+          {/* HUD ヘッダー */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: 'linear-gradient(to bottom, rgba(0,255,102,0.2), transparent)', borderBottom: '1px solid #00ff6644', zIndex: 10 }}>
+            <div style={{ color: '#00ff66', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', textShadow: '0 0 8px #00ff66' }}>
+              <span style={{ fontSize: '18px' }}>👁️</span> TERMINATOR VISION // OPTICAL SCANNER
+            </div>
+            <button onClick={() => setIsArModalOpen(false)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 12px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', boxShadow: '0 0 10px rgba(255,51,102,0.3)' }}>
+              ABORT (中止)
+            </button>
+          </div>
+
+          {/* 画像＆スコープ・ターゲットエリア */}
+          <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#05070a', overflow: 'hidden' }}>
+            {arImageSrc ? (
+              <img src={arImageSrc} alt="Target" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: arStatus === 'scanning' ? 'contrast(1.5) brightness(0.7)' : 'contrast(1.1)', transition: 'all 0.3s' }} />
+            ) : (
+              <div style={{ color: '#555', fontFamily: 'monospace' }}>NO OPTICAL FEED</div>
+            )}
+
+            {/* スキャンライン・レーザー演出 */}
+            {arStatus === 'scanning' && (
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: 'linear-gradient(to bottom, transparent, rgba(0,255,102,0.3) 50%, transparent)', animation: 'arScanMove 1.5s linear infinite' }} />
+            )}
+
+            {/* ロックオン・ターゲット枠（バウンディング・ボックス） */}
+            {arStatus === 'locked' && (
+              <div style={{ position: 'absolute', width: '220px', height: '100px', border: '2px solid #ff3366', boxShadow: '0 0 20px #ff3366, inset 0 0 15px #ff3366', borderRadius: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '6px', boxSizing: 'border-box', animation: 'targetLock 0.3s cubic-bezier(0.1, 0.9, 0.2, 1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ff3366', fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold', background: 'rgba(0,0,0,0.7)', padding: '2px 4px' }}>
+                  <span>TARGET: LOCKED</span><span>99.8% MATCH</span>
+                </div>
+                <div style={{ textAlign: 'center', color: '#fff', fontSize: '22px', fontWeight: 'bold', fontFamily: 'monospace', textShadow: '0 0 10px #ff3366' }}>
+                  ¥{Number(arTargetData.amount).toLocaleString()}
+                </div>
+                <div style={{ textAlign: 'center', color: '#00ff66', fontSize: '10px', fontFamily: 'monospace', background: 'rgba(0,0,0,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {arTargetData.memo || 'DETECTED VENDOR'}
+                </div>
+                {/* 4隅のターゲット金具 */}
+                <div style={{ position: 'absolute', top: '-4px', left: '-4px', width: '12px', height: '12px', borderTop: '3px solid #fff', borderLeft: '3px solid #fff' }} />
+                <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '12px', height: '12px', borderTop: '3px solid #fff', borderRight: '3px solid #fff' }} />
+                <div style={{ position: 'absolute', bottom: '-4px', left: '-4px', width: '12px', height: '12px', borderBottom: '3px solid #fff', borderLeft: '3px solid #fff' }} />
+                <div style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '12px', height: '12px', borderBottom: '3px solid #fff', borderRight: '3px solid #fff' }} />
+              </div>
+            )}
+
+            {/* 常時表示のHUDグリッドライン */}
+            <div style={{ position: 'absolute', top: '50%', left: 0, width: '100%', height: '1px', background: 'rgba(0,255,102,0.2)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', top: 0, left: '50%', width: '1px', height: '100%', background: 'rgba(0,255,102,0.2)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', width: '80%', height: '80%', border: '1px dashed rgba(0,255,102,0.15)', borderRadius: '50%', pointerEvents: 'none' }} />
+          </div>
+
+          {/* HUD コントロール＆ログフッター */}
+          <div style={{ padding: '20px', background: '#0a0c10', borderTop: '1px solid #00ff6644', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 10 }}>
+            <div style={{ background: '#050608', borderLeft: '3px solid #00ff66', padding: '8px 12px', fontFamily: 'monospace', fontSize: '11px', color: arStatus === 'error' ? '#ff3366' : '#00ff66' }}>
+              {arLog}
+            </div>
+
+            {/* 手動修正またはエラー時の入力欄 */}
+            {(arStatus === 'locked' || arStatus === 'error') && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#1a1d24', border: '1px solid #00ff66', borderRadius: '6px', padding: '0 10px' }}>
+                  <span style={{ color: '#00ff66', fontFamily: 'monospace', fontWeight: 'bold' }}>¥</span>
+                  <input type="number" value={arTargetData.amount} onChange={e => setArTargetData({ ...arTargetData, amount: e.target.value })} placeholder="手動金額" style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontSize: '18px', fontWeight: 'bold', padding: '10px', outline: 'none', fontFamily: 'monospace' }} />
+                </div>
+                <input type="text" value={arTargetData.memo} onChange={e => setArTargetData({ ...arTargetData, memo: e.target.value })} placeholder="店舗/メモ" style={{ flex: 1.2, background: '#1a1d24', border: '1px solid #333', color: '#fff', padding: '12px', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => fileInputRef.current.click()} style={{ flex: 1, padding: '14px', background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer' }}>
+                🔄 RE-SCAN (再スキャン)
+              </button>
+              <button onClick={handleApplyArTarget} disabled={!arTargetData.amount} style={{ flex: 1.5, padding: '14px', background: arTargetData.amount ? '#00ff66' : '#333', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '15px', cursor: arTargetData.amount ? 'pointer' : 'not-allowed', boxShadow: arTargetData.amount ? '0 0 15px rgba(0,255,102,0.4)' : 'none' }}>
+                ⚡ EXECUTE (データ転送)
+              </button>
+            </div>
+          </div>
+
+          <style>{`
+            @keyframes arScanMove { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+            @keyframes targetLock { 0% { transform: scale(2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+          `}</style>
+        </div>
+      )}
+
       {customAlert.isOpen && (
         <div style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', background: customAlert.type === 'success' ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 51, 102, 0.1)', border: `1px solid ${customAlert.type === 'success' ? '#00ff66' : '#ff3366'}`, color: customAlert.type === 'success' ? '#00ff66' : '#ff3366', padding: '12px 24px', borderRadius: '30px', fontWeight: 'bold', fontSize: '14px', backdropFilter: 'blur(10px)', zIndex: 999999 }}>
           {customAlert.type === 'success' ? '✅' : '⚠️'} {customAlert.message}
@@ -292,16 +410,13 @@ export default function MobileInputForm() {
       {showAccountPanel && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', padding: '25px', width: '85%', maxWidth: '340px', boxShadow: '0 0 40px rgba(0, 255, 102, 0.2)', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            
             <h3 style={{ margin: 0, color: '#00ff66', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>⚙️</span> SYSTEM CONFIG // 決済管理
             </h3>
-
             <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #252838' }}>
               <button onClick={() => setAccountPanelMode('add')} style={tabStyle(accountPanelMode === 'add', '#00ff66', '#aaa')}>✨ 新規登録</button>
               <button onClick={() => setAccountPanelMode('edit')} style={tabStyle(accountPanelMode === 'edit', '#ff9900', '#aaa')}>⚙️ 予算・日付修正</button>
             </div>
-
             {accountPanelMode === 'add' ? (
               <>
                 <div style={{ display: 'flex', background: '#1a1d24', borderRadius: '6px', padding: '4px', border: '1px solid #333' }}>
@@ -313,8 +428,7 @@ export default function MobileInputForm() {
                   <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder={newAccType === 'credit' ? "例：リクルートカード" : "例：PayPay銀行"} style={inputStyle} />
                 </div>
                 {newAccType === 'credit' && (
-                  <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, animation: 'fadeIn 0.3s ease-out', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                  <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div>
                       <div style={{ ...labelStyle, color: '#ff9900' }}>[2] 今月の利用枠（予算上限）</div>
                       <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff990055', borderRadius: '6px', padding: '0 10px' }}>
@@ -344,14 +458,12 @@ export default function MobileInputForm() {
                 )}
               </>
             ) : (
-              // ━━━ 🌟 編集（修正）モード：すべての登録済み口座リストを表示 ━━━
               <>
                 <div>
                   <div style={{...labelStyle, color: '#ff9900'}}>[1] 修正する項目を選択</div>
                   <div style={{ position: 'relative' }}>
                     <select value={editTargetCard} onChange={handleSelectEditCard} style={{ ...inputStyle, appearance: 'none', cursor: 'pointer' }}>
                       <option value="">-- 選択してください --</option>
-                      {/* 🌟 変更点：accountsリストから全ての名前を抽出して選択肢にする */}
                       {accounts.map(acc => {
                         const cleanName = getCleanName(acc);
                         return <option key={cleanName} value={cleanName}>{cleanName}</option>;
@@ -359,11 +471,9 @@ export default function MobileInputForm() {
                     </select>
                     <div style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#888' }}>▼</div>
                   </div>
-                  <div style={{ fontSize: '9px', color: '#888', marginTop: '5px' }}>※一般口座を選択して予算を設定すると、HP管理対象にアップグレードされます。</div>
                 </div>
-
                 {editTargetCard && (
-                  <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, animation: 'fadeIn 0.3s ease-out', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div>
                       <div style={{ ...labelStyle, color: '#ff9900' }}>[2] 今月の利用枠（予算上限）</div>
                       <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff990055', borderRadius: '6px', padding: '0 10px' }}>
@@ -373,32 +483,21 @@ export default function MobileInputForm() {
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ ...labelStyle, color: '#00ff66', fontSize: '10px' }}>[3] 更新日 (リセット)</div>
-                        <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #00ff6655', borderRadius: '6px', padding: '0 10px' }}>
-                          <span style={{ color: '#00ff66', fontSize: '12px' }}>毎月</span>
-                          <input type="number" value={newAccResetDay} onChange={e => setNewAccResetDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#00ff66', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
-                          <span style={{ color: '#00ff66', fontSize: '12px' }}>日</span>
-                        </div>
+                        <div style={{ ...labelStyle, color: '#00ff66', fontSize: '10px' }}>[3] 更新日</div>
+                        <input type="number" value={newAccResetDay} onChange={e => setNewAccResetDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, textAlign: 'center', color: '#00ff66', fontWeight: 'bold' }} />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ ...labelStyle, color: '#ff3366', fontSize: '10px' }}>[4] 支払日 (引き落とし)</div>
-                        <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff336655', borderRadius: '6px', padding: '0 10px' }}>
-                          <span style={{ color: '#ff3366', fontSize: '12px' }}>毎月</span>
-                          <input type="number" value={newAccPaymentDay} onChange={e => setNewAccPaymentDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff3366', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
-                          <span style={{ color: '#ff3366', fontSize: '12px' }}>日</span>
-                        </div>
+                        <div style={{ ...labelStyle, color: '#ff3366', fontSize: '10px' }}>[4] 支払日</div>
+                        <input type="number" value={newAccPaymentDay} onChange={e => setNewAccPaymentDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, textAlign: 'center', color: '#ff3366', fontWeight: 'bold' }} />
                       </div>
                     </div>
                   </div>
                 )}
               </>
             )}
-
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <button onClick={() => setShowAccountPanel(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold' }}>CANCEL</button>
-              <button onClick={handleSaveAccount} style={{ flex: 1, padding: '12px', background: accountPanelMode === 'edit' ? '#ff9900' : (newAccType === 'credit' ? '#ff9900' : '#00ff66'), color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', boxShadow: `0 0 15px ${accountPanelMode === 'edit' || newAccType === 'credit' ? 'rgba(255,153,0,0.4)' : 'rgba(0,255,102,0.4)'}` }}>
-                {accountPanelMode === 'edit' ? '修正を保存' : '登録完了'}
-              </button>
+              <button onClick={handleSaveAccount} style={{ flex: 1, padding: '12px', background: accountPanelMode === 'edit' ? '#ff9900' : '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>{accountPanelMode === 'edit' ? '修正を保存' : '登録完了'}</button>
             </div>
           </div>
         </div>
@@ -406,11 +505,11 @@ export default function MobileInputForm() {
 
       {/* ヘッダー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
-          <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
-            収支入力画面
-          </h2>    
-       </div>
+        <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+          支出・収入クイック入力
+        </h2>    
+      </div>
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: '#11141a', width: '100%', maxWidth: '400px', borderRadius: '12px', border: '1px solid #252838', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -421,20 +520,21 @@ export default function MobileInputForm() {
             <button onClick={() => handleTypeChange('transfer')} style={tabStyle(type === 'transfer', '#b666ff', '#aaa')}>振替</button>
           </div>
 
-          <div style={{ boxSizing: 'border-box', width: '100%', overflow: 'hidden' }}>
-            <div style={labelStyle}>決済時刻</div>
-            <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} />
+          <div>
+            <div style={labelStyle}>発生日時</div>
+            <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
           </div>
 
           <div>
             <div style={labelStyle}>金額 (数式入力可)</div>
             <div style={{ display: 'flex', gap: '10px' }}>
-             <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={processReceipt} style={{ display: 'none' }} />
-              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00bfff', padding: '0 10px' }}>
+              <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleOpenArScanner} style={{ display: 'none' }} />
+              {/* 🌟 改造されたカメラ（ARスコープ）起動ボタン */}
+              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00ff66', padding: '0 12px', boxShadow: '0 0 10px rgba(0,255,102,0.2)' }}>
                 <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
               </button>
               
-              <div onClick={() => setIsKeypadOpen(true)} style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text', position: 'relative' }}>
+              <div onClick={() => setIsKeypadOpen(true)} style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text' }}>
                 <div style={{ fontSize: '12px', color: '#888', height: '14px', fontFamily: 'monospace' }}>{calcStr || '0'}</div>
                 <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold', fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
                   <span style={{ color: '#555', marginRight: '4px', fontSize: '20px' }}>¥</span>
@@ -444,11 +544,10 @@ export default function MobileInputForm() {
             </div>
           </div>
 
-          {/* セレクトボックス群 */}
           {type === 'transfer' ? (
             <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
               <div style={{ marginBottom: '15px' }}>
-                <div style={{...labelStyle, color: '#ff3366'}}>出金元 </div>
+                <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
                 <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
                   <div style={{ pointerEvents: 'none' }}>{renderIconOrText(paymentMethod, '24px')}</div>
                   <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
@@ -459,7 +558,7 @@ export default function MobileInputForm() {
               </div>
               <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '20px', marginBottom: '15px' }}>⬇️</div>
               <div>
-                <div style={{...labelStyle, color: '#00ff66'}}>入金先</div>
+                <div style={{...labelStyle, color: '#00ff66'}}>📥 入金先 (増える口座)</div>
                 <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
                   <div style={{ pointerEvents: 'none' }}>{renderIconOrText(category, '24px')}</div>
                   <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
@@ -494,7 +593,7 @@ export default function MobileInputForm() {
                       {accounts.map(acc => <option key={acc} value={acc}>{acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc}</option>)}
                     </select>
                   </div>
-                  <button onClick={handleOpenAccountPanel} style={addBtnStyle}>追加 / 編集</button>
+                  <button onClick={handleOpenAccountPanel} style={addBtnStyle}>⚙️ 追加 / 編集</button>
                 </div>
               </div>
             </>
