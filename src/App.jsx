@@ -18,6 +18,8 @@ import MobileInputForm from './components/MobileInputForm';
 import MoneyFlowMap from './components/MoneyFlowMap';
 import NewsFeed from './components/NewsFeed';
 import TopNewsWidget from './components/TopNewsWidget';
+// 🌟 1. ここを追加！新しく作成したコックピットOSを読み込む
+import DesktopCockpitOS from './components/DesktopCockpitOS';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -29,6 +31,16 @@ function App() {
   const [stealthPassword, setStealthPassword] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
+  // 🌟 2. ここを追加！画面モード（スタンダード ⇔ コックピットOS）を記憶するState
+  const [desktopMode, setDesktopMode] = useState(() => {
+    return localStorage.getItem('desktopDashMode') || 'standard';
+  });
+
+  const switchMode = (mode) => {
+    setDesktopMode(mode);
+    localStorage.setItem('desktopDashMode', mode);
+  };
+
   const [stealthConfig, setStealthConfig] = useState(() => {
     const saved = localStorage.getItem('stealthConfig');
     return saved ? JSON.parse(saved) : {
@@ -127,28 +139,23 @@ function App() {
 
   // 🌟 検閲 兼 データ偽装処理（裏口座の痕跡を消しつつ、計算の辻褄を合わせる）
   const displayTransactions = transactions.map(tx => {
-    if (!stealthConfig.active) return tx; // ロック解除中はそのまま通す
+    if (!stealthConfig.active) return tx; 
 
     const isFromGhost = stealthConfig.ghostAccounts.includes(tx.paymentMethod);
     const isToGhost = tx.type === 'transfer' && stealthConfig.ghostAccounts.includes(tx.category);
 
     if (tx.type === 'transfer') {
-      // ① ゴースト口座 ➡️ 通常口座（資金ロンダリング：謎の入金に偽装）
       if (isFromGhost && !isToGhost) {
         return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
       }
-      // ② 通常口座 ➡️ ゴースト口座（資金隠蔽：謎の出費に偽装）
       if (!isFromGhost && isToGhost) {
         return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
       }
     }
 
-    // ③ ゴースト口座同士の移動、またはゴースト口座単体の収入・支出は完全に存在を抹消（nullにする）
     if (isFromGhost || isToGhost) return null;
-
-    // ④ それ以外の安全な普通の取引はそのまま通す
     return tx;
-  }).filter(Boolean); // 最後に null になった取引を配列から消し去る
+  }).filter(Boolean); 
 
   const uniqueAccounts = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
   const currentMonth = new Date().getMonth() + 1;
@@ -174,6 +181,18 @@ function App() {
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
 
+  // 🌟 3. ここを追加！パソコンで「コックピットOSモード」を選択中なら、新画面をまるごと表示する！
+  if (!isMobile && desktopMode === 'os') {
+    return (
+      <DesktopCockpitOS
+        transactions={displayTransactions}
+        ghostAccounts={ghostList}
+        onSwitchMode={() => switchMode('standard')}
+      />
+    );
+  }
+
+  // ━━━ ここから下が、いつものお気に入りのスタンダード画面 ━━━
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', overflow: 'hidden', position: 'relative' }}>
       
@@ -181,11 +200,38 @@ function App() {
 
       <div style={{ flex: 1, padding: isMobile ? '15px' : '30px', overflowY: 'auto', width: '100%', paddingBottom: isMobile ? '80px' : '30px' }}>
         
+        {/* 🌟 4. ここを変更！画面右上の接続ステータスの隣に、モード切替ボタンを配置！ */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px' }}>
           <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff' }}>{tabTitles[currentTab] || '開発中...'}</h2>
-<div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900' }}>
-            {isOnline ? (user ? '🟢 接続済 (SYNC)' : '🔴 切断') : '📡 オフライン (LOCAL)'}
-          </div>        </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {!isMobile && (
+              <button
+                onClick={() => switchMode('os')}
+                style={{
+                  background: 'linear-gradient(45deg, #00ff6622, #00bfff22)',
+                  border: '1px solid #00ff66',
+                  color: '#00ff66',
+                  padding: '6px 14px',
+                  borderRadius: '20px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 10px rgba(0, 255, 102, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span>🖥️</span> コックピットOSへ
+              </button>
+            )}
+            <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900' }}>
+              {isOnline ? (user ? '🟢 接続済 (SYNC)' : '🔴 切断') : '📡 オフライン (LOCAL)'}
+            </div>
+          </div>
+        </div>
 
         <div>
           {currentTab === 'home' && (
@@ -194,16 +240,11 @@ function App() {
               
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  {/* 🚨 変更前: transactions={transactions} ghostAccounts={ghostList} */}
-                  {/* ✅ 変更後: 最初から裏データを抜いた displayTransactions だけを渡す！ */}
                   <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
-                  {/* ここも displayTransactions が渡されていることを確認 */}
                   <CategoryChart transactions={displayTransactions} />
-                  
                   {!isMobile && <TopNewsWidget onClickViewAll={() => setCurrentTab('feed')} />}
-
                   <NebulaCore netIncome={netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
                 </div>
               </div>
@@ -226,11 +267,9 @@ function App() {
                    <div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>📍</div>
                   <div style={{ color: '#ff3366', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>トラッカー</div>
                   </div>
-
                 </div>
                 
                 <div style={{ flex: 2, minWidth: 0 }}>
-                   {/* 🌟 履歴リストには検閲済みのdisplayTransactionsを渡す！ */}
                    <TransactionList transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} isMobile={isMobile} />
                 </div>
               </div>
@@ -246,7 +285,8 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-{currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />}          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
+          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />}
+          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'playground' && <Playground transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
