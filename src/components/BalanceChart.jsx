@@ -29,7 +29,18 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
   
   const [localUpdate, setLocalUpdate] = useState(0);
+  
+  // 🌟 削除（非表示）済み口座の管理
   const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem('deletedAccountsConfig') || '[]'));
+
+  // 🌟 1時間タイムリミット付き退避領域（Recycle Bin）
+  // 形式: [{ name, deletedAt: number(ms), type, config }]
+  const [recycledAccounts, setRecycledAccounts] = useState(() => {
+    const saved = localStorage.getItem('recycledAccountsConfig');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [isRecycleModalOpen, setIsRecycleModalOpen] = useState(false);
 
   // スワイプ管理用
   const [swipedAcc, setSwipedAcc] = useState(null); 
@@ -55,10 +66,22 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [editResetDay, setEditResetDay] = useState('1');
   const [editPayDay, setEditPayDay] = useState('27');
 
+  // 1分ごとにタイマーと1時間経過パージチェックを実行
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60000);
+    const timer = setInterval(() => {
+      const currentNow = new Date();
+      setNow(currentNow);
+
+      // 🌟 1時間（3,600,000ms）以上経過した退避データを自動で完全抹消
+      const ONE_HOUR = 3600000;
+      const validRecycled = recycledAccounts.filter(item => (Date.now() - item.deletedAt) < ONE_HOUR);
+      if (validRecycled.length !== recycledAccounts.length) {
+        setRecycledAccounts(validRecycled);
+        localStorage.setItem('recycledAccountsConfig', JSON.stringify(validRecycled));
+      }
+    }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [recycledAccounts]);
 
   useEffect(() => {
     const handleGlobalClick = () => setSwipedAcc(null);
@@ -368,20 +391,76 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  const deleteFromSwipe = (e, itemName) => {
+  // 🌟 削除（スワイプ削除）を実行し、1時間タイムリミット付きRecycle Binへ送る
+  const deleteFromSwipe = (e, item) => {
     e.stopPropagation();
-    if (window.confirm(`⚠️ [${itemName}] をシステムから削除(非表示)にしますか？\n※取引履歴は保持されます`)) {
+    const itemName = typeof item === 'string' ? item : item.name;
+    const itemType = typeof item === 'object' ? item.type : 'bank';
+
+    if (window.confirm(`⚠️ [${itemName}] を非表示にしますか？\n（1時間以内なら右上のリストから完全復元できます）`)) {
       setSwipedAcc(null);
+      
+      // 1. deletedAccounts に追加して非表示化
       const newDeleted = [...deletedAccounts, itemName];
       setDeletedAccounts(newDeleted);
       localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
       
+      // 2. クレジットカード設定退避
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-      delete currentSettings[itemName];
-      localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+      const savedConfig = currentSettings[itemName] || null;
+
+      // 3. 1時間タイマー付き退避リストに追加
+      const newRecycledItem = {
+        name: itemName,
+        type: itemType,
+        deletedAt: Date.now(),
+        config: savedConfig
+      };
       
+      const newRecycledList = [newRecycledItem, ...recycledAccounts.filter(r => r.name !== itemName)];
+      setRecycledAccounts(newRecycledList);
+      localStorage.setItem('recycledAccountsConfig', JSON.stringify(newRecycledList));
+
       setLocalUpdate(prev => prev + 1);
       if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+    }
+  };
+
+  // 🌟 1時間以内の一時退避口座をワンタップで完全復元する
+  const restoreAccount = (item) => {
+    const itemName = item.name;
+    
+    // 1. deletedAccounts から除外
+    const newDeleted = deletedAccounts.filter(a => a !== itemName);
+    setDeletedAccounts(newDeleted);
+    localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+
+    // 2. クレジット設定があれば再復元
+    if (item.config) {
+      const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+      currentSettings[itemName] = item.config;
+      localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+    }
+
+    // 3. 退避リストから除外
+    const newRecycled = recycledAccounts.filter(r => r.name !== itemName);
+    setRecycledAccounts(newRecycled);
+    localStorage.setItem('recycledAccountsConfig', JSON.stringify(newRecycled));
+
+    setLocalUpdate(prev => prev + 1);
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    alert(`⚡ [${itemName}] を完全復元しました！`);
+  };
+
+  // 🌟 PayPayを含む、すべての非表示口座を一撃ですべて再表示（PayPay救出用）
+  const restoreAllAccounts = () => {
+    if (window.confirm("非表示になっている全口座（PayPay等含む）をすべて画面に再表示しますか？")) {
+      setDeletedAccounts([]);
+      setRecycledAccounts([]);
+      localStorage.removeItem('deletedAccountsConfig');
+      localStorage.removeItem('recycledAccountsConfig');
+      setLocalUpdate(prev => prev + 1);
+      alert("✅ PayPayを含むすべての口座を正常に再表示しました！");
     }
   };
 
@@ -417,9 +496,65 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
   const containerStyle = { display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' };
 
+  // 退避残り時間計算ヘルパー (mm:ss)
+  const getRemainingTimeStr = (deletedAt) => {
+    const elapsed = Date.now() - deletedAt;
+    const remaining = Math.max(0, 3600000 - elapsed);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    return `${mins}分${secs < 10 ? '0' : ''}${secs}秒`;
+  };
+
   return (
     <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
+      {/* 🌟 1時間タイムリミット復元センター モーダル */}
+      {isRecycleModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '380px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0,255,102,0.3)', maxHeight: '80vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
+                ♻️ 復元センター (RECOVERY BIN)
+              </h3>
+              <button onClick={() => setIsRecycleModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ fontSize: '11px', color: '#aaa' }}>
+              💡 削除から1時間以内であれば、設定とデータを元の状態に完全復元できます。
+            </div>
+
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px' }}>
+              {recycledAccounts.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#555', padding: '20px 0', fontFamily: 'monospace', fontSize: '12px' }}>
+                  現在、一時退避中の口座はありません
+                </div>
+              ) : (
+                recycledAccounts.map(item => (
+                  <div key={item.name} style={{ background: '#11141a', border: '1px solid #252838', borderRadius: '6px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>{item.name}</div>
+                      <div style={{ color: '#ff3366', fontSize: '10px', fontFamily: 'monospace', marginTop: '3px' }}>
+                        ⏳ 抹消まであと {getRemainingTimeStr(item.deletedAt)}
+                      </div>
+                    </div>
+                    <button onClick={() => restoreAccount(item)} style={{ background: '#00ff66', color: '#000', border: 'none', padding: '8px 12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 0 10px rgba(0,255,102,0.3)' }}>
+                      ⚡ 復元
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid #222', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button onClick={restoreAllAccounts} style={{ width: '100%', padding: '10px', background: 'rgba(0,191,255,0.1)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                🔓 PayPay等、非表示の全口座を強制再表示
+              </button>
+              <button onClick={() => setIsRecycleModalOpen(false)} style={{ width: '100%', padding: '10px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px' }}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 編集モーダル */}
       {editingAcc && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
@@ -562,14 +697,37 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
-      {/* 🌟 復活！1枚目のスクリーンショットの美しいグリッドレイアウト・カートリッジエリア */}
+      {/* 🌟 1枚目のスクリーンショットの美しいグリッドレイアウト・カートリッジエリア */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
-          <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* 🌟 1時間復元センター ボタン */}
+            <button 
+              onClick={() => setIsRecycleModalOpen(true)}
+              style={{ 
+                background: recycledAccounts.length > 0 ? '#00ff6622' : '#1a1d24', 
+                color: recycledAccounts.length > 0 ? '#00ff66' : '#888', 
+                border: `1px solid ${recycledAccounts.length > 0 ? '#00ff66' : '#333'}`, 
+                padding: '4px 10px', 
+                borderRadius: '4px', 
+                fontSize: '11px', 
+                fontWeight: 'bold', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px',
+                boxShadow: recycledAccounts.length > 0 ? '0 0 10px rgba(0,255,102,0.2)' : 'none'
+              }}
+            >
+              <span>♻️</span> 復元 ({recycledAccounts.length})
+            </button>
+            <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
+          </div>
         </div>
         
-        {/* 🚨 ここが肝！縦長1列のリスト(flex)を廃止し、スマートグリッド(grid)を完全復活！ */}
+        {/* 🌟 1枚目のグリッド配置を完全維持 */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {systemData.combined.map((item, idx) => {
             const isCard = item.type === 'card';
@@ -606,14 +764,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                     <span>⚙️</span>
                   </button>
                   <button 
-                    onClick={(e) => deleteFromSwipe(e, item.name)}
+                    onClick={(e) => deleteFromSwipe(e, item)}
                     style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
                   >
                     <span>🗑️</span>
                   </button>
                 </div>
 
-                {/* 前面のメインカートリッジ（1枚目の写真の黄金比BOXデザインを完全再現） */}
+                {/* 前面のメインカートリッジ（1枚目のBOXデザイン） */}
                 <div className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
                      onPointerDown={(e) => { if (!reorderMode && !routingMode) handlePointerDown(); }} 
                      onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
@@ -641,7 +799,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                        opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1
                      }}>
                   
-                  {/* 上部：アイコン・口座名 ＆ シェア% */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {iconMap[item.name] ? <img src={iconMap[item.name]} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} /> : <span>{isCard ? '💳' : '💽'}</span>}
@@ -652,12 +809,10 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                     </span>
                   </div>
                   
-                  {/* 下部：大きな金額（右寄せ・太字） */}
                   <div style={{ color: mainColor, fontSize: '20px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: isCard ? `0 0 10px ${mainColor}44` : 'none', marginTop: 'auto', paddingBottom: '4px' }}>
                     {amountText}
                   </div>
 
-                  {/* 一番底面：光るエネルギーバー */}
                   <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', width: '100%', background: '#1a1d24' }}>
                     <div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: mainColor, boxShadow: `0 0 8px ${mainColor}` }}></div>
                   </div>
