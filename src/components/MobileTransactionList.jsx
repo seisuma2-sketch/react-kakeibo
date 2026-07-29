@@ -1,100 +1,98 @@
-import { useState } from 'react';
+import React from 'react';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function MobileTransactionList({ transactions }) {
-  // タップして詳細を開いている取引のIDを管理する状態
-  const [expandedId, setExpandedId] = useState(null);
-
-  const toggleExpand = (id) => {
-    setExpandedId(expandedId === id ? null : id);
+  
+  // 🌟 Firebaseからデータを完全に削除するハッキング関数
+  const handleDelete = async (tx) => {
+    // 誤操作防止のサイバーな確認ダイアログ
+    if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${tx.category}\n金額: ¥${tx.amount.toLocaleString()}\n\n※この操作は取り消せません。`)) {
+      try {
+        await deleteDoc(doc(db, "transactions", tx.id));
+        // 削除成功時にスマホをブルッと震わせる
+        if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+      } catch (error) {
+        console.error("削除エラー:", error);
+        alert("❌ データの抹消に失敗しました。通信環境を確認してください。");
+      }
+    }
   };
 
-  if (transactions.length === 0) {
+  if (!transactions || transactions.length === 0) {
     return (
-      <div style={{ color: '#666', textAlign: 'center', padding: '40px 20px', fontFamily: 'monospace', fontSize: '13px' }}>
-        [ NO TRANSACTION LOGS FOUND ]
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontFamily: 'monospace' }}>
+        <div style={{ fontSize: '40px', marginBottom: '10px' }}>📭</div>
+        NO TRANSACTION DATA FOUND.
       </div>
     );
   }
 
   return (
-    <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px solid #252838', minHeight: '80vh' }}>
+    <div style={{ padding: '5px', paddingBottom: '100px' }}>
       <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px' }}>
-        <h2 style={{ fontSize: '18px', margin: 0, color: '#fff' }}> 決済履歴</h2>
+        <h2 style={{ margin: 0, fontSize: '16px', color: '#fff', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>📜</span> INTERCEPT LOG // 通信傍受履歴
+        </h2>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {transactions.map((tx) => {
-          const isExpanded = expandedId === tx.id;
-          const isExpense = tx.type === 'expense';
-          const isTransfer = tx.type === 'transfer';
-          
-          // 金額の色定義
-          let amountColor = '#00ff66'; // 収入
-          if (isExpense) amountColor = '#ff3366'; // 支出
-          if (isTransfer) amountColor = '#ff9900'; // 振替
-
-          // 日付の整形
-          const dateObj = tx.date?.seconds ? new Date(tx.date.seconds * 1000) : new Date(tx.date);
-          const dateStr = dateObj.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' });
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {transactions.map(tx => {
+          const isExpense = tx.type === 'expense' || tx.type === 'transfer';
+          const color = isExpense ? '#ff3366' : '#00bfff';
+          const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
 
           return (
             <div 
-              key={tx.id}
-              style={{
-                background: '#0a0c10',
-                border: `1px solid ${isExpanded ? '#00bfff' : '#1a1d24'}`,
-                borderRadius: '6px',
-                overflow: 'hidden',
-                transition: 'all 0.2s ease'
+              key={tx.id} 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                background: '#11141a', 
+                padding: '15px', 
+                borderRadius: '8px', 
+                borderLeft: `3px solid ${color}`,
+                boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
               }}
             >
-              {/* 🛑 タップできるメイン行（決済方法と金額だけをシンプルに表示） */}
-              <div 
-                onClick={() => toggleExpand(tx.id)}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '12px 15px',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ color: '#666', fontSize: '11px', fontFamily: 'monospace' }}>{dateStr}</span>
-                  <span style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>
-                    {isTransfer ? `${tx.paymentMethod} ➔ ${tx.category}` : tx.paymentMethod}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: amountColor, fontSize: '15px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                    {isExpense ? '-' : isTransfer ? '⇄ ' : '+'}${Number(tx.amount).toLocaleString()}
-                  </span>
-                  <span style={{ color: '#666', fontSize: '10px' }}>{isExpanded ? '▲' : '▼'}</span>
-                </div>
+              {/* 左側：日時・カテゴリ・決済元 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>
+                  {txDate.toLocaleDateString('ja-JP')} {txDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span style={{ fontSize: '15px', color: '#fff', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tx.type === 'transfer' ? `🔄 ${tx.paymentMethod} ▶ ${tx.category}` : tx.category}
+                </span>
+                <span style={{ fontSize: '11px', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tx.type === 'transfer' ? '資金ルーティング' : tx.paymentMethod} 
+                  {tx.memo && <span style={{ color: '#666' }}> // {tx.memo}</span>}
+                </span>
               </div>
 
-              {/* 🔍 タップしたらシュッと展開する詳細エリア */}
-              {isExpanded && (
-                <div style={{ 
-                  padding: '12px 15px', 
-                  background: '#0d1117', 
-                  borderTop: '1px solid #1a1d24',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  fontSize: '12px',
-                  color: '#ccc'
-                }}>
-                  <div><span style={{ color: '#00bfff', fontFamily: 'monospace' }}>[TYPE]</span> {isTransfer ? '資金振替' : isExpense ? '支出' : '収入'}</div>
-                  <div><span style={{ color: '#00bfff', fontFamily: 'monospace' }}>[CATEGORY]</span> {isTransfer ? '内部移動' : tx.category}</div>
-                  <div><span style={{ color: '#00bfff', fontFamily: 'monospace' }}>[MEMO]</span> {tx.memo || '---'}</div>
-                  {tx.gasToken && (
-                    <div style={{ color: '#00ff66', fontSize: '10px', fontFamily: 'monospace', marginTop: '4px' }}>
-                      🛰️ AUTO-INTERCEPTED VIA GMAIL (GAS)
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* 右側：金額 ＆ 削除ボタン */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexShrink: 0 }}>
+                <span style={{ color: color, fontWeight: 'bold', fontSize: '18px', fontFamily: 'monospace' }}>
+                  {isExpense ? '-' : '+'}¥{Number(tx.amount).toLocaleString()}
+                </span>
+                
+                {/* 🌟 抹殺ボタン */}
+                <button 
+                  onClick={() => handleDelete(tx)}
+                  style={{ 
+                    background: 'rgba(255, 51, 102, 0.1)', 
+                    border: '1px solid #ff3366', 
+                    color: '#ff3366', 
+                    borderRadius: '6px', 
+                    padding: '8px 10px', 
+                    cursor: 'pointer', 
+                    fontSize: '14px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           );
         })}

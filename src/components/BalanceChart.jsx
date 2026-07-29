@@ -31,7 +31,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [localUpdate, setLocalUpdate] = useState(0);
   const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem('deletedAccountsConfig') || '[]'));
 
-  // 🌟 スワイプ管理用のState
+  // スワイプ管理用
   const [swipedAcc, setSwipedAcc] = useState(null); 
   const touchStartRef = useRef({ x: 0, y: 0 });
 
@@ -69,7 +69,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const iconMap = {
     '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
     'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
-    '食費': '/icon-food.png', 'リクルートカード': '/S__32391170.jpg'
+    '食費': '/icon-food.png', 'リクルートカード': '/S__32391170.jpg', 'PayPayカード': '/icon-other.png'
   };
 
   const systemData = useMemo(() => {
@@ -251,12 +251,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
-      setReorderMode(prev => !prev); setSortKey('custom'); if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      setReorderMode(prev => !prev); if (setSortKey) setSortKey('custom'); if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     }, 600);
   };
   const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
 
-  // 🌟 タッチ開始：スワイプとドラッグを両立判定
   const handleTouchStart = (e, index) => {
     const touch = e.touches ? e.touches[0] : e;
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
@@ -278,13 +277,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     setCustomOrder(newCustomOrder); localStorage.setItem('customOrderConfig', JSON.stringify(newCustomOrder));
   };
 
-  // 🌟 タッチ移動：横移動ならスワイプ判定、縦移動なら並び替え
   const handleTouchMove = (e, array, itemName) => {
     const touch = e.touches ? e.touches[0] : e;
     const diffX = touch.clientX - touchStartRef.current.x;
     const diffY = touch.clientY - touchStartRef.current.y;
 
-    // 通常時のスワイプ検知
     if (!reorderMode && !routingMode) {
       if (diffX < -40 && Math.abs(diffY) < 30) {
         setSwipedAcc(itemName);
@@ -295,7 +292,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       return;
     }
 
-    // 並び替えモード時のドラッグ検知
     if (reorderMode && dragData.current.active) {
       const diff = diffY;
       setDragOffset(diff);
@@ -358,7 +354,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  // 🌟 スワイプからの設定編集オープン
   const openEditFromSwipe = (e, item) => {
     e.stopPropagation(); 
     setSwipedAcc(null);
@@ -373,7 +368,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  // 🌟 スワイプからの削除（非表示化）ダイレクト実行
   const deleteFromSwipe = (e, itemName) => {
     e.stopPropagation();
     if (window.confirm(`⚠️ [${itemName}] をシステムから削除(非表示)にしますか？\n※取引履歴は保持されます`)) {
@@ -426,7 +420,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   return (
     <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
-      {/* 🌟 編集モーダル */}
+      {/* 編集モーダル */}
       {editingAcc && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '340px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.3)' }}>
@@ -559,7 +553,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '10px' }}>
-          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', letterSpacing: '1px' }}>総合残高推移</h2>
+          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', letterSpacing: '1px' }}>総合残高推移トレンド</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => { setRoutingMode(!routingMode); setRoutingSource(null); setReorderMode(false); }} style={{ background: routingMode ? '#00bfff22' : 'transparent', color: routingMode ? '#00bfff' : '#666', border: `1px solid ${routingMode ? '#00bfff' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: routingMode ? '0 0 10px rgba(0,191,255,0.3)' : 'none' }}>振替</button>
             <button onClick={() => setIsAIPredictionActive(!isAIPredictionActive)} style={{ background: isAIPredictionActive ? '#ffeb3b22' : 'transparent', color: isAIPredictionActive ? '#ffeb3b' : '#666', border: `1px solid ${isAIPredictionActive ? '#ffeb3b' : '#333'}`, padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s', boxShadow: isAIPredictionActive ? '0 0 10px rgba(255,235,59,0.3)' : 'none' }}>AI予測</button>
@@ -568,14 +562,15 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
-      {/* 🌟 スワイプ対応・統合リストエリア */}
+      {/* 🌟 復活！1枚目のスクリーンショットの美しいグリッドレイアウト・カートリッジエリア */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#fff', fontFamily: 'monospace' }}>資金残高</h2>
+          <h2 style={{ fontSize: '16px', marginTop: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
           <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
         </div>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        {/* 🚨 ここが肝！縦長1列のリスト(flex)を廃止し、スマートグリッド(grid)を完全復活！ */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {systemData.combined.map((item, idx) => {
             const isCard = item.type === 'card';
             const isDragging = reorderMode && dragData.current.currentIndex === idx;
@@ -583,9 +578,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             const isRoutingTarget = routingMode && routingSource && routingSource !== item.name;
             const isSwiped = swipedAcc === item.name;
             
-            let amountText, mainColor, percent, remain, isOver, bounds;
+            let amountText, mainColor, percent, remain, isOver;
             if (isCard) {
-              bounds = getCycleBounds(item.resetDay, now);
               remain = Math.max(0, item.budget - item.used);
               isOver = item.used > item.budget;
               percent = item.budget > 0 ? Math.max(0, Math.min(100, (remain / item.budget) * 100)) : 0;
@@ -603,23 +597,23 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             return (
               <div key={item.name} style={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
                 
-                {/* 🌟 背面のスワイプアクションボタンエリア */}
+                {/* 背面のスワイプアクションボタンエリア */}
                 <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
                   <button 
                     onClick={(e) => openEditFromSwipe(e, item)}
-                    style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
                   >
-                    <span>⚙️</span> 編集
+                    <span>⚙️</span>
                   </button>
                   <button 
                     onClick={(e) => deleteFromSwipe(e, item.name)}
-                    style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
                   >
-                    <span>🗑️</span> 削除
+                    <span>🗑️</span>
                   </button>
                 </div>
 
-                {/* 🌟 前面のメインカートリッジ（左にスライドする） */}
+                {/* 前面のメインカートリッジ（1枚目の写真の黄金比BOXデザインを完全再現） */}
                 <div className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
                      onPointerDown={(e) => { if (!reorderMode && !routingMode) handlePointerDown(); }} 
                      onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
@@ -631,39 +625,41 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                      style={{ 
                        background: isRoutingSource ? '#ff336611' : '#0a0c10', 
                        border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, 
-                       borderRadius: '6px', padding: '15px 20px', position: 'relative', display: 'flex', flexDirection: 'column', gap: isCard ? '8px' : '10px', cursor: 'pointer', 
+                       borderRadius: '6px', 
+                       padding: '15px', 
+                       position: 'relative', 
+                       display: 'flex', 
+                       flexDirection: 'column', 
+                       justifyContent: 'space-between',
+                       minHeight: '85px',
+                       cursor: 'pointer', 
                        touchAction: reorderMode ? 'none' : 'pan-y',
-                       transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-150px)' : 'translateX(0)'), 
+                       transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-80px)' : 'translateX(0)'), 
                        zIndex: isDragging ? 100 : 1, 
                        boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), 
                        transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s',
                        opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1
                      }}>
                   
-                  <div style={{ color: isCard ? '#ff9900' : '#00bfff', fontSize: '14px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {iconMap[item.name] ? <img src={iconMap[item.name]} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain', pointerEvents: 'none' }} /> : <span>{isCard ? '💳' : '💽'}</span>}
-                      <span>{item.name}</span>
+                  {/* 上部：アイコン・口座名 ＆ シェア% */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {iconMap[item.name] ? <img src={iconMap[item.name]} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} /> : <span>{isCard ? '💳' : '💽'}</span>}
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                     </span>    
-                    {isCard && <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>{formatDate(bounds.startDate)}-{formatDate(bounds.endDate)}</span>}
+                    <span style={{ color: '#666', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
+                      {percent.toFixed(1)}%
+                    </span>
                   </div>
                   
-                  <div style={{ color: mainColor, fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: isCard ? `0 0 10px ${mainColor}44` : 'none' }}>
+                  {/* 下部：大きな金額（右寄せ・太字） */}
+                  <div style={{ color: mainColor, fontSize: '20px', fontWeight: 'bold', fontFamily: 'monospace', textAlign: 'right', textShadow: isCard ? `0 0 10px ${mainColor}44` : 'none', marginTop: 'auto', paddingBottom: '4px' }}>
                     {amountText}
                   </div>
 
-                  {isCard ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555', fontFamily: 'monospace' }}>
-                      <span>LIMIT: ¥{item.budget.toLocaleString()}</span><span>{percent.toFixed(0)}% HP</span>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '12px', color: '#555' }}>
-                      {percent.toFixed(1)}%
-                    </div>
-                  )}
-
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, height: '4px', width: '100%', background: '#1a1d24' }}>
-                    <div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: mainColor, boxShadow: `0 0 10px ${mainColor}` }}></div>
+                  {/* 一番底面：光るエネルギーバー */}
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3px', width: '100%', background: '#1a1d24' }}>
+                    <div className="energy-bar" style={{ height: '100%', width: `${percent}%`, background: mainColor, boxShadow: `0 0 8px ${mainColor}` }}></div>
                   </div>
                 </div>
               </div>
