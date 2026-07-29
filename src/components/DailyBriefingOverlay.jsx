@@ -1,218 +1,210 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 
-export default function DailyBriefingOverlay({ transactions, ghostAccounts, onComplete }) {
-  const [displayedLines, setDisplayedLines] = useState([]);
-  
-  // 🌟 自動終了のフラグ管理
-  const [isTyping, setIsTyping] = useState(true); // 文字を打ち込んでいるか
-  const [isSpeaking, setIsSpeaking] = useState(false); // 音声が読み上げ中か
-  
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => {
-    return localStorage.getItem('briefingVoice') !== 'false'; 
-  });
-  const speechTextRef = useRef('');
+export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete }) {
+  const [displayedText, setDisplayedText] = useState([]);
+  const [isTypingDone, setIsTypingDone] = useState(false);
 
-  // 🌟 文字表示と音声の両方が終わったら、自動で終了させる監視ロジック
-  useEffect(() => {
-    if (!isTyping && !isSpeaking) {
-      // 読み上げも文字表示も終わったら、1秒の余韻のあとにシステム終了
-      const timer = setTimeout(() => {
-        handleComplete();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [isTyping, isSpeaking]);
-
-  // 音声を読み上げるハッカー関数
-  const speakReport = (text) => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel(); 
-    
-    setIsSpeaking(true); // 音声再生スタート
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja-JP';
-    utterance.rate = 1.15; 
-    utterance.pitch = 0.95; 
-
-    // 🌟 読み上げが最後まで終わった時のイベント
-    utterance.onend = () => {
-      setIsSpeaking(false);
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const handleComplete = () => {
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    onComplete();
-  };
-
-  const toggleVoice = (e) => {
-    e.stopPropagation(); 
-    const nextState = !isVoiceEnabled;
-    setIsVoiceEnabled(nextState);
-    localStorage.setItem('briefingVoice', nextState);
-    
-    if (nextState) {
-      speakReport(speechTextRef.current);
-    } else {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false); // 手動で切ったのでフラグを下ろす
-    }
-  };
-
-  useEffect(() => {
-    const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-    let totalBank = 0;
-    let monthlyOutflow = 0;
-    let alerts = [];
-    let speechAlerts = []; 
-
+  // 🌟 分析ロジック：昨日・今月・引き落としアラートの解析
+  const briefingData = useMemo(() => {
     const now = new Date();
+    
+    // 1. 昨日の日付範囲（00:00:00 〜 23:59:59）
+    const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0);
+    const yesterdayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
+
+    let yesterdayTotal = 0;
+    const yesterdayCats = {};
+
+    // 2. 今月の集計用
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const remainingDays = Math.max(1, daysInMonth - now.getDate() + 1);
+    let thisMonthExpense = 0;
 
     transactions.forEach(tx => {
       if (!tx.date) return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
-      const amount = Number(tx.amount) || 0;
-      const method = tx.paymentMethod || '不明';
+      const amt = Number(tx.amount) || 0;
+      const method = tx.paymentMethod || '';
 
-      if (!ghostAccounts.includes(method) && !creditSettings[method]) {
-        if (tx.type === 'income') totalBank += amount;
-        else if (tx.type === 'expense') totalBank -= amount;
+      if (ghostAccounts.includes(method)) return;
+
+      // 昨日の支出
+      if (txDate >= yesterdayStart && txDate <= yesterdayEnd && tx.type === 'expense') {
+        yesterdayTotal += amt;
+        const cat = tx.category || 'その他';
+        yesterdayCats[cat] = (yesterdayCats[cat] || 0) + amt;
       }
 
-      if (tx.type === 'expense' && txDate >= thisMonthStart && !ghostAccounts.includes(method)) {
-        monthlyOutflow += amount;
-      }
-    });
-
-    Object.keys(creditSettings).forEach(card => {
-      if (ghostAccounts.includes(card)) return;
-      const data = creditSettings[card];
-      let used = 0;
-      transactions.forEach(tx => {
-        if (tx.paymentMethod === card && tx.type === 'expense') {
-          const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
-          if (txDate >= thisMonthStart) used += (Number(tx.amount) || 0);
-        }
-      });
-      const ratio = data.budget > 0 ? used / data.budget : 0;
-      if (ratio > 0.8) {
-        alerts.push(`[WARN] ${card} の使用率が${Math.round(ratio * 100)}%を超えています。`);
-        speechAlerts.push(`警告。${card}の使用率が、${Math.round(ratio * 100)}パーセントを超過しています。`);
+      // 今月の支出
+      if (txDate >= thisMonthStart && tx.type === 'expense') {
+        thisMonthExpense += amt;
       }
     });
 
-    if (alerts.length === 0) {
-      alerts.push("システムに異常なし。クレジットカードのHPは安定しています。");
-    }
-    if (monthlyOutflow > 100000) {
-      alerts.push("[NOTICE] 今月の流出ペースが激しいです。資金枯渇に注意してください。");
-      speechAlerts.push("お知らせ。今月の資金流出ペースが警告レベルです。注意してください。");
-    }
+    // 昨日の最多支出カテゴリ
+    let topCat = 'なし';
+    let maxCatAmt = 0;
+    Object.entries(yesterdayCats).forEach(([cat, amt]) => {
+      if (amt > maxCatAmt) {
+        maxCatAmt = amt;
+        topCat = cat;
+      }
+    });
 
-    const hour = now.getHours();
-    let greeting = "GOOD MORNING";
-    let jpGreeting = "おはようございます";
-    if (hour >= 12 && hour < 18) { greeting = "GOOD AFTERNOON"; jpGreeting = "こんにちは"; }
-    else if (hour >= 18) { greeting = "GOOD EVENING"; jpGreeting = "こんばんは"; }
+    // 今日の推奨使用可能リミット（今月予算目安: 90,000円から逆算、または残り日数割）
+    const monthlyTarget = 90000;
+    const remainingBudget = Math.max(0, monthlyTarget - thisMonthExpense);
+    const todayLimit = Math.round(remainingBudget / remainingDays);
 
-    const finalSpeech = `${jpGreeting}、オペレーター。現在の純資産は、${totalBank}円。今月の総流出額は、${monthlyOutflow}円です。${speechAlerts.join('。')}本日も、ミッションを遂行してください。`;
-    speechTextRef.current = finalSpeech;
+    // 引き落とし・警告アラートの検知
+    const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+    const threats = [];
+    const todayDate = now.getDate();
 
-    if (isVoiceEnabled) {
-      speakReport(finalSpeech);
-    } else {
-      setIsSpeaking(false);
-    }
+    Object.entries(creditSettings).forEach(([cardName, config]) => {
+      const payDay = Number(config.paymentDay) || 27;
+      const diff = payDay - todayDate;
+      if (diff >= 0 && diff <= 4) {
+        threats.push(`💳 ${cardName}の引き落とし（${payDay}日）まであと ${diff === 0 ? '本日です！' : diff + ' 日'} `);
+      }
+    });
 
-    const script = [
-      "SYSTEM BOOT SEQUENCE INITIATED...",
-      "DECRYPTING MAINFRAME ENCRYPTION... [OK]",
-      "CONNECTING TO NEBULA OS SATELLITE... [OK]",
-      " ",
-      `${greeting}, OPERATOR.`,
-      `CURRENT TIME: ${now.toLocaleString('ja-JP')}`,
-      " ",
-      "--- [ FINANCIAL STATUS REPORT ] ---",
-      `TOTAL ASSETS (純資産) : ¥${totalBank.toLocaleString()}`,
-      `MONTHLY OUTFLOW (流出): -¥${monthlyOutflow.toLocaleString()}`,
-      " ",
-      "--- [ SYSTEM ANALYSIS ] ---",
-      ...alerts,
-      " ",
-      "ALL SYSTEMS NOMINAL.",
-      "HAVE A PRODUCTIVE DAY."
+    return {
+      yesterdayTotal,
+      topCat,
+      todayLimit,
+      threats,
+      thisMonthExpense
+    };
+  }, [transactions, ghostAccounts]);
+
+  // 🌟 タイプライター演出の組み立て
+  useEffect(() => {
+    const lines = [
+      { text: "🤖 SYSTEM BRIEFING // J.A.R.V.I.S. PROTOCOL ONLINE", color: "#00ff66", type: "header" },
+      { text: `[1/4 YESTERDAY'S LOG]`, color: "#00bfff", type: "title" },
+      briefingData.yesterdayTotal > 0 
+        ? { text: `昨日の資金流出: ¥${briefingData.yesterdayTotal.toLocaleString()} （主出費: ${briefingData.topCat}）`, color: "#ff3366", type: "body" }
+        : { text: "昨日の資金流出: ¥0 （見事な防衛戦でした。流出ゼロを維持）", color: "#00ff66", type: "body" },
+      
+      { text: `[2/4 TODAY'S MISSION]`, color: "#00bfff", type: "title" },
+      { text: `残日数から算出した本日の推奨使用上限: ¥${briefingData.todayLimit.toLocaleString()}`, color: "#ff9900", type: "body" },
+
+      { text: `[3/4 THREAT DETECTION]`, color: "#00bfff", type: "title" },
+      ...(briefingData.threats.length > 0 
+        ? briefingData.threats.map(t => ({ text: `⚠️ WARNING: ${t}`, color: "#ff3366", type: "body" }))
+        : [{ text: "現在、直近で差し迫った口座引き落とし・異常流出は検出されていません。", color: "#888", type: "body" }]
+      ),
+
+      { text: `[4/4 SYSTEM STATUS]`, color: "#00bfff", type: "title" },
+      { text: "全セキュリティプロトコル稼働中。本日も良い一日を。", color: "#00ff66", type: "body" }
     ];
 
-    let currentLine = 0;
+    let lineIndex = 0;
     const interval = setInterval(() => {
-      if (currentLine < script.length) {
-        setDisplayedLines(prev => [...prev, script[currentLine]]);
-        currentLine++;
-        if (navigator.vibrate) navigator.vibrate(10);
+      if (lineIndex < lines.length) {
+        const nextLine = lines[lineIndex];
+        setDisplayedText(prev => [...prev, nextLine]);
+        lineIndex++;
       } else {
+        setIsTypingDone(true);
         clearInterval(interval);
-        setIsTyping(false); // 文字表示の終了フラグを下ろす
       }
-    }, 400);
+    }, 400); // 0.4秒ごとに行が追加される
 
-    return () => {
-      clearInterval(interval);
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [briefingData]);
+
+  const handleAcknowledge = () => {
+    if (navigator.vibrate) navigator.vibrate([50, 50]);
+    onComplete();
+  };
 
   return (
-    <div 
-      onClick={handleComplete} 
-      style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-        backgroundColor: '#050608', color: '#00ff66', fontFamily: 'monospace',
-        zIndex: 99999, padding: '30px', boxSizing: 'border-box',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: 'pointer'
-      }}
-    >
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,102,0.05) 2px, rgba(0,255,102,0.05) 4px)', pointerEvents: 'none' }} />
-      
-      <button 
-        onClick={toggleVoice}
-        style={{
-          position: 'absolute', top: '20px', right: '20px', zIndex: 10,
-          background: isVoiceEnabled ? 'rgba(0,255,102,0.1)' : 'rgba(0,0,0,0.5)',
-          border: `1px solid ${isVoiceEnabled ? '#00ff66' : '#555'}`,
-          color: isVoiceEnabled ? '#00ff66' : '#555',
-          padding: '6px 12px', borderRadius: '4px', fontSize: '12px',
-          fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer',
-          boxShadow: isVoiceEnabled ? '0 0 10px rgba(0,255,102,0.3)' : 'none',
-          transition: 'all 0.2s'
-        }}
-      >
-        {isVoiceEnabled ? '🔈 VOICE: ON' : '🔇 VOICE: OFF'}
-      </button>
-
-      <div style={{ textShadow: '0 0 8px rgba(0,255,102,0.6)', zIndex: 2, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px', lineHeight: '1.4', marginTop: '40px' }}>
-        {displayedLines.map((line, index) => (
-          <div key={index} style={{ animation: 'fadeIn 0.2s ease-out' }}>
-            {line === " " ? <br /> : `> ${line}`}
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      background: 'rgba(5, 6, 8, 0.95)',
+      backdropFilter: 'blur(10px)',
+      zIndex: 999999,
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '20px',
+      boxSizing: 'border-box',
+      animation: 'fadeIn 0.3s ease-out'
+    }}>
+      <div style={{
+        background: '#0a0c10',
+        border: '1px solid #00ff66',
+        borderRadius: '12px',
+        width: '100%',
+        maxWidth: '420px',
+        padding: '25px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '15px',
+        boxShadow: '0 0 40px rgba(0,255,102,0.25)',
+        fontFamily: 'monospace'
+      }}>
+        {/* ヘッダー・インジケーター */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #00ff6644', paddingBottom: '10px' }}>
+          <div style={{ color: '#00ff66', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px' }}>
+            DAILY BRIEFING LOG
           </div>
-        ))}
-        {isTyping && <div style={{ animation: 'blink 1s step-end infinite' }}>_</div>}
-      </div>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00ff66', boxShadow: '0 0 8px #00ff66', animation: 'pulse 1.5s infinite' }} />
+        </div>
 
-      <div style={{ position: 'absolute', bottom: '20px', left: '0', width: '100%', textAlign: 'center', color: '#00ff6655', fontSize: '10px', zIndex: 2 }}>
-        {/* 🌟 状況に応じてフッターの文字を変える演出 */}
-        {isSpeaking ? '[ WAITING FOR AUDIO TO COMPLETE... ]' : '[ TAP ANYWHERE TO SKIP ]'}
+        {/* ターミナル表示ログテキスト */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '260px', overflowY: 'auto' }}>
+          {displayedText.map((item, idx) => (
+            <div 
+              key={idx} 
+              style={{ 
+                color: item.color, 
+                fontSize: item.type === 'header' ? '13px' : (item.type === 'title' ? '11px' : '13px'),
+                fontWeight: item.type === 'body' ? 'bold' : 'normal',
+                marginTop: item.type === 'title' ? '6px' : '0px',
+                lineHeight: '1.4',
+                animation: 'slideInText 0.2s ease-out'
+              }}
+            >
+              {item.type === 'body' && <span style={{ opacity: 0.5, marginRight: '6px' }}>&gt;</span>}
+              {item.text}
+            </div>
+          ))}
+        </div>
+
+        {/* 承認（閉じる）ボタン */}
+        <button
+          onClick={handleAcknowledge}
+          disabled={!isTypingDone}
+          style={{
+            marginTop: '10px',
+            padding: '14px',
+            background: isTypingDone ? '#00ff66' : '#222',
+            color: isTypingDone ? '#000' : '#666',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: 'bold',
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            cursor: isTypingDone ? 'pointer' : 'not-allowed',
+            boxShadow: isTypingDone ? '0 0 20px rgba(0,255,102,0.4)' : 'none',
+            transition: 'all 0.3s'
+          }}
+        >
+          {isTypingDone ? '⚡ [ ACKNOWLEDGE // 了解 ]' : 'ANALYZING...'}
+        </button>
       </div>
 
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+        @keyframes slideInText { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
     </div>
   );
