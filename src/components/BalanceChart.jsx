@@ -22,7 +22,10 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
 
 export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey }) {
   const chartRef = useRef(null);
-  const [now, setNow] = useState(new Date());
+  
+  // 🌟 修正ポイント：グラフ暴走を防ぐため、秒単位のタイマーと日付（日単位）を分離
+  const [todayStr, setTodayStr] = useState(new Date().toDateString());
+  const [tick, setTick] = useState(0); // モーダルのカウントダウン描画用
 
   const [isAIPredictionActive, setIsAIPredictionActive] = useState(false);
   const [reorderMode, setReorderMode] = useState(false);
@@ -30,11 +33,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   
   const [localUpdate, setLocalUpdate] = useState(0);
   
-  // 🌟 削除（非表示）済み口座の管理
   const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem('deletedAccountsConfig') || '[]'));
 
-  // 🌟 1時間タイムリミット付き退避領域（Recycle Bin）
-  // 形式: [{ name, deletedAt: number(ms), type, config }]
   const [recycledAccounts, setRecycledAccounts] = useState(() => {
     const saved = localStorage.getItem('recycledAccountsConfig');
     return saved ? JSON.parse(saved) : [];
@@ -42,7 +42,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const [isRecycleModalOpen, setIsRecycleModalOpen] = useState(false);
 
-  // スワイプ管理用
   const [swipedAcc, setSwipedAcc] = useState(null); 
   const touchStartRef = useRef({ x: 0, y: 0 });
 
@@ -66,22 +65,28 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [editResetDay, setEditResetDay] = useState('1');
   const [editPayDay, setEditPayDay] = useState('27');
 
-  // 1分ごとにタイマーと1時間経過パージチェックを実行
+  // 🌟 修正ポイント：1秒タイマーはカウントダウンと自動パージのみを担当させる
   useEffect(() => {
     const timer = setInterval(() => {
-      const currentNow = new Date();
-      setNow(currentNow);
+      setTick(t => t + 1); // 毎秒UIを更新（グラフには影響させない）
 
-      // 🌟 1時間（3,600,000ms）以上経過した退避データを自動で完全抹消
-      const ONE_HOUR = 3600000;
-      const validRecycled = recycledAccounts.filter(item => (Date.now() - item.deletedAt) < ONE_HOUR);
-      if (validRecycled.length !== recycledAccounts.length) {
-        setRecycledAccounts(validRecycled);
-        localStorage.setItem('recycledAccountsConfig', JSON.stringify(validRecycled));
-      }
+      const currentStr = new Date().toDateString();
+      setTodayStr(prev => prev !== currentStr ? currentStr : prev);
+
+      // 1時間（3,600,000ms）経過した退避データを自動抹消
+      setRecycledAccounts(prev => {
+        if (prev.length === 0) return prev;
+        const ONE_HOUR = 3600000;
+        const valid = prev.filter(item => (Date.now() - item.deletedAt) < ONE_HOUR);
+        if (valid.length !== prev.length) {
+          localStorage.setItem('recycledAccountsConfig', JSON.stringify(valid));
+          return valid;
+        }
+        return prev;
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, [recycledAccounts]);
+  }, []);
 
   useEffect(() => {
     const handleGlobalClick = () => setSwipedAcc(null);
@@ -96,6 +101,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   };
 
   const systemData = useMemo(() => {
+    const now = new Date(); // ここで日付を取得
     const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     const cardData = {};
     Object.keys(creditSettings).forEach(name => {
@@ -230,7 +236,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     return {
       combined, totalBankBalance: totalBank, dateLabels: dLabels, balanceData: bData, pLabels, pValues
     };
-  }, [transactions, ghostAccounts, deletedAccounts, now, sortKey, sortOrder, customOrder, localUpdate]);
+  }, [transactions, ghostAccounts, deletedAccounts, todayStr, sortKey, sortOrder, customOrder, localUpdate]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -391,7 +397,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  // 🌟 削除（スワイプ削除）を実行し、1時間タイムリミット付きRecycle Binへ送る
   const deleteFromSwipe = (e, item) => {
     e.stopPropagation();
     const itemName = typeof item === 'string' ? item : item.name;
@@ -400,16 +405,13 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     if (window.confirm(`⚠️ [${itemName}] を非表示にしますか？\n（1時間以内なら右上のリストから完全復元できます）`)) {
       setSwipedAcc(null);
       
-      // 1. deletedAccounts に追加して非表示化
       const newDeleted = [...deletedAccounts, itemName];
       setDeletedAccounts(newDeleted);
       localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
       
-      // 2. クレジットカード設定退避
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
       const savedConfig = currentSettings[itemName] || null;
 
-      // 3. 1時間タイマー付き退避リストに追加
       const newRecycledItem = {
         name: itemName,
         type: itemType,
@@ -426,23 +428,18 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
   };
 
-  // 🌟 1時間以内の一時退避口座をワンタップで完全復元する
   const restoreAccount = (item) => {
     const itemName = item.name;
-    
-    // 1. deletedAccounts から除外
     const newDeleted = deletedAccounts.filter(a => a !== itemName);
     setDeletedAccounts(newDeleted);
     localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
 
-    // 2. クレジット設定があれば再復元
     if (item.config) {
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
       currentSettings[itemName] = item.config;
       localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
     }
 
-    // 3. 退避リストから除外
     const newRecycled = recycledAccounts.filter(r => r.name !== itemName);
     setRecycledAccounts(newRecycled);
     localStorage.setItem('recycledAccountsConfig', JSON.stringify(newRecycled));
@@ -452,7 +449,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     alert(`⚡ [${itemName}] を完全復元しました！`);
   };
 
-  // 🌟 PayPayを含む、すべての非表示口座を一撃ですべて再表示（PayPay救出用）
   const restoreAllAccounts = () => {
     if (window.confirm("非表示になっている全口座（PayPay等含む）をすべて画面に再表示しますか？")) {
       setDeletedAccounts([]);
@@ -496,7 +492,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
   const containerStyle = { display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' };
 
-  // 退避残り時間計算ヘルパー (mm:ss)
   const getRemainingTimeStr = (deletedAt) => {
     const elapsed = Date.now() - deletedAt;
     const remaining = Math.max(0, 3600000 - elapsed);
@@ -508,7 +503,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   return (
     <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
-      {/* 🌟 1時間タイムリミット復元センター モーダル */}
       {isRecycleModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '380px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0,255,102,0.3)', maxHeight: '80vh' }}>
@@ -555,7 +549,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         </div>
       )}
 
-      {/* 編集モーダル */}
       {editingAcc && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '340px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.3)' }}>
@@ -595,7 +588,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         </div>
       )}
 
-      {/* ルーティング・履歴・アラート等 */}
       {routingSource && routingTarget && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(10px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '350px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0, 191, 255, 0.3)' }}>
@@ -697,13 +689,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
-      {/* 🌟 1枚目のスクリーンショットの美しいグリッドレイアウト・カートリッジエリア */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {/* 🌟 1時間復元センター ボタン */}
             <button 
               onClick={() => setIsRecycleModalOpen(true)}
               style={{ 
@@ -727,7 +717,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
           </div>
         </div>
         
-        {/* 🌟 1枚目のグリッド配置を完全維持 */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {systemData.combined.map((item, idx) => {
             const isCard = item.type === 'card';
@@ -755,7 +744,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             return (
               <div key={item.name} style={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
                 
-                {/* 背面のスワイプアクションボタンエリア */}
                 <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
                   <button 
                     onClick={(e) => openEditFromSwipe(e, item)}
@@ -771,7 +759,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                   </button>
                 </div>
 
-                {/* 前面のメインカートリッジ（1枚目のBOXデザイン） */}
                 <div className={reorderMode && !isDragging ? 'shake' : 'account-cartridge'}
                      onPointerDown={(e) => { if (!reorderMode && !routingMode) handlePointerDown(); }} 
                      onPointerUp={(e) => { if (!reorderMode) cancelPress(); else handleDragEnd(); }} 
