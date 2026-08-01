@@ -23,9 +23,8 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
 export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey }) {
   const chartRef = useRef(null);
   
-  // 🌟 修正ポイント：グラフ暴走を防ぐため、秒単位のタイマーと日付（日単位）を分離
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
-  const [tick, setTick] = useState(0); // モーダルのカウントダウン描画用
+  const [tick, setTick] = useState(0); 
 
   const [isAIPredictionActive, setIsAIPredictionActive] = useState(false);
   const [reorderMode, setReorderMode] = useState(false);
@@ -65,15 +64,13 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [editResetDay, setEditResetDay] = useState('1');
   const [editPayDay, setEditPayDay] = useState('27');
 
-  // 🌟 修正ポイント：1秒タイマーはカウントダウンと自動パージのみを担当させる
   useEffect(() => {
     const timer = setInterval(() => {
-      setTick(t => t + 1); // 毎秒UIを更新（グラフには影響させない）
+      setTick(t => t + 1); 
 
       const currentStr = new Date().toDateString();
       setTodayStr(prev => prev !== currentStr ? currentStr : prev);
 
-      // 1時間（3,600,000ms）経過した退避データを自動抹消
       setRecycledAccounts(prev => {
         if (prev.length === 0) return prev;
         const ONE_HOUR = 3600000;
@@ -101,7 +98,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   };
 
   const systemData = useMemo(() => {
-    const now = new Date(); // ここで日付を取得
+    const now = new Date(); 
     const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     const cardData = {};
     Object.keys(creditSettings).forEach(name => {
@@ -489,7 +486,6 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     finally { setIsTransferring(false); }
   };
 
-  const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
   const containerStyle = { display: 'flex', flexDirection: 'column', gap: '25px', height: '100%', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' };
 
   const getRemainingTimeStr = (deletedAt) => {
@@ -689,6 +685,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
+      {/* 🌟 リストではなく「グリッド配置」を強制適用 */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
@@ -717,6 +714,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
           </div>
         </div>
         
+        {/* 🌟 ここで列幅を自動調整するグリッドシステムを指定しています */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {systemData.combined.map((item, idx) => {
             const isCard = item.type === 'card';
