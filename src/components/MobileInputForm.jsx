@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import LocationScanner from './LocationScanner';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (item && item.startsWith('/')) {
@@ -37,6 +38,9 @@ export default function MobileInputForm() {
   const [paymentMethod, setPaymentMethod] = useState('/icon-cash.png 現金');
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 🌟 ここを追加：スキャナーで取得した位置情報を記憶するState
+  const [scanLocation, setScanLocation] = useState('');
 
   // 🌟 ARターゲティング・スコープ用 State
   const [isArModalOpen, setIsArModalOpen] = useState(false);
@@ -144,7 +148,6 @@ export default function MobileInputForm() {
 
   const getCleanName = (val) => val.startsWith('/') ? val.slice(val.indexOf(' ') + 1) : val.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
 
-  // 🌟 ARスコープ起動 ＆ 画像読み込み
   const handleOpenArScanner = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -161,7 +164,6 @@ export default function MobileInputForm() {
       const base64Image = base64Data.split(',')[1];
       const API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
 
-      // エラー発生時やAPIキーがない場合もサイバーに処理するフォールバック
       if (!API_KEY || API_KEY === 'undefined') {
         setTimeout(() => {
           setArStatus('error');
@@ -208,7 +210,7 @@ export default function MobileInputForm() {
           setArTargetData({ amount: foundAmount, memo: foundMemo });
           setArStatus('locked');
           setArLog(`[LOCKED] TARGET CAPTURED: ¥${Number(foundAmount).toLocaleString()} // READY TO TRANSFER.`);
-          if (navigator.vibrate) navigator.vibrate([50, 50, 200]); // ターゲット捕捉の激しい振動
+          if (navigator.vibrate) navigator.vibrate([50, 50, 200]);
         } else {
           setArStatus('error');
           setArLog('[WARN] AMOUNT NOT DETECTED. PLEASE ENTER MANUAL TARGET.');
@@ -221,10 +223,9 @@ export default function MobileInputForm() {
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
       }
     };
-    e.target.value = ''; // Inputリセット
+    e.target.value = '';
   };
 
-  // 🌟 捕捉データを入力フォームに転送してスコープを閉じる
   const handleApplyArTarget = () => {
     if (arTargetData.amount) {
       setAmount(arTargetData.amount);
@@ -248,26 +249,28 @@ export default function MobileInputForm() {
       const cleanCategory = getCleanName(category);
       const cleanPaymentMethod = getCleanName(paymentMethod);
 
-      const pos = await new Promise((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        navigator.geolocation.getCurrentPosition(
-          (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-          () => resolve(null), { timeout: 3000 }
-        );
-      });
-
+      // 🌟 修正：裏で勝手にGPSを取得していたコードを削除し、LocationScannerから受け取ったデータをセット
       const txData = {
-        userId: auth.currentUser.uid, type: type, amount: Number(finalAmount),
-        category: cleanCategory, paymentMethod: cleanPaymentMethod, memo: memo,
-        date: Timestamp.fromDate(new Date(date)), createdAt: Timestamp.now()
+        userId: auth.currentUser.uid, 
+        type: type, 
+        amount: Number(finalAmount),
+        category: cleanCategory, 
+        paymentMethod: cleanPaymentMethod, 
+        memo: memo,
+        location: scanLocation, // 📍 スキャナーで取得した位置情報を記録
+        date: Timestamp.fromDate(new Date(date)), 
+        createdAt: Timestamp.now()
       };
-      if (pos) { txData.lat = pos.lat; txData.lng = pos.lng; }
 
       await addDoc(collection(db, "transactions"), txData);
       addToHistory(finalAmount);
-      setAmount(''); setCalcStr(''); setMemo('');
+      setAmount(''); setCalcStr(''); setMemo(''); setScanLocation(''); // 送信後にリセット
       showAlert("記録完了！", "success");
-    } catch (error) { showAlert("エラー発生", "error"); } finally { setIsSubmitting(false); }
+    } catch (error) { 
+      showAlert("エラー発生", "error"); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const handleTypeChange = (newType) => {
@@ -301,11 +304,9 @@ export default function MobileInputForm() {
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
-      {/* 🌟 究極SF演出：ARターゲティング・スコープ・モーダル */}
+      {/* 🌟 ARターゲティング・スコープ・モーダル */}
       {isArModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', zIndex: 999999, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease-out' }}>
-          
-          {/* HUD ヘッダー */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: 'linear-gradient(to bottom, rgba(0,255,102,0.2), transparent)', borderBottom: '1px solid #00ff6644', zIndex: 10 }}>
             <div style={{ color: '#00ff66', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', textShadow: '0 0 8px #00ff66' }}>
               <span style={{ fontSize: '18px' }}>👁️</span> TERMINATOR VISION // OPTICAL SCANNER
@@ -315,20 +316,15 @@ export default function MobileInputForm() {
             </button>
           </div>
 
-          {/* 画像＆スコープ・ターゲットエリア */}
           <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#05070a', overflow: 'hidden' }}>
             {arImageSrc ? (
               <img src={arImageSrc} alt="Target" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: arStatus === 'scanning' ? 'contrast(1.5) brightness(0.7)' : 'contrast(1.1)', transition: 'all 0.3s' }} />
             ) : (
               <div style={{ color: '#555', fontFamily: 'monospace' }}>NO OPTICAL FEED</div>
             )}
-
-            {/* スキャンライン・レーザー演出 */}
             {arStatus === 'scanning' && (
               <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', background: 'linear-gradient(to bottom, transparent, rgba(0,255,102,0.3) 50%, transparent)', animation: 'arScanMove 1.5s linear infinite' }} />
             )}
-
-            {/* ロックオン・ターゲット枠（バウンディング・ボックス） */}
             {arStatus === 'locked' && (
               <div style={{ position: 'absolute', width: '220px', height: '100px', border: '2px solid #ff3366', boxShadow: '0 0 20px #ff3366, inset 0 0 15px #ff3366', borderRadius: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '6px', boxSizing: 'border-box', animation: 'targetLock 0.3s cubic-bezier(0.1, 0.9, 0.2, 1)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ff3366', fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold', background: 'rgba(0,0,0,0.7)', padding: '2px 4px' }}>
@@ -340,27 +336,21 @@ export default function MobileInputForm() {
                 <div style={{ textAlign: 'center', color: '#00ff66', fontSize: '10px', fontFamily: 'monospace', background: 'rgba(0,0,0,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {arTargetData.memo || 'DETECTED VENDOR'}
                 </div>
-                {/* 4隅のターゲット金具 */}
                 <div style={{ position: 'absolute', top: '-4px', left: '-4px', width: '12px', height: '12px', borderTop: '3px solid #fff', borderLeft: '3px solid #fff' }} />
                 <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '12px', height: '12px', borderTop: '3px solid #fff', borderRight: '3px solid #fff' }} />
                 <div style={{ position: 'absolute', bottom: '-4px', left: '-4px', width: '12px', height: '12px', borderBottom: '3px solid #fff', borderLeft: '3px solid #fff' }} />
                 <div style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '12px', height: '12px', borderBottom: '3px solid #fff', borderRight: '3px solid #fff' }} />
               </div>
             )}
-
-            {/* 常時表示のHUDグリッドライン */}
             <div style={{ position: 'absolute', top: '50%', left: 0, width: '100%', height: '1px', background: 'rgba(0,255,102,0.2)', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', top: 0, left: '50%', width: '1px', height: '100%', background: 'rgba(0,255,102,0.2)', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', width: '80%', height: '80%', border: '1px dashed rgba(0,255,102,0.15)', borderRadius: '50%', pointerEvents: 'none' }} />
           </div>
 
-          {/* HUD コントロール＆ログフッター */}
           <div style={{ padding: '20px', background: '#0a0c10', borderTop: '1px solid #00ff6644', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 10 }}>
             <div style={{ background: '#050608', borderLeft: '3px solid #00ff66', padding: '8px 12px', fontFamily: 'monospace', fontSize: '11px', color: arStatus === 'error' ? '#ff3366' : '#00ff66' }}>
               {arLog}
             </div>
-
-            {/* 手動修正またはエラー時の入力欄 */}
             {(arStatus === 'locked' || arStatus === 'error') && (
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#1a1d24', border: '1px solid #00ff66', borderRadius: '6px', padding: '0 10px' }}>
@@ -370,17 +360,15 @@ export default function MobileInputForm() {
                 <input type="text" value={arTargetData.memo} onChange={e => setArTargetData({ ...arTargetData, memo: e.target.value })} placeholder="店舗/メモ" style={{ flex: 1.2, background: '#1a1d24', border: '1px solid #333', color: '#fff', padding: '12px', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
               </div>
             )}
-
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => fileInputRef.current.click()} style={{ flex: 1, padding: '14px', background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer' }}>
-                🔄 RE-SCAN (再スキャン)
+                🔄 RE-SCAN
               </button>
               <button onClick={handleApplyArTarget} disabled={!arTargetData.amount} style={{ flex: 1.5, padding: '14px', background: arTargetData.amount ? '#00ff66' : '#333', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '15px', cursor: arTargetData.amount ? 'pointer' : 'not-allowed', boxShadow: arTargetData.amount ? '0 0 15px rgba(0,255,102,0.4)' : 'none' }}>
-                ⚡ EXECUTE (データ転送)
+                ⚡ EXECUTE
               </button>
             </div>
           </div>
-
           <style>{`
             @keyframes arScanMove { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
             @keyframes targetLock { 0% { transform: scale(2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -529,7 +517,6 @@ export default function MobileInputForm() {
             <div style={labelStyle}>金額 (数式入力可)</div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleOpenArScanner} style={{ display: 'none' }} />
-              {/* 🌟 改造されたカメラ（ARスコープ）起動ボタン */}
               <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00ff66', padding: '0 12px', boxShadow: '0 0 10px rgba(0,255,102,0.2)' }}>
                 <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
               </button>
@@ -602,6 +589,11 @@ export default function MobileInputForm() {
           <div>
             <div style={labelStyle}>メモ (任意)</div>
             <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={type === 'transfer' ? "口座間移動" : "コンビニコーヒー"} style={inputStyle} />
+          </div>
+
+          {/* 🌟 ターゲット位置情報スキャナー */}
+          <div style={{ marginTop: '5px' }}>
+            <LocationScanner onLocationFixed={(loc) => setScanLocation(loc)} />
           </div>
 
           <button onClick={handleSubmit} disabled={isSubmitting} style={{ background: isSubmitting ? '#555' : '#00ff66', color: '#000', padding: '15px', borderRadius: '8px', border: 'none', fontSize: '18px', fontWeight: 'bold', marginTop: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', boxShadow: isSubmitting ? 'none' : '0 0 15px rgba(0,255,102,0.3)', transition: 'all 0.2s' }}>
