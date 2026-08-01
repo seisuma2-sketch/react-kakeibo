@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from './firebase';
@@ -18,7 +18,6 @@ import MobileInputForm from './components/MobileInputForm';
 import MoneyFlowMap from './components/MoneyFlowMap';
 import NewsFeed from './components/NewsFeed';
 import TopNewsWidget from './components/TopNewsWidget';
-// 🌟 1. ここを追加！新しく作成したコックピットOSを読み込む
 import DesktopCockpitOS from './components/DesktopCockpitOS';
 
 function App() {
@@ -31,7 +30,7 @@ function App() {
   const [stealthPassword, setStealthPassword] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // 🌟 2. ここを追加！画面モード（スタンダード ⇔ コックピットOS）を記憶するState
+  // 🌟 デスクトップモード管理
   const [desktopMode, setDesktopMode] = useState(() => {
     return localStorage.getItem('desktopDashMode') || 'standard';
   });
@@ -40,6 +39,13 @@ function App() {
     setDesktopMode(mode);
     localStorage.setItem('desktopDashMode', mode);
   };
+
+  // 🌟 アプリ全体の集計サイクル開始日管理（デフォルトは1日）
+  const [cycleStartDay, setCycleStartDay] = useState(() => {
+    return parseInt(localStorage.getItem('m402_cycle_start_day') || '1', 10);
+  });
+  const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
+  const [tempCycleDay, setTempCycleDay] = useState(cycleStartDay);
 
   const [stealthConfig, setStealthConfig] = useState(() => {
     const saved = localStorage.getItem('stealthConfig');
@@ -137,7 +143,7 @@ function App() {
     }
   };
 
-  // 🌟 検閲 兼 データ偽装処理（裏口座の痕跡を消しつつ、計算の辻褄を合わせる）
+  // 🌟 検閲 兼 データ偽装処理
   const displayTransactions = transactions.map(tx => {
     if (!stealthConfig.active) return tx; 
 
@@ -158,20 +164,47 @@ function App() {
   }).filter(Boolean); 
 
   const uniqueAccounts = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
-  let monthlyIncome = 0; let monthlyExpense = 0;
-  
-  displayTransactions.forEach(tx => {
-    if (!tx.date) return;
-    const txDate = tx.date.toDate();
-    if (txDate.getFullYear() === currentYear && txDate.getMonth() + 1 === currentMonth) {
-      if (tx.type === 'income') monthlyIncome += (tx.amount || 0);
-      if (tx.type === 'expense') monthlyExpense += (tx.amount || 0);
+
+  // 🌟 設定されたサイクルに基づく期間計算ロジック
+  const cyclePeriod = useMemo(() => {
+    const now = new Date();
+    const sd = cycleStartDay;
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const day = now.getDate();
+    let startDate, endDate;
+
+    if (sd === 1) {
+      startDate = new Date(year, month, 1, 0, 0, 0);
+      endDate = new Date(year, month + 1, 0, 23, 59, 59);
+    } else if (day >= sd) {
+      startDate = new Date(year, month, sd, 0, 0, 0);
+      endDate = new Date(year, month + 1, sd - 1, 23, 59, 59);
+    } else {
+      startDate = new Date(year, month - 1, sd, 0, 0, 0);
+      endDate = new Date(year, month, sd - 1, 23, 59, 59);
     }
-  });
-  const netIncome = monthlyIncome - monthlyExpense;
-  const isSurplus = netIncome >= 0;
+
+    let monthlyIncome = 0; 
+    let monthlyExpense = 0;
+
+    displayTransactions.forEach(tx => {
+      if (!tx.date) return;
+      const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
+      if (txDate >= startDate && txDate <= endDate) {
+        if (tx.type === 'income') monthlyIncome += (tx.amount || 0);
+        if (tx.type === 'expense') monthlyExpense += (tx.amount || 0);
+      }
+    });
+
+    const netIncome = monthlyIncome - monthlyExpense;
+    const isSurplus = netIncome >= 0;
+
+    const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const label = `${fmt(startDate)} - ${fmt(endDate)}`;
+
+    return { startDate, endDate, monthlyIncome, monthlyExpense, netIncome, isSurplus, label };
+  }, [displayTransactions, cycleStartDay]);
 
   const tabTitles = {
     'home': '総合', 'calendar': 'カレンダー', 'balance': '総合残高', 'input': ' クイック入力',
@@ -181,7 +214,7 @@ function App() {
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
 
-  // 🌟 3. ここを追加！パソコンで「コックピットOSモード」を選択中なら、新画面をまるごと表示する！
+  // コックピットOSモード時
   if (!isMobile && desktopMode === 'os') {
     return (
       <DesktopCockpitOS
@@ -192,7 +225,6 @@ function App() {
     );
   }
 
-  // ━━━ ここから下が、いつものお気に入りのスタンダード画面 ━━━
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', overflow: 'hidden', position: 'relative' }}>
       
@@ -200,11 +232,35 @@ function App() {
 
       <div style={{ flex: 1, padding: isMobile ? '15px' : '30px', overflowY: 'auto', width: '100%', paddingBottom: isMobile ? '80px' : '30px' }}>
         
-        {/* 🌟 4. ここを変更！画面右上の接続ステータスの隣に、モード切替ボタンを配置！ */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px' }}>
+        {/* 🌟 サイクル変更可能な共通ヘッダー */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff' }}>{tabTitles[currentTab] || '開発中...'}</h2>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* 🌟 サイクル期間ボタン（タップで集計日変更） */}
+            <button
+              onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }}
+              style={{
+                background: 'rgba(0, 255, 102, 0.08)',
+                border: '1px solid rgba(0, 255, 102, 0.3)',
+                color: '#00ff66',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+                boxShadow: '0 0 10px rgba(0, 255, 102, 0.1)'
+              }}
+              title="集計期間を変更"
+            >
+              <span>🗓️</span> サイクル ({cyclePeriod.label})
+            </button>
+
             {!isMobile && (
               <button
                 onClick={() => switchMode('os')}
@@ -212,7 +268,7 @@ function App() {
                   background: 'linear-gradient(45deg, #00ff6622, #00bfff22)',
                   border: '1px solid #00ff66',
                   color: '#00ff66',
-                  padding: '6px 14px',
+                  padding: '5px 12px',
                   borderRadius: '20px',
                   fontWeight: 'bold',
                   fontSize: '12px',
@@ -227,6 +283,7 @@ function App() {
                 <span>🖥️</span> コックピットOSへ
               </button>
             )}
+
             <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900' }}>
               {isOnline ? (user ? '🟢 接続済 (SYNC)' : '🔴 切断') : '📡 オフライン (LOCAL)'}
             </div>
@@ -236,7 +293,16 @@ function App() {
         <div>
           {currentTab === 'home' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
-              <SummaryPanel currentMonth={currentMonth} monthlyIncome={monthlyIncome} monthlyExpense={monthlyExpense} netIncome={netIncome} isSurplus={isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
+              {/* 🌟 サイクル計算済みの数値をSummaryPanelへ引き渡す */}
+              <SummaryPanel 
+                currentMonth={cyclePeriod.label} 
+                monthlyIncome={cyclePeriod.monthlyIncome} 
+                monthlyExpense={cyclePeriod.monthlyExpense} 
+                netIncome={cyclePeriod.netIncome} 
+                isSurplus={cyclePeriod.isSurplus} 
+                isStealthMode={stealthConfig.active && stealthConfig.hideSummary} 
+                isMobile={isMobile} 
+              />
               
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
@@ -245,7 +311,7 @@ function App() {
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} />
                   {!isMobile && <TopNewsWidget onClickViewAll={() => setCurrentTab('feed')} />}
-                  <NebulaCore netIncome={netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
+                  <NebulaCore netIncome={cyclePeriod.netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
                 </div>
               </div>
 
@@ -294,6 +360,47 @@ function App() {
           {currentTab === 'feed' && <NewsFeed />}
         </div>
       </div>
+
+      {/* 🌟 共通サイクル設定モーダル */}
+      {isCycleModalOpen && (
+        <div style={overlayStyle}>
+          <div style={{ ...modalStyle, width: '320px', border: '1px solid #00ff66' }}>
+            <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>🗓️</span> 集計サイクル設定
+            </h3>
+            <p style={{ color: '#aaa', fontSize: '12px', lineHeight: '1.4', margin: '10px 0' }}>
+              給料日などを基準に、1ヶ月の集計の区切り日を設定します。<br/>
+              <span style={{ color: '#666' }}>(例: 25日設定 ➔ 毎月25日〜翌月24日)</span>
+            </p>
+            
+            <div style={{ display: 'flex', alignItems: 'center', background: '#11141a', border: '1px solid #333', borderRadius: '6px', padding: '10px', margin: '15px 0' }}>
+              <span style={{ color: '#888', fontSize: '14px', flex: 1 }}>毎月</span>
+              <input 
+                type="number" min="1" max="31" value={tempCycleDay} 
+                onChange={(e) => setTempCycleDay(e.target.value)} 
+                style={{ width: '80px', background: 'transparent', border: 'none', borderBottom: '2px solid #00ff66', color: '#00ff66', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', outline: 'none', fontFamily: 'monospace' }} 
+              />
+              <span style={{ color: '#888', fontSize: '14px', paddingLeft: '8px' }}>日 開始</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setIsCycleModalOpen(false)} style={{ ...btnStyle('#aaa'), flex: 1 }}>キャンセル</button>
+              <button 
+                onClick={() => {
+                  const val = parseInt(tempCycleDay, 10);
+                  if (val >= 1 && val <= 31) {
+                    setCycleStartDay(val);
+                    localStorage.setItem('m402_cycle_start_day', val);
+                    setIsCycleModalOpen(false);
+                  } else { alert("1〜31の数字を入力してください。"); }
+                }} 
+                style={{ ...btnStyle('#00ff66'), flex: 1, background: '#00ff66', color: '#000', fontWeight: 'bold' }}>
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isMobile && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', zIndex: 100, backdropFilter: 'blur(10px)' }}>
@@ -361,7 +468,7 @@ function ConfigRow({ label, configKey, stealthConfig, setStealthConfig }) {
 
 function BottomTab({ icon, label, isActive, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'color 0.2s' }}>
+    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'color 0.2s' }}>
       <div style={{ fontSize: '20px', marginBottom: '2px', textShadow: isActive ? '0 0 10px #00ff66' : 'none' }}>{icon}</div>
       <div style={{ fontSize: '10px', fontWeight: isActive ? 'bold' : 'normal' }}>{label}</div>
     </div>

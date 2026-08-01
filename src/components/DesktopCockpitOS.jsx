@@ -15,6 +15,13 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
 
   const [maximizedPanel, setMaximizedPanel] = useState(null);
 
+  // 🌟 新機能：集計サイクルの開始日（デフォルトは1日）
+  const [cycleStartDay, setCycleStartDay] = useState(() => {
+    return parseInt(localStorage.getItem('m402_cycle_start_day') || '1', 10);
+  });
+  const [isCycleSettingOpen, setIsCycleSettingOpen] = useState(false);
+  const [tempCycleDay, setTempCycleDay] = useState(cycleStartDay);
+
   const chartRef = useRef(null);
   const radarRef = useRef(null);
 
@@ -30,37 +37,60 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
     });
   };
 
-  // --- データ計算ロジック ---
+  // --- 🌟 データ計算ロジック（自由設定したサイクル期間に基づく計算へ魔改造） ---
   const systemData = React.useMemo(() => {
     let totalIn = 0; let totalOut = 0; let totalBal = 0;
     const catOut = {}; const methodBal = {}; const dLabels = []; const bData = [];
-    const now = new Date(); const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const now = new Date(); 
+    
+    // サイクルの開始日と終了日を動的に逆算
+    const sd = cycleStartDay;
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const day = now.getDate();
+    let startDate, endDate;
+
+    if (sd === 1) {
+      startDate = new Date(year, month, 1, 0, 0, 0);
+      endDate = new Date(year, month + 1, 0, 23, 59, 59); // 月末
+    } else if (day >= sd) {
+      startDate = new Date(year, month, sd, 0, 0, 0);
+      endDate = new Date(year, month + 1, sd - 1, 23, 59, 59);
+    } else {
+      startDate = new Date(year, month - 1, sd, 0, 0, 0);
+      endDate = new Date(year, month, sd - 1, 23, 59, 59);
+    }
 
     const chronologicalTx = [...transactions].reverse();
     chronologicalTx.forEach(tx => {
       const amt = Number(tx.amount) || 0; const method = tx.paymentMethod || '不明'; const cat = tx.category || '不明';
       if (!ghostAccounts.includes(method)) {
         if (!methodBal[method]) methodBal[method] = 0;
+        
+        // 取引が「設定した現在のサイクル（期間内）」に収まっているか判定
+        const txDateObj = tx.date ? (tx.date.toDate ? tx.date.toDate() : new Date(tx.date)) : null;
+        const isCurrentCycle = txDateObj && txDateObj >= startDate && txDateObj <= endDate;
+
         if (tx.type === 'income') { 
           methodBal[method] += amt; 
-          if (tx.date && (tx.date.toDate ? tx.date.toDate() : new Date(tx.date)) >= thisMonthStart) totalIn += amt; 
+          if (isCurrentCycle) totalIn += amt; // 期間内のみ収入加算
         } else if (tx.type === 'expense') { 
           methodBal[method] -= amt; 
-          if (tx.date && (tx.date.toDate ? tx.date.toDate() : new Date(tx.date)) >= thisMonthStart) { 
-            totalOut += amt; 
-            catOut[cat] = (catOut[cat] || 0) + amt; 
+          if (isCurrentCycle) { 
+            totalOut += amt; // 期間内のみ支出加算
+            catOut[cat] = (catOut[cat] || 0) + amt; // レーダーチャートも期間内に限定
           } 
         }
         let currentTot = 0; Object.values(methodBal).forEach(v => currentTot += v);
         if (tx.date) { 
-          dLabels.push((tx.date.toDate ? tx.date.toDate() : new Date(tx.date)).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })); 
+          dLabels.push(txDateObj.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })); 
           bData.push(currentTot); 
         }
       }
     });
     Object.values(methodBal).forEach(v => totalBal += v);
-    return { totalIn, totalOut, totalBal, catOut, methodBal, dLabels, bData };
-  }, [transactions, ghostAccounts]);
+    return { totalIn, totalOut, totalBal, catOut, methodBal, dLabels, bData, startDate, endDate };
+  }, [transactions, ghostAccounts, cycleStartDay]);
 
   // --- ECharts メインチャート ---
   useEffect(() => {
@@ -97,11 +127,52 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
   }, [systemData, panels.radar, maximizedPanel]);
 
   const liveNet = systemData.totalIn - systemData.totalOut;
+  const formatDateStr = (dateObj) => `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#050608', color: '#fff', fontFamily: 'sans-serif', overflow: 'hidden', boxSizing: 'border-box' }}>
       
-      {/* 🌟 上部コントロールバー（高さ固定・完全整列） */}
+      {/* 🌟 サイクル設定モーダル（日付変更用） */}
+      {isCycleSettingOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '320px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0, 255, 102, 0.3)' }}>
+            <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>🗓️</span> サイクル開始日の設定
+            </h3>
+            <div style={{ color: '#aaa', fontSize: '12px', lineHeight: '1.4' }}>
+              給料日などを基準に、収支を計算する1ヶ月の区切りを設定します。<br/><span style={{color: '#888'}}>(例: 25日設定なら、毎月25日〜翌月24日で集計)</span>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', background: '#1a1d24', border: '1px solid #333', borderRadius: '6px', padding: '10px' }}>
+              <span style={{ color: '#888', fontSize: '14px', flex: 1 }}>毎月</span>
+              <input 
+                type="number" min="1" max="31" value={tempCycleDay} 
+                onChange={(e) => setTempCycleDay(e.target.value)} 
+                style={{ width: '80px', background: 'transparent', border: 'none', borderBottom: '2px solid #00ff66', color: '#00ff66', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', outline: 'none', fontFamily: 'monospace' }} 
+              />
+              <span style={{ color: '#888', fontSize: '14px', paddingLeft: '8px' }}>日 開始</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button onClick={() => setIsCycleSettingOpen(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
+              <button 
+                onClick={() => {
+                  const val = parseInt(tempCycleDay, 10);
+                  if (val >= 1 && val <= 31) {
+                    setCycleStartDay(val);
+                    localStorage.setItem('m402_cycle_start_day', val);
+                    setIsCycleSettingOpen(false);
+                  } else { alert("1〜31の数字を入力してください。"); }
+                }} 
+                style={{ flex: 1, padding: '12px', background: '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                設定を保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 上部コントロールバー */}
       <div style={{ height: '60px', minHeight: '60px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px', background: '#0a0c10', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -122,8 +193,16 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#050608', padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-            <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#888' }}>THIS MONTH:</span>
+          
+          {/* 🌟 サイクル表示 ＆ クリックで設定起動 */}
+          <div 
+            onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleSettingOpen(true); }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0, 255, 102, 0.05)', padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(0, 255, 102, 0.2)', cursor: 'pointer', transition: 'all 0.2s', boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)' }}
+            title="集計期間を変更"
+          >
+            <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#aaa' }}>
+              CYCLE ({formatDateStr(systemData.startDate)}-{formatDateStr(systemData.endDate)}):
+            </span>
             <span style={{ fontFamily: 'monospace', color: liveNet >= 0 ? '#00ff66' : '#ff3366', fontWeight: 'bold', fontSize: '15px' }}>
               {liveNet >= 0 ? '+' : ''}¥{liveNet.toLocaleString()}
             </span>
@@ -138,13 +217,11 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
       {/* 🌟 完全対称グリッド・ワークスペース */}
       <div style={{ flex: 1, padding: '20px', display: maximizedPanel ? 'block' : 'grid', gridTemplateColumns: '320px minmax(0, 1fr) 320px', gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px', overflow: 'hidden', boxSizing: 'border-box' }}>
         
-        {/* === [左カラム] 入力＆ログ（幅320px固定・上下均等分割） === */}
+        {/* === [左カラム] 入力＆ログ === */}
         {(!maximizedPanel || maximizedPanel === 'terminal' || maximizedPanel === 'log') && (
           <div style={{ gridRow: 'span 2', display: maximizedPanel ? 'block' : 'flex', flexDirection: 'column', gap: '16px', height: '100%', minHeight: 0 }}>
-            {/* [左上] クイック入力 */}
             {panels.terminal && (!maximizedPanel || maximizedPanel === 'terminal') && (
               <HackerPanel title="QUICK INPUT // 入力" icon="⌨️" onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'terminal')} isMax={maximizedPanel === 'terminal'} onClose={() => togglePanel('terminal')} style={{ flex: 1 }}>
-                {/* 🌟 エラー修正：justifyContent に直しました！ */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <input type="number" placeholder="金額 (例: 1500)" style={cleanInput} />
@@ -157,7 +234,6 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
                 </div>
               </HackerPanel>
             )}
-            {/* [左下] リアルタイムログ */}
             {panels.log && (!maximizedPanel || maximizedPanel === 'log') && (
               <HackerPanel title="TRANSACTIONS // 履歴" icon="📜" onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'log')} isMax={maximizedPanel === 'log'} onClose={() => togglePanel('log')} style={{ flex: 1 }}>
                 <div style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
@@ -176,17 +252,16 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
           </div>
         )}
 
-        {/* === [中央カラム] 総合残高トレンド（中央・広大スペース） === */}
+        {/* === [中央カラム] 総合残高トレンド === */}
         {panels.chart && (!maximizedPanel || maximizedPanel === 'chart') && (
           <HackerPanel title="TOTAL ASSET TREND // 総合残高推移トレンド" icon="📈" style={{ gridRow: maximizedPanel ? 'auto' : 'span 2', height: '100%', minHeight: 0 }} onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'chart')} isMax={maximizedPanel === 'chart'} onClose={() => togglePanel('chart')}>
             <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
           </HackerPanel>
         )}
 
-        {/* === [右カラム] 口座残高＆比率（幅320px固定・上下均等分割） === */}
+        {/* === [右カラム] 口座残高＆比率 === */}
         {(!maximizedPanel || maximizedPanel === 'cartridges' || maximizedPanel === 'radar') && (
           <div style={{ gridRow: 'span 2', display: maximizedPanel ? 'block' : 'flex', flexDirection: 'column', gap: '16px', height: '100%', minHeight: 0 }}>
-            {/* [右上] カートリッジ残高 */}
             {panels.cartridges && (!maximizedPanel || maximizedPanel === 'cartridges') && (
               <HackerPanel title="ACCOUNTS // 口座・クレジット" icon="💳" onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'cartridges')} isMax={maximizedPanel === 'cartridges'} onClose={() => togglePanel('cartridges')} style={{ flex: 1 }}>
                 <div style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
@@ -199,9 +274,8 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
                 </div>
               </HackerPanel>
             )}
-            {/* [右下] カテゴリ比率（レーダーチャート） */}
             {panels.radar && (!maximizedPanel || maximizedPanel === 'radar') && (
-              <HackerPanel title="CATEGORY // 支出比率" icon="🕸️" onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'radar')} isMax={maximizedPanel === 'radar'} onClose={() => togglePanel('radar')} style={{ flex: 1 }}>
+              <HackerPanel title="CATEGORY // 当期支出比率" icon="🕸️" onMaximize={() => setMaximizedPanel(maximizedPanel ? null : 'radar')} isMax={maximizedPanel === 'radar'} onClose={() => togglePanel('radar')} style={{ flex: 1 }}>
                 <div ref={radarRef} style={{ width: '100%', height: '100%' }} />
               </HackerPanel>
             )}
@@ -213,11 +287,10 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
   );
 }
 
-// --- 究極に整列されたパネルコンポーネント ---
+// --- パネルコンポーネント ---
 function HackerPanel({ title, children, icon, onMaximize, isMax, onClose, style = {} }) {
   return (
     <div style={{ background: '#0a0c10', borderRadius: '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.06)', boxSizing: 'border-box', ...style }}>
-      {/* タイトルバー（高さ44px完全固定） */}
       <div style={{ height: '44px', minHeight: '44px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 14px', background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', userSelect: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '14px' }}>{icon}</span>
@@ -228,7 +301,6 @@ function HackerPanel({ title, children, icon, onMaximize, isMax, onClose, style 
           <button onClick={onClose} style={{ ...winBtn, color: '#ff3366' }} title="閉じる">×</button>
         </div>
       </div>
-      {/* コンテンツエリア */}
       <div style={{ flex: 1, overflow: 'hidden', padding: '14px', position: 'relative', boxSizing: 'border-box' }}>
         {children}
       </div>
