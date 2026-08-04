@@ -39,13 +39,11 @@ export default function MobileInputForm() {
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🌟 ここを追加：スキャナーで取得した位置情報を記憶するState
   const [scanLocation, setScanLocation] = useState('');
 
-  // 🌟 ARターゲティング・スコープ用 State
   const [isArModalOpen, setIsArModalOpen] = useState(false);
   const [arImageSrc, setArImageSrc] = useState(null);
-  const [arStatus, setArStatus] = useState('idle'); // 'idle' | 'scanning' | 'locked' | 'error'
+  const [arStatus, setArStatus] = useState('idle'); 
   const [arLog, setArLog] = useState('[SYSTEM] OPTICAL SENSOR ONLINE... READY.');
   const [arTargetData, setArTargetData] = useState({ amount: '', memo: '' });
 
@@ -68,18 +66,29 @@ export default function MobileInputForm() {
   const [calcHistory, setCalcHistory] = useState([]);
   const [pinnedAmount, setPinnedAmount] = useState(null);
 
-  const [expenseCategories, setExpenseCategories] = useState([
-    '/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', 
-    '/icon-drink.png 交際費', '/icon-hobby.png 趣味', '/icon-ai.png 自動取得(AI)', '/icon-other.png その他'
-  ]);
-  const [incomeCategories, setIncomeCategories] = useState([
-    '/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'
-  ]);
+  // 🌟 魔改造ポイント1：カテゴリと口座のリストをローカルストレージから読み込んで永続化
+  const [expenseCategories, setExpenseCategories] = useState(() => {
+    const saved = localStorage.getItem('m402_expense_cats');
+    return saved ? JSON.parse(saved) : [
+      '/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', 
+      '/icon-drink.png 交際費', '/icon-hobby.png 趣味', '/icon-ai.png 自動取得(AI)', '/icon-other.png その他'
+    ];
+  });
   
-  const [accounts, setAccounts] = useState([
-    '/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', 
-    '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'
-  ]);
+  const [incomeCategories, setIncomeCategories] = useState(() => {
+    const saved = localStorage.getItem('m402_income_cats');
+    return saved ? JSON.parse(saved) : [
+      '/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'
+    ];
+  });
+  
+  const [accounts, setAccounts] = useState(() => {
+    const saved = localStorage.getItem('m402_accounts');
+    return saved ? JSON.parse(saved) : [
+      '/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', 
+      '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'
+    ];
+  });
 
   const now = new Date();
   const defaultDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -117,8 +126,15 @@ export default function MobileInputForm() {
       if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
       const iconPath = newAccType === 'credit' ? '/icon-other.png' : '/icon-cash.png';
       const newItem = `${iconPath} ${newAccName.trim()}`;
-      if (!accounts.includes(newItem)) setAccounts([...accounts, newItem]);
+      
+      // 🌟 魔改造ポイント2：新しく追加した口座をローカルストレージにも保存する！
+      if (!accounts.includes(newItem)) {
+        const newAccounts = [...accounts, newItem];
+        setAccounts(newAccounts);
+        localStorage.setItem('m402_accounts', JSON.stringify(newAccounts));
+      }
       setPaymentMethod(newItem);
+
       if (newAccType === 'credit') {
         const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
         currentSettings[newAccName.trim()] = { budget: Number(newAccBudget) || 0, resetDay: Number(newAccResetDay) || 1, paymentDay: Number(newAccPaymentDay) || 27 };
@@ -140,8 +156,18 @@ export default function MobileInputForm() {
   const handlePromptSubmit = () => {
     if (!customPrompt.text.trim()) { setCustomPrompt({ ...customPrompt, isOpen: false }); return; }
     const newItem = `✨ ${customPrompt.text}`;
-    if (type === 'expense') setExpenseCategories([...expenseCategories, newItem]);
-    else setIncomeCategories([...incomeCategories, newItem]);
+    
+    // 🌟 魔改造ポイント3：新しく追加したカテゴリもローカルストレージに保存する！
+    if (type === 'expense') {
+      const newCats = [...expenseCategories, newItem];
+      setExpenseCategories(newCats);
+      localStorage.setItem('m402_expense_cats', JSON.stringify(newCats));
+    } else {
+      const newCats = [...incomeCategories, newItem];
+      setIncomeCategories(newCats);
+      localStorage.setItem('m402_income_cats', JSON.stringify(newCats));
+    }
+    
     setCategory(newItem);
     setCustomPrompt({ isOpen: false, title: '', target: '', text: '' });
   };
@@ -249,7 +275,6 @@ export default function MobileInputForm() {
       const cleanCategory = getCleanName(category);
       const cleanPaymentMethod = getCleanName(paymentMethod);
 
-      // 🌟 修正：裏で勝手にGPSを取得していたコードを削除し、LocationScannerから受け取ったデータをセット
       const txData = {
         userId: auth.currentUser.uid, 
         type: type, 
@@ -257,14 +282,14 @@ export default function MobileInputForm() {
         category: cleanCategory, 
         paymentMethod: cleanPaymentMethod, 
         memo: memo,
-        location: scanLocation, // 📍 スキャナーで取得した位置情報を記録
+        location: scanLocation,
         date: Timestamp.fromDate(new Date(date)), 
         createdAt: Timestamp.now()
       };
 
       await addDoc(collection(db, "transactions"), txData);
       addToHistory(finalAmount);
-      setAmount(''); setCalcStr(''); setMemo(''); setScanLocation(''); // 送信後にリセット
+      setAmount(''); setCalcStr(''); setMemo(''); setScanLocation('');
       showAlert("記録完了！", "success");
     } catch (error) { 
       showAlert("エラー発生", "error"); 
@@ -304,7 +329,6 @@ export default function MobileInputForm() {
   return (
     <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
-      {/* 🌟 ARターゲティング・スコープ・モーダル */}
       {isArModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', zIndex: 999999, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: 'linear-gradient(to bottom, rgba(0,255,102,0.2), transparent)', borderBottom: '1px solid #00ff6644', zIndex: 10 }}>
@@ -591,7 +615,6 @@ export default function MobileInputForm() {
             <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={type === 'transfer' ? "口座間移動" : "コンビニコーヒー"} style={inputStyle} />
           </div>
 
-          {/* 🌟 ターゲット位置情報スキャナー */}
           <div style={{ marginTop: '5px' }}>
             <LocationScanner onLocationFixed={(loc) => setScanLocation(loc)} />
           </div>
