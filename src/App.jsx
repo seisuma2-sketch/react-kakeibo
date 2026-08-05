@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+// 🌟 修正：onAuthStateChanged と signOut を追加インポート
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth } from './firebase';
 
 import Sidebar from './components/Sidebar';
@@ -30,7 +31,12 @@ function App() {
   const [stealthPassword, setStealthPassword] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // 🌟 デスクトップモード管理
+  // 🌟 ログイン画面用のState
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
   const [desktopMode, setDesktopMode] = useState(() => {
     return localStorage.getItem('desktopDashMode') || 'standard';
   });
@@ -40,7 +46,6 @@ function App() {
     localStorage.setItem('desktopDashMode', mode);
   };
 
-  // 🌟 アプリ全体の集計サイクル開始日管理（デフォルトは1日）
   const [cycleStartDay, setCycleStartDay] = useState(() => {
     return parseInt(localStorage.getItem('m402_cycle_start_day') || '1', 10);
   });
@@ -53,6 +58,7 @@ function App() {
       active: false, hideSummary: true, hideCartridges: true, hideHistory: true, ghostAccounts: [],
     };
   });
+  
   useEffect(() => {
     localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
   }, [stealthConfig]);
@@ -74,6 +80,26 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // 🌟 修正：強制自動ログインを廃止し、セッション監視に切り替え
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 🌟 ログイン実行処理
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      setLoginError('');
+    } catch (err) {
+      setLoginError('認証に失敗しました。IDまたはパスワードが違います。');
+    }
+  };
+
   const handleAuth = () => {
     if (stealthPassword === CORRECT_PASSWORD) {
       setIsAuthModalOpen(false); setStealthPassword(''); setIsConfigModalOpen(true);
@@ -81,12 +107,6 @@ function App() {
       alert('❌ ACCESS DENIED'); setStealthPassword('');
     }
   };
-
-  useEffect(() => {
-    signInWithEmailAndPassword(auth, "seisuma2@gmail.com", "Seisuma2")
-      .then((userCredential) => setUser(userCredential.user))
-      .catch((error) => console.error("ログイン失敗:", error));
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -143,29 +163,21 @@ function App() {
     }
   };
 
-  // 🌟 検閲 兼 データ偽装処理
   const displayTransactions = transactions.map(tx => {
     if (!stealthConfig.active) return tx; 
-
     const isFromGhost = stealthConfig.ghostAccounts.includes(tx.paymentMethod);
     const isToGhost = tx.type === 'transfer' && stealthConfig.ghostAccounts.includes(tx.category);
 
     if (tx.type === 'transfer') {
-      if (isFromGhost && !isToGhost) {
-        return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
-      }
-      if (!isFromGhost && isToGhost) {
-        return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
-      }
+      if (isFromGhost && !isToGhost) return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
+      if (!isFromGhost && isToGhost) return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
     }
-
     if (isFromGhost || isToGhost) return null;
     return tx;
   }).filter(Boolean); 
 
   const uniqueAccounts = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
 
-  // 🌟 設定されたサイクルに基づく期間計算ロジック
   const cyclePeriod = useMemo(() => {
     const now = new Date();
     const sd = cycleStartDay;
@@ -185,9 +197,7 @@ function App() {
       endDate = new Date(year, month, sd - 1, 23, 59, 59);
     }
 
-    let monthlyIncome = 0; 
-    let monthlyExpense = 0;
-
+    let monthlyIncome = 0; let monthlyExpense = 0;
     displayTransactions.forEach(tx => {
       if (!tx.date) return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
@@ -199,7 +209,6 @@ function App() {
 
     const netIncome = monthlyIncome - monthlyExpense;
     const isSurplus = netIncome >= 0;
-
     const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
     const label = `${fmt(startDate)} - ${fmt(endDate)}`;
 
@@ -213,6 +222,40 @@ function App() {
   };
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
+
+  // 🌟 ロード中のサイバー画面
+  if (isAuthChecking) {
+    return (
+      <div style={{ height: '100vh', background: '#050608', color: '#00ff66', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'monospace', fontSize: '18px' }}>
+        <div style={{ animation: 'pulse 1.5s infinite' }}>[SYSTEM] CHECKING AUTHENTICATION...</div>
+      </div>
+    );
+  }
+
+  // 🌟 ログアウト時：M402 OS ログインスクリーン
+  if (!user) {
+    return (
+      <div style={{ height: '100vh', background: '#050608', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#00ff66', fontFamily: 'monospace', padding: '20px' }}>
+        <form onSubmit={handleLogin} style={{ background: '#0a0c10', padding: '40px', borderRadius: '12px', border: '1px solid #00ff66', boxShadow: '0 0 30px rgba(0,255,102,0.2)', display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', maxWidth: '360px' }}>
+          <div style={{ textAlign: 'center', fontSize: '24px', fontWeight: 'bold', marginBottom: '10px', textShadow: '0 0 10px #00ff66' }}>
+            ⚡ M402 OS LOGIN
+          </div>
+          {loginError && <div style={{ color: '#ff3366', fontSize: '12px', textAlign: 'center', background: 'rgba(255,51,102,0.1)', padding: '8px', border: '1px solid #ff3366', borderRadius: '4px' }}>{loginError}</div>}
+          <div>
+            <div style={{ fontSize: '12px', marginBottom: '5px', color: '#00bfff' }}>USER ID (EMAIL)</div>
+            <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="admin@example.com" style={{ width: '100%', padding: '12px', background: '#11141a', border: '1px solid #00bfff', color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' }} required />
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', marginBottom: '5px', color: '#00bfff' }}>PASSWORD</div>
+            <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" style={{ width: '100%', padding: '12px', background: '#11141a', border: '1px solid #00bfff', color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' }} required />
+          </div>
+          <button type="submit" style={{ padding: '15px', background: '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px', boxShadow: '0 0 15px rgba(0,255,102,0.4)', transition: 'all 0.2s' }}>
+            AUTHENTICATE (認証)
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   // コックピットOSモード時
   if (!isMobile && desktopMode === 'os') {
@@ -231,13 +274,10 @@ function App() {
       {!isMobile && <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />}
 
       <div style={{ flex: 1, padding: isMobile ? '15px' : '30px', overflowY: 'auto', width: '100%', paddingBottom: isMobile ? '80px' : '30px' }}>
-        
-        {/* 🌟 サイクル変更可能な共通ヘッダー */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff' }}>{tabTitles[currentTab] || '開発中...'}</h2>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {/* 🌟 サイクル期間ボタン（タップで集計日変更） */}
             <button
               onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }}
               style={{
@@ -293,7 +333,6 @@ function App() {
         <div>
           {currentTab === 'home' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
-              {/* 🌟 サイクル計算済みの数値をSummaryPanelへ引き渡す */}
               <SummaryPanel 
                 currentMonth={cyclePeriod.label} 
                 monthlyIncome={cyclePeriod.monthlyIncome} 
@@ -361,7 +400,6 @@ function App() {
         </div>
       </div>
 
-      {/* 🌟 共通サイクル設定モーダル */}
       {isCycleModalOpen && (
         <div style={overlayStyle}>
           <div style={{ ...modalStyle, width: '320px', border: '1px solid #00ff66' }}>

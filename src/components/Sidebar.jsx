@@ -1,3 +1,6 @@
+import { signOut } from 'firebase/auth';
+import { auth } from '../firebase';
+
 export default function Sidebar({ currentTab, setCurrentTab }) {
   // メニューのリスト（あとで増やせるように配列にしておく！）
   const menuItems = [
@@ -37,6 +40,7 @@ export default function Sidebar({ currentTab, setCurrentTab }) {
               fontWeight: currentTab === item.id ? 'bold' : 'normal',
               transition: 'all 0.2s ease-in-out'
             }}
+            
           >
             {item.label}
           </li>
@@ -46,6 +50,25 @@ export default function Sidebar({ currentTab, setCurrentTab }) {
       {/* 左下のユーザー表示 */}
       <div style={{ padding: '20px', borderTop: '1px solid #252838', fontSize: '12px', color: '#555' }}>
         React Edition v1.0
+      </div>
+      {/* 🌟 これを「情報傍受」ボタンの下あたり（一番下）に追加！ */}
+      <div style={{ padding: '20px', borderTop: '1px solid #252838', marginTop: 'auto' }}>
+        <button
+          onClick={() => {
+            if (window.confirm("システムからログアウトしますか？")) {
+              signOut(auth).then(() => window.location.reload());
+            }
+          }}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px',
+            background: 'rgba(255, 51, 102, 0.05)', color: '#ff3366', border: '1px solid #ff336655', borderRadius: '8px',
+            fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', fontSize: '13px', fontFamily: 'monospace'
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 51, 102, 0.2)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(255,51,102,0.3)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 51, 102, 0.05)'; e.currentTarget.style.boxShadow = 'none'; }}
+        >
+          <span>🚪</span> SYSTEM LOGOUT
+        </button>
       </div>
     </div>
   );
