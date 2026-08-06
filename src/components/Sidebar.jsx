@@ -1,8 +1,7 @@
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
-export default function Sidebar({ currentTab, setCurrentTab }) {
-  // メニューのリスト（あとで増やせるように配列にしておく！）
+export default function Sidebar({ currentTab, setCurrentTab, userName, onOpenProfile }) {
   const menuItems = [
     { id: 'home', label: '総合' },
     { id: 'calendar', label: 'カレンダー' },
@@ -12,46 +11,52 @@ export default function Sidebar({ currentTab, setCurrentTab }) {
     { id: 'playground', label: '残高遊び場' },
     { id: 'bs-pl', label: 'BS / PL 財務諸表' },
     { id: 'map', label: ' マップ' },
-    { id: 'feed', label: '📡 情報傍受 (Feed)' }
   ];
 
   return (
-    <div style={{ width: '220px', backgroundColor: '#11141a', borderRight: '1px solid #252838', display: 'flex', flexDirection: 'column', paddingTop: '30px' }}>
+    <div style={{ width: '220px', backgroundColor: '#11141a', borderRight: '1px solid #252838', display: 'flex', flexDirection: 'column', paddingTop: '30px', height: '100vh', flexShrink: 0 }}>
       
-      {/* タイトル */}
-      <div style={{ padding: '0 20px', marginBottom: '30px' }}>
-        <h2 style={{ color: '#00ff66', margin: 0, fontSize: '18px', textShadow: '0 0 10px rgba(0,255,102,0.3)' }}>
-          負け犬の家計簿
+      {/* 🌟 タイトル：ユーザーネームと歯車アイコンが横に並ぶ */}
+      <div style={{ padding: '0 20px', marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ color: '#00ff66', margin: 0, fontSize: '18px', textShadow: '0 0 10px rgba(0,255,102,0.3)', lineHeight: '1.4', wordBreak: 'break-word', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {userName ? `${userName}の家計簿` : '家計簿'}
         </h2>
+        {/* ⚙️ プロフィール設定（歯車）ボタン */}
+        <button
+          onClick={onOpenProfile}
+          title="プロフィール設定"
+          style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', padding: 0, opacity: 0.6, transition: 'all 0.2s', filter: 'grayscale(100%) brightness(1.5)' }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.filter = 'none'; }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = 0.6; e.currentTarget.style.filter = 'grayscale(100%) brightness(1.5)'; }}
+        >
+          ⚙️
+        </button>
       </div>
 
-      {/* メニューリスト */}
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, flex: 1 }}>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, flex: 1, overflowY: 'auto' }}>
         {menuItems.map(item => (
           <li
             key={item.id}
-            onClick={() => setCurrentTab(item.id)} // 🌟 クリックしたらタブを切り替える！
+            onClick={() => setCurrentTab(item.id)}
             style={{
               padding: '15px 20px',
               cursor: 'pointer',
-              color: currentTab === item.id ? '#00ff66' : '#aaa', // 選ばれていたらネオングリーン！
+              color: currentTab === item.id ? '#00ff66' : '#aaa',
               backgroundColor: currentTab === item.id ? 'rgba(0, 255, 102, 0.05)' : 'transparent',
               borderLeft: currentTab === item.id ? '4px solid #00ff66' : '4px solid transparent',
               fontWeight: currentTab === item.id ? 'bold' : 'normal',
               transition: 'all 0.2s ease-in-out'
             }}
-            
           >
             {item.label}
           </li>
         ))}
       </ul>
 
-      {/* 左下のユーザー表示 */}
       <div style={{ padding: '20px', borderTop: '1px solid #252838', fontSize: '12px', color: '#555' }}>
         React Edition v1.0
       </div>
-      {/* 🌟 これを「情報傍受」ボタンの下あたり（一番下）に追加！ */}
+
       <div style={{ padding: '20px', borderTop: '1px solid #252838', marginTop: 'auto' }}>
         <button
           onClick={() => {

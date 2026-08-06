@@ -58,6 +58,9 @@ export default function MobileInputForm() {
   const [newAccResetDay, setNewAccResetDay] = useState('1');
   const [newAccPaymentDay, setNewAccPaymentDay] = useState('27');
   
+  // 🌟 追加：クレカの引き落とし元口座を記憶するState
+  const [newAccWithdrawalSource, setNewAccWithdrawalSource] = useState('');
+  
   const [savedCards, setSavedCards] = useState({});
   const [editTargetCard, setEditTargetCard] = useState('');
 
@@ -66,7 +69,6 @@ export default function MobileInputForm() {
   const [calcHistory, setCalcHistory] = useState([]);
   const [pinnedAmount, setPinnedAmount] = useState(null);
 
-  // 🌟 魔改造ポイント1：カテゴリと口座のリストをローカルストレージから読み込んで永続化
   const [expenseCategories, setExpenseCategories] = useState(() => {
     const saved = localStorage.getItem('m402_expense_cats');
     return saved ? JSON.parse(saved) : [
@@ -103,6 +105,7 @@ export default function MobileInputForm() {
   
   const handleOpenAccountPanel = () => {
     setNewAccName(''); setNewAccType('bank'); setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
+    setNewAccWithdrawalSource(''); // リセット
     setAccountPanelMode('add'); setEditTargetCard('');
     const cards = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     setSavedCards(cards);
@@ -116,8 +119,9 @@ export default function MobileInputForm() {
       setNewAccBudget(savedCards[cardName].budget);
       setNewAccResetDay(savedCards[cardName].resetDay);
       setNewAccPaymentDay(savedCards[cardName].paymentDay);
+      setNewAccWithdrawalSource(savedCards[cardName].withdrawalSource || ''); // 読込
     } else {
-      setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
+      setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27'); setNewAccWithdrawalSource('');
     }
   };
 
@@ -127,7 +131,6 @@ export default function MobileInputForm() {
       const iconPath = newAccType === 'credit' ? '/icon-other.png' : '/icon-cash.png';
       const newItem = `${iconPath} ${newAccName.trim()}`;
       
-      // 🌟 魔改造ポイント2：新しく追加した口座をローカルストレージにも保存する！
       if (!accounts.includes(newItem)) {
         const newAccounts = [...accounts, newItem];
         setAccounts(newAccounts);
@@ -137,7 +140,13 @@ export default function MobileInputForm() {
 
       if (newAccType === 'credit') {
         const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-        currentSettings[newAccName.trim()] = { budget: Number(newAccBudget) || 0, resetDay: Number(newAccResetDay) || 1, paymentDay: Number(newAccPaymentDay) || 27 };
+        // 🌟 保存時に withdrawalSource も記憶させる
+        currentSettings[newAccName.trim()] = { 
+          budget: Number(newAccBudget) || 0, 
+          resetDay: Number(newAccResetDay) || 1, 
+          paymentDay: Number(newAccPaymentDay) || 27,
+          withdrawalSource: newAccWithdrawalSource 
+        };
         localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
         showAlert(`💳 ${newAccName.trim()} を登録しました`, "success");
       } else {
@@ -146,9 +155,15 @@ export default function MobileInputForm() {
     } else {
       if (!editTargetCard) { showAlert("修正する項目を選択してください", "error"); return; }
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-      currentSettings[editTargetCard] = { budget: Number(newAccBudget) || 0, resetDay: Number(newAccResetDay) || 1, paymentDay: Number(newAccPaymentDay) || 27 };
+      // 🌟 保存時に withdrawalSource も記憶させる
+      currentSettings[editTargetCard] = { 
+        budget: Number(newAccBudget) || 0, 
+        resetDay: Number(newAccResetDay) || 1, 
+        paymentDay: Number(newAccPaymentDay) || 27,
+        withdrawalSource: newAccWithdrawalSource
+      };
       localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
-      showAlert(`💳 ${editTargetCard} に予算設定を適用しました！`, "success");
+      showAlert(`💳 ${editTargetCard} の設定を更新しました！`, "success");
     }
     setShowAccountPanel(false);
   };
@@ -157,7 +172,6 @@ export default function MobileInputForm() {
     if (!customPrompt.text.trim()) { setCustomPrompt({ ...customPrompt, isOpen: false }); return; }
     const newItem = `✨ ${customPrompt.text}`;
     
-    // 🌟 魔改造ポイント3：新しく追加したカテゴリもローカルストレージに保存する！
     if (type === 'expense') {
       const newCats = [...expenseCategories, newItem];
       setExpenseCategories(newCats);
@@ -427,8 +441,9 @@ export default function MobileInputForm() {
             </h3>
             <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #252838' }}>
               <button onClick={() => setAccountPanelMode('add')} style={tabStyle(accountPanelMode === 'add', '#00ff66', '#aaa')}>✨ 新規登録</button>
-              <button onClick={() => setAccountPanelMode('edit')} style={tabStyle(accountPanelMode === 'edit', '#ff9900', '#aaa')}>⚙️ 予算・日付修正</button>
+              <button onClick={() => setAccountPanelMode('edit')} style={tabStyle(accountPanelMode === 'edit', '#ff9900', '#aaa')}>⚙️ 予算・日付・紐付</button>
             </div>
+            
             {accountPanelMode === 'add' ? (
               <>
                 <div style={{ display: 'flex', background: '#1a1d24', borderRadius: '6px', padding: '4px', border: '1px solid #333' }}>
@@ -439,6 +454,7 @@ export default function MobileInputForm() {
                   <div style={labelStyle}>[1] {newAccType === 'credit' ? 'クレジットカード名' : '口座名'}</div>
                   <input type="text" value={newAccName} onChange={e => setNewAccName(e.target.value)} placeholder={newAccType === 'credit' ? "例：リクルートカード" : "例：PayPay銀行"} style={inputStyle} />
                 </div>
+                
                 {newAccType === 'credit' && (
                   <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: `1px solid #ff9900`, display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div>
@@ -448,9 +464,10 @@ export default function MobileInputForm() {
                         <input type="number" value={newAccBudget} onChange={e => setNewAccBudget(e.target.value)} placeholder="20000" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff9900', fontSize: '20px', fontWeight: 'bold' }} />
                       </div>
                     </div>
+                    
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ ...labelStyle, color: '#00ff66', fontSize: '10px' }}>[3] 更新日 (リセット)</div>
+                        <div style={{ ...labelStyle, color: '#00ff66', fontSize: '10px' }}>[3] 更新日</div>
                         <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #00ff6655', borderRadius: '6px', padding: '0 10px' }}>
                           <span style={{ color: '#00ff66', fontSize: '12px' }}>毎月</span>
                           <input type="number" value={newAccResetDay} onChange={e => setNewAccResetDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#00ff66', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
@@ -458,7 +475,7 @@ export default function MobileInputForm() {
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ ...labelStyle, color: '#ff3366', fontSize: '10px' }}>[4] 支払日 (引き落とし)</div>
+                        <div style={{ ...labelStyle, color: '#ff3366', fontSize: '10px' }}>[4] 支払日</div>
                         <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #ff336655', borderRadius: '6px', padding: '0 10px' }}>
                           <span style={{ color: '#ff3366', fontSize: '12px' }}>毎月</span>
                           <input type="number" value={newAccPaymentDay} onChange={e => setNewAccPaymentDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, border: 'none', background: 'transparent', color: '#ff3366', fontSize: '16px', fontWeight: 'bold', textAlign: 'center', padding: '12px 5px' }} />
@@ -466,6 +483,25 @@ export default function MobileInputForm() {
                         </div>
                       </div>
                     </div>
+
+                    {/* 🌟 紐付け設定 UI */}
+                    <div>
+                      <div style={{ ...labelStyle, color: '#00bfff', fontSize: '10px' }}>[5] 引き落とし口座 (LINK NODE)</div>
+                      <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                        <div style={{ pointerEvents: 'none', color: newAccWithdrawalSource ? '#fff' : '#666', fontSize: '14px' }}>
+                          {newAccWithdrawalSource ? renderIconOrText(newAccWithdrawalSource, '20px') : '未設定 (手動振替)'}
+                        </div>
+                        <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                        <select value={newAccWithdrawalSource} onChange={(e) => setNewAccWithdrawalSource(e.target.value)} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}>
+                          <option value="">-- 手動（自動引き落としなし） --</option>
+                          {accounts.map(acc => {
+                            if (acc.includes(newAccName)) return null; 
+                            return <option key={`source-${acc}`} value={acc}>{acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc}</option>;
+                          })}
+                        </select>
+                      </div>
+                    </div>
+
                   </div>
                 )}
               </>
@@ -503,6 +539,25 @@ export default function MobileInputForm() {
                         <input type="number" value={newAccPaymentDay} onChange={e => setNewAccPaymentDay(e.target.value)} min="1" max="31" style={{ ...inputStyle, textAlign: 'center', color: '#ff3366', fontWeight: 'bold' }} />
                       </div>
                     </div>
+                    
+                    {/* 🌟 紐付け設定 UI (編集モード) */}
+                    <div>
+                      <div style={{ ...labelStyle, color: '#00bfff', fontSize: '10px' }}>[5] 引き落とし口座 (LINK NODE)</div>
+                      <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                        <div style={{ pointerEvents: 'none', color: newAccWithdrawalSource ? '#fff' : '#666', fontSize: '14px' }}>
+                          {newAccWithdrawalSource ? renderIconOrText(newAccWithdrawalSource, '20px') : '未設定 (手動振替)'}
+                        </div>
+                        <div style={{ color: '#666', fontSize: '12px', pointerEvents: 'none' }}>▼</div>
+                        <select value={newAccWithdrawalSource} onChange={(e) => setNewAccWithdrawalSource(e.target.value)} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}>
+                          <option value="">-- 手動（自動引き落としなし） --</option>
+                          {accounts.map(acc => {
+                            if (acc.includes(editTargetCard)) return null; 
+                            return <option key={`source-${acc}`} value={acc}>{acc.startsWith('/') ? acc.slice(acc.indexOf(' ') + 1) : acc}</option>;
+                          })}
+                        </select>
+                      </div>
+                    </div>
+
                   </div>
                 )}
               </>
