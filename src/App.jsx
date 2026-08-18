@@ -310,6 +310,7 @@ function App() {
     'map': ' マップ','feed': ' 情報傍受'
   };
 
+  // 🌟 ステルスリストの抽出
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
 
   const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot;
@@ -454,7 +455,8 @@ function App() {
               <SummaryPanel currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />
+                  {/* 🌟 隠しコマンド（ダブルタップ）用の props と ghostList を接続！ */}
+                  <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} />
@@ -487,7 +489,8 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={[]} />}
+          {/* 🌟 隠しコマンド（ダブルタップ）用の props と ghostList を接続！ */}
+          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
@@ -497,7 +500,6 @@ function App() {
         </div>
       </div>
 
-      {/* 🌟 複数口座登録対応の INITIAL BOOT WIZARD */}
       {(!isProfileModalOpen && showBootWizard) && (
         <div style={overlayStyle}>
           <div style={{ ...modalStyle, width: '420px', maxHeight: '85vh', overflowY: 'auto', border: '1px solid #00ff66', padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0,255,102,0.3)' }}>

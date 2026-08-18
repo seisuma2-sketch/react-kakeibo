@@ -20,7 +20,7 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
   return { startDate, endDate };
 };
 
-export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey }) {
+export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth }) {
   const chartRef = useRef(null);
   
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
@@ -41,10 +41,27 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const [isRecycleModalOpen, setIsRecycleModalOpen] = useState(false);
 
+  const [isNodeManagerOpen, setIsNodeManagerOpen] = useState(false);
+  const [m402Accounts, setM402Accounts] = useState([]);
+  const [newNodeName, setNewNodeName] = useState('');
+  const [newInitBalance, setNewInitBalance] = useState('');
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [isAddingNode, setIsAddingNode] = useState(false);
+
+  const [cardMode, setCardMode] = useState(() => localStorage.getItem('m402_card_mode') || 'remain');
+
+  const majorBanks = ['現金', '三菱UFJ銀行', '三井住友銀行', 'みずほ銀行', 'ゆうちょ銀行', 'りそな銀行', '楽天銀行', '住信SBIネット銀行', 'PayPay銀行', 'ソニー銀行', 'イオン銀行', 'PayPay', 'au PAY', 'd払い'];
+  const filteredBanks = majorBanks.filter(b => b.includes(newNodeName) && b !== newNodeName);
+
   const [swipedAcc, setSwipedAcc] = useState(null); 
   const touchStartRef = useRef({ x: 0, y: 0 });
 
   const pressTimer = useRef(null);
+  const clickTimer = useRef(null);
+  
+  // 🌟 追加：ステルス画面を開くためのタイトル領域用ダブルタップタイマー
+  const headerClickTimer = useRef(null);
+
   const dragData = useRef({ active: false, startY: 0, currentIndex: -1 });
   const [dragOffset, setDragOffset] = useState(0); 
   const [selectedAccHistory, setSelectedAccHistory] = useState(null); 
@@ -162,12 +179,10 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     });
 
     const bankData = {};
-    let totalBank = 0;
     Object.entries(runningBalances).forEach(([name, bal]) => {
       if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
       if (cardData[name]) return; 
       bankData[name] = { balance: bal, usageCount: usageCounts[name] || 0 };
-      totalBank += bal;
     });
 
     const combined = [];
@@ -231,9 +246,15 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
 
     return {
-      combined, totalBankBalance: totalBank, dateLabels: dLabels, balanceData: bData, pLabels, pValues
+      combined, dateLabels: dLabels, balanceData: bData, pLabels, pValues
     };
   }, [transactions, ghostAccounts, deletedAccounts, todayStr, sortKey, sortOrder, customOrder, localUpdate]);
+
+  const visibleTotalBank = useMemo(() => {
+    return systemData.combined
+      .filter(item => item.type === 'bank')
+      .reduce((sum, item) => sum + item.balance, 0);
+  }, [systemData.combined]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -274,6 +295,22 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     window.addEventListener('resize', handleResize);
     return () => { window.removeEventListener('resize', handleResize); chartInstance.dispose(); };
   }, [systemData, isAIPredictionActive]);
+
+  // 🌟 タイトル領域（ヘッダー）のダブルタップ検知（隠しコマンド）
+  const handleHeaderDoubleTap = () => {
+    if (headerClickTimer.current) {
+      clearTimeout(headerClickTimer.current);
+      headerClickTimer.current = null;
+      if (onOpenStealth) {
+        if (navigator.vibrate) navigator.vibrate([30, 100, 30]);
+        onOpenStealth();
+      }
+    } else {
+      headerClickTimer.current = setTimeout(() => {
+        headerClickTimer.current = null;
+      }, 300);
+    }
+  };
 
   const handlePointerDown = () => {
     pressTimer.current = setTimeout(() => {
@@ -336,6 +373,85 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const handleDragEnd = () => { dragData.current.active = false; dragData.current.currentIndex = -1; setDragOffset(0); };
 
+  const openNodeManager = () => {
+    const accs = JSON.parse(localStorage.getItem('m402_accounts') || '[]');
+    setM402Accounts(accs);
+    setNewNodeName('');
+    setNewInitBalance('');
+    setIsNodeManagerOpen(true);
+  };
+
+  const handleAddNewNode = async () => {
+    if (!newNodeName.trim() || isAddingNode) return;
+    setIsAddingNode(true);
+    
+    try {
+      let currentAccs = JSON.parse(localStorage.getItem('m402_accounts') || '[]');
+      const cleanNewName = newNodeName.trim();
+      const exists = currentAccs.some(a => (a.includes(' ') ? a.split(' ')[1] : a) === cleanNewName);
+      
+      if (!exists) {
+        const iconMapLocal = {
+          '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
+          'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png'
+        };
+        const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
+        currentAccs.push(`${icon} ${cleanNewName}`);
+        localStorage.setItem('m402_accounts', JSON.stringify(currentAccs));
+        setM402Accounts(currentAccs);
+      }
+
+      const bal = Number(newInitBalance);
+      if (bal > 0 && auth.currentUser) {
+        const txData = {
+          userId: auth.currentUser.uid,
+          type: 'income',
+          amount: bal,
+          category: '初期設定 (INIT)',
+          paymentMethod: cleanNewName,
+          memo: 'SYSTEM NODE ADDED',
+          date: Timestamp.now(),
+          createdAt: Timestamp.now()
+        };
+        await addDoc(collection(db, "transactions"), txData);
+        alert(`⚡ [${cleanNewName}] をシステムに接続し、初期資金 ¥${bal.toLocaleString()} を注入しました！`);
+      } else {
+         alert(`⚡ [${cleanNewName}] をシステムに接続しました！`);
+      }
+
+      if (deletedAccounts.includes(cleanNewName)) {
+         const newDeleted = deletedAccounts.filter(a => a !== cleanNewName);
+         setDeletedAccounts(newDeleted);
+         localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+      }
+
+      setNewNodeName('');
+      setNewInitBalance('');
+      setLocalUpdate(prev => prev + 1);
+    } catch(e) {
+      console.error(e);
+      alert("エラーが発生しました。");
+    } finally {
+      setIsAddingNode(false);
+    }
+  };
+
+  const handleManagerDeleteNode = (rawAccName) => {
+    const cleanName = rawAccName.includes(' ') ? rawAccName.split(' ')[1] : rawAccName;
+    if (window.confirm(`⚠️ [${cleanName}] をシステムから切断（削除・非表示）しますか？\n（※過去の取引履歴は消えません）`)) {
+      const updatedAccs = m402Accounts.filter(a => a !== rawAccName);
+      setM402Accounts(updatedAccs);
+      localStorage.setItem('m402_accounts', JSON.stringify(updatedAccs));
+
+      if (!deletedAccounts.includes(cleanName)) {
+        const newDeleted = [...deletedAccounts, cleanName];
+        setDeletedAccounts(newDeleted);
+        localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+      }
+      setLocalUpdate(prev => prev + 1);
+    }
+  };
+
   const getOneMonthHistory = (accName) => {
     const oneMonthAgo = new Date(); oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
     return transactions.filter(tx => {
@@ -368,15 +484,33 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     } else { setAnalysisResult(null); }
   }, [selectedAccHistory, transactions]);
 
-  const handleCartridgeClick = (name) => {
-    if (reorderMode || swipedAcc === name) return;
-    if (routingMode) {
-      if (!routingSource) { setRoutingSource(name); if (navigator.vibrate) navigator.vibrate([30]); } 
-      else if (routingSource === name) { setRoutingSource(null); } 
-      else { setRoutingTarget(name); if (navigator.vibrate) navigator.vibrate([30, 50, 30]); }
+  const handleCartridgeClick = (e, name) => {
+    e.stopPropagation();
+
+    if (swipedAcc === name) {
+      setSwipedAcc(null);
+      return;
+    }
+
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      if (reorderMode || routingMode) return;
+      setSwipedAcc(name);
+      if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
     } else {
-      setSelectedAccHistory(name);
-      if (navigator.vibrate) navigator.vibrate([15]);
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = null;
+        if (reorderMode || swipedAcc === name) return;
+        if (routingMode) {
+          if (!routingSource) { setRoutingSource(name); if (navigator.vibrate) navigator.vibrate([30]); } 
+          else if (routingSource === name) { setRoutingSource(null); } 
+          else { setRoutingTarget(name); if (navigator.vibrate) navigator.vibrate([30, 50, 30]); }
+        } else {
+          setSelectedAccHistory(name);
+          if (navigator.vibrate) navigator.vibrate([15]);
+        }
+      }, 200); 
     }
   };
 
@@ -508,11 +642,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               </h3>
               <button onClick={() => setIsRecycleModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
-
             <div style={{ fontSize: '11px', color: '#aaa' }}>
               💡 削除から1時間以内であれば、設定とデータを元の状態に完全復元できます。
             </div>
-
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px' }}>
               {recycledAccounts.length === 0 ? (
                 <div style={{ textAlign: 'center', color: '#555', padding: '20px 0', fontFamily: 'monospace', fontSize: '12px' }}>
@@ -534,13 +666,112 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                 ))
               )}
             </div>
-
             <div style={{ borderTop: '1px solid #222', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button onClick={restoreAllAccounts} style={{ width: '100%', padding: '10px', background: 'rgba(0,191,255,0.1)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
                 🔓 PayPay等、非表示の全口座を強制再表示
               </button>
               <button onClick={() => setIsRecycleModalOpen(false)} style={{ width: '100%', padding: '10px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px' }}>閉じる</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isNodeManagerOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '420px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0,191,255,0.3)', maxHeight: '90vh' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
+                🏦 SYSTEM NODE MANAGER
+              </h3>
+              <button onClick={() => setIsNodeManagerOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px dashed #00bfff' }}>
+              <div style={{ fontSize: '12px', color: '#00bfff', marginBottom: '10px', fontWeight: 'bold' }}>[+] 新規ノードの接続 (追加)</div>
+              
+              <div style={{ position: 'relative', marginBottom: '10px' }}>
+                <input
+                  type="text"
+                  value={newNodeName}
+                  onChange={e => setNewNodeName(e.target.value)}
+                  onFocus={() => setShowSuggest(true)}
+                  onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+                  placeholder="口座名 (例: 三菱UFJ銀行)"
+                  style={{ width: '100%', padding: '10px', background: '#0a0c10', color: '#fff', border: '1px solid #333', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' }}
+                />
+                {showSuggest && filteredBanks.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: '#1a1d24', border: '1px solid #00bfff', borderRadius: '4px', zIndex: 10, maxHeight: '120px', overflowY: 'auto', marginTop: '4px', boxShadow: '0 5px 15px rgba(0,0,0,0.5)' }}>
+                    {filteredBanks.map(b => (
+                      <div 
+                        key={b} 
+                        onClick={() => { setNewNodeName(b); setShowSuggest(false); }}
+                        style={{ padding: '8px', fontSize: '12px', color: '#fff', cursor: 'pointer', borderBottom: '1px solid #333' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#00bfff33'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {b}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', opacity: newNodeName ? 1 : 0.3, pointerEvents: newNodeName ? 'auto' : 'none', transition: 'all 0.3s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', background: '#0a0c10', border: '1px solid #333', borderRadius: '6px', padding: '0 10px', flex: 2 }}>
+                  <span style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold' }}>¥</span>
+                  <input
+                    type="number"
+                    value={newInitBalance}
+                    onChange={e => setNewInitBalance(e.target.value)}
+                    placeholder="初期残高 (任意)"
+                    style={{ width: '100%', padding: '10px 5px', background: 'transparent', color: '#ff9900', border: 'none', outline: 'none', fontFamily: 'monospace', fontSize: '14px', fontWeight: 'bold' }}
+                  />
+                </div>
+                <button 
+                  onClick={handleAddNewNode} 
+                  disabled={isAddingNode}
+                  style={{ flex: 1, background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 0 10px rgba(0,191,255,0.3)' }}
+                >
+                  {isAddingNode ? '...' : 'ADD ⚡'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: '150px' }}>
+              <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px', fontWeight: 'bold' }}>[-] 接続済みノード (切断・削除)</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {m402Accounts.length === 0 ? (
+                  <div style={{ color: '#555', textAlign: 'center', fontSize: '12px', padding: '20px 0' }}>NO NODES FOUND</div>
+                ) : (
+                  m402Accounts.map(acc => {
+                    const isHidden = deletedAccounts.includes(acc.includes(' ') ? acc.split(' ')[1] : acc);
+                    return (
+                      <div key={acc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#11141a', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${isHidden ? '#ff336655' : '#252838'}`, opacity: isHidden ? 0.5 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#ccc' }}>
+                          {acc.startsWith('/') ? <img src={acc.split(' ')[0]} alt="" style={{ width:'16px', height:'16px' }}/> : '💽'}
+                          <span>{acc.includes(' ') ? acc.split(' ')[1] : acc}</span>
+                        </div>
+                        {!isHidden ? (
+                          <button 
+                            onClick={() => handleManagerDeleteNode(acc)}
+                            style={{ background: 'transparent', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            🗑️ 切断
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#ff3366' }}>切断済</span>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <button onClick={() => setIsNodeManagerOpen(false)} style={{ width: '100%', padding: '12px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+              閉じる
+            </button>
           </div>
         </div>
       )}
@@ -685,36 +916,45 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div ref={chartRef} style={{ width: '100%', height: '240px' }}></div>
       </div>
 
-      {/* 🌟 リストではなく「グリッド配置」を強制適用 */}
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace' }}>接続済みデータカートリッジ(現在高)</h2>
+        {/* 🌟 隠しコマンド（ダブルタップ）の仕掛けをここに設置 */}
+        <div 
+          onClick={handleHeaderDoubleTap}
+          title="DOUBLE TAP TO OVERRIDE"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px', cursor: 'pointer' }}
+        >
+          <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', pointerEvents: 'none' }}>接続済みデータカートリッジ(現在高)</h2>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', pointerEvents: 'auto' }}>
             <button 
-              onClick={() => setIsRecycleModalOpen(true)}
-              style={{ 
-                background: recycledAccounts.length > 0 ? '#00ff6622' : '#1a1d24', 
-                color: recycledAccounts.length > 0 ? '#00ff66' : '#888', 
-                border: `1px solid ${recycledAccounts.length > 0 ? '#00ff66' : '#333'}`, 
-                padding: '4px 10px', 
-                borderRadius: '4px', 
-                fontSize: '11px', 
-                fontWeight: 'bold', 
-                cursor: 'pointer', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '4px',
-                boxShadow: recycledAccounts.length > 0 ? '0 0 10px rgba(0,255,102,0.2)' : 'none'
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = cardMode === 'remain' ? 'used' : 'remain';
+                setCardMode(next);
+                localStorage.setItem('m402_card_mode', next);
               }}
+              style={{ background: '#11141a', color: cardMode === 'remain' ? '#00ff66' : '#ff3366', border: `1px solid ${cardMode === 'remain' ? '#00ff66' : '#ff3366'}`, padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: cardMode === 'remain' ? '0 0 10px rgba(0,255,102,0.1)' : '0 0 10px rgba(255,51,102,0.1)' }}
+            >
+              {cardMode === 'remain' ? '💳 枠表示' : '💳 額表示'}
+            </button>
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); openNodeManager(); }}
+              style={{ background: '#0a0c10', color: '#00bfff', border: '1px solid #00bfff', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 0 10px rgba(0,191,255,0.2)' }}
+            >
+              <span>🏦</span> 口座管理
+            </button>
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); setIsRecycleModalOpen(true); }}
+              style={{ background: recycledAccounts.length > 0 ? '#00ff6622' : '#1a1d24', color: recycledAccounts.length > 0 ? '#00ff66' : '#888', border: `1px solid ${recycledAccounts.length > 0 ? '#00ff66' : '#333'}`, padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: recycledAccounts.length > 0 ? '0 0 10px rgba(0,255,102,0.2)' : 'none' }}
             >
               <span>♻️</span> 復元 ({recycledAccounts.length})
             </button>
-            <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace' }}>TOTAL: ¥{systemData.totalBankBalance.toLocaleString()}</span>
+            <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace', pointerEvents: 'none' }}>TOTAL: ¥{visibleTotalBank.toLocaleString()}</span>
           </div>
         </div>
         
-        {/* 🌟 ここで列幅を自動調整するグリッドシステムを指定しています */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '15px' }}>
           {systemData.combined.map((item, idx) => {
             const isCard = item.type === 'card';
@@ -725,15 +965,21 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             
             let amountText, mainColor, percent, remain, isOver;
             if (isCard) {
-              remain = Math.max(0, item.budget - item.used);
               isOver = item.used > item.budget;
-              percent = item.budget > 0 ? Math.max(0, Math.min(100, (remain / item.budget) * 100)) : 0;
-              mainColor = '#00ff66';
-              if (percent <= 20 || isOver) mainColor = '#ff3366'; else if (percent <= 50) mainColor = '#ff9900';
-              amountText = isOver ? 'OVER!' : `¥${remain.toLocaleString()}`;
+              if (cardMode === 'used') {
+                amountText = `-¥${item.used.toLocaleString()}`;
+                mainColor = '#ff3366';
+                percent = item.budget > 0 ? Math.min(100, (item.used / item.budget) * 100) : (item.used > 0 ? 100 : 0);
+              } else {
+                remain = Math.max(0, item.budget - item.used);
+                percent = item.budget > 0 ? Math.max(0, Math.min(100, (remain / item.budget) * 100)) : 0;
+                mainColor = '#00ff66';
+                if (percent <= 20 || isOver) mainColor = '#ff3366'; else if (percent <= 50) mainColor = '#ff9900';
+                amountText = isOver ? 'OVER!' : `¥${remain.toLocaleString()}`;
+              }
             } else {
               const bal = item.balance;
-              percent = systemData.totalBankBalance > 0 ? Math.min(100, Math.max(0, (bal / systemData.totalBankBalance) * 100)) : 0;
+              percent = visibleTotalBank > 0 ? Math.min(100, Math.max(0, (bal / visibleTotalBank) * 100)) : 0;
               const isNegative = bal < 0;
               mainColor = isNegative ? '#ff3366' : '#00bfff';
               amountText = `¥${bal.toLocaleString()}`;
@@ -743,16 +989,10 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               <div key={item.name} style={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
                 
                 <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
-                  <button 
-                    onClick={(e) => openEditFromSwipe(e, item)}
-                    style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
-                  >
+                  <button onClick={(e) => openEditFromSwipe(e, item)} style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
                     <span>⚙️</span>
                   </button>
-                  <button 
-                    onClick={(e) => deleteFromSwipe(e, item)}
-                    style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
-                  >
+                  <button onClick={(e) => deleteFromSwipe(e, item)} style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
                     <span>🗑️</span>
                   </button>
                 </div>
@@ -764,25 +1004,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                      onTouchStart={(e) => handleTouchStart(e, idx)} 
                      onTouchMove={(e) => handleTouchMove(e, systemData.combined, item.name)} 
                      onTouchEnd={handleDragEnd}
-                     onClick={() => handleCartridgeClick(item.name)}
-                     style={{ 
-                       background: isRoutingSource ? '#ff336611' : '#0a0c10', 
-                       border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, 
-                       borderRadius: '6px', 
-                       padding: '15px', 
-                       position: 'relative', 
-                       display: 'flex', 
-                       flexDirection: 'column', 
-                       justifyContent: 'space-between',
-                       minHeight: '85px',
-                       cursor: 'pointer', 
-                       touchAction: reorderMode ? 'none' : 'pan-y',
-                       transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-80px)' : 'translateX(0)'), 
-                       zIndex: isDragging ? 100 : 1, 
-                       boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), 
-                       transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s',
-                       opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1
-                     }}>
+                     onClick={(e) => handleCartridgeClick(e, item.name)}
+                     style={{ background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, borderRadius: '6px', padding: '15px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '85px', cursor: 'pointer', touchAction: reorderMode ? 'none' : 'pan-y', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-80px)' : 'translateX(0)'), zIndex: isDragging ? 100 : 1, boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s', opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1 }}>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
