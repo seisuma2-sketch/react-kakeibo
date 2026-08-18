@@ -2,7 +2,28 @@ import React, { useState, useRef, useEffect } from 'react';
 import { doc, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export default function MobileTransactionList({ transactions }) {
+// 🌟 アイコンとテキストを綺麗に表示するヘルパー
+function renderIconOrText(item, imgSize = '16px') {
+  if (item && item.startsWith('/')) {
+    const spaceIndex = item.indexOf(' ');
+    const iconPath = item.slice(0, spaceIndex);
+    const name = item.slice(spaceIndex + 1);
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain', flexShrink: 0 }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      </div>
+    );
+  }
+  return <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item}</span>;
+}
+
+export default function MobileTransactionList({ transactions = [] }) {
+  // 🌟 UI・フィルタリング用State
+  const [activeTab, setActiveTab] = useState('ALL'); 
+  const [expandedId, setExpandedId] = useState(null); 
+  const [searchQuery, setSearchQuery] = useState(''); 
+
   // 🌟 スワイプ管理用State
   const [swipedTxId, setSwipedTxId] = useState(null);
   const touchStartRef = useRef({ x: 0, y: 0 });
@@ -45,10 +66,29 @@ export default function MobileTransactionList({ transactions }) {
     }
   };
 
+  // 🌟 フィルタリング処理（タブ ＋ 検索）
+  let filteredTx = transactions.filter(tx => {
+    if (activeTab === 'ALL') return true;
+    if (activeTab === 'EXPENSE') return tx.type === 'expense';
+    if (activeTab === 'INCOME') return tx.type === 'income';
+    if (activeTab === 'TRANSFER') return tx.type === 'transfer';
+    return true;
+  });
+
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    filteredTx = filteredTx.filter(tx => 
+      (tx.memo && tx.memo.toLowerCase().includes(query)) ||
+      (tx.category && tx.category.toLowerCase().includes(query)) ||
+      (tx.paymentMethod && tx.paymentMethod.toLowerCase().includes(query)) ||
+      (tx.location && tx.location.toLowerCase().includes(query))
+    );
+  }
+
   // 🌟 削除実行
   const handleDelete = async (e, tx) => {
     e.stopPropagation();
-    if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${tx.category}\n金額: ¥${tx.amount.toLocaleString()}\n\n※この操作は取り消せません。`)) {
+    if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${tx.category.split(' ').pop()}\n金額: ¥${tx.amount.toLocaleString()}\n\n※この操作は取り消せません。`)) {
       try {
         await deleteDoc(doc(db, "transactions", tx.id));
         setSwipedTxId(null);
@@ -64,13 +104,13 @@ export default function MobileTransactionList({ transactions }) {
   const openEditModal = (e, tx) => {
     e.stopPropagation();
     setSwipedTxId(null);
+    setExpandedId(null); // 詳細も閉じる
     setEditingTx(tx);
     setEditAmount(tx.amount.toString());
     setEditCategory(tx.category);
     setEditPaymentMethod(tx.paymentMethod);
     setEditMemo(tx.memo || '');
     
-    // 日付を input type="datetime-local" 用のフォーマットに変換
     const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
     const tzOffset = txDate.getTimezoneOffset() * 60000;
     const localISOTime = new Date(txDate.getTime() - tzOffset).toISOString().slice(0, 16);
@@ -103,17 +143,17 @@ export default function MobileTransactionList({ transactions }) {
     }
   };
 
-  if (!transactions || transactions.length === 0) {
-    return (
-      <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontFamily: 'monospace' }}>
-        <div style={{ fontSize: '40px', marginBottom: '10px' }}>📭</div>
-        NO TRANSACTION DATA FOUND.
-      </div>
-    );
-  }
+  const tabs = [
+    { id: 'ALL', label: '📥 INBOX', color: '#fff' },
+    { id: 'EXPENSE', label: '💸 EXPENSE', color: '#ff3366' },
+    { id: 'INCOME', label: '📈 INCOME', color: '#00ff66' },
+    { id: 'TRANSFER', label: '🔁 TRANSFER', color: '#b666ff' }
+  ];
+
+  const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #333', borderRadius: '6px', fontSize: '14px', outline: 'none' };
 
   return (
-    <div style={{ padding: '5px', paddingBottom: '100px' }}>
+    <div style={{ background: '#0a0c10', minHeight: '100vh', padding: '20px 15px 100px 15px', color: '#fff', fontFamily: 'sans-serif' }}>
       
       {/* 🌟 編集モーダル */}
       {editingTx && (
@@ -161,82 +201,184 @@ export default function MobileTransactionList({ transactions }) {
         </div>
       )}
 
-      <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px' }}>
-        <h2 style={{ margin: 0, fontSize: '16px', color: '#fff', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>📜</span> INTERCEPT LOG // 通信傍受履歴
-        </h2>
-      </div>
+      {/* 🌟 ヘッダー */}
+      <h2 style={{ margin: '0 0 15px 0', fontSize: '18px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #252838', paddingBottom: '10px' }}>
+        <span>📜</span> INTERCEPT LOG <span style={{ color: '#00bfff', fontSize: '12px', fontFamily: 'monospace' }}>// 通信傍受履歴</span>
+      </h2>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {transactions.map(tx => {
-          const isExpense = tx.type === 'expense' || tx.type === 'transfer';
-          const color = isExpense ? '#ff3366' : '#00bfff';
-          const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
-          const isSwiped = swipedTxId === tx.id;
-
+      {/* 🌟 タブヘッダー */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #252838', marginBottom: '15px', overflowX: 'auto', gap: '5px' }}>
+        {tabs.map(tab => {
+          const isActive = activeTab === tab.id;
           return (
-            <div key={tx.id} style={{ position: 'relative', overflow: 'hidden', borderRadius: '8px', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}>
-              
-              {/* 🌟 背面のスワイプアクションボタンエリア */}
-              <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
-                <button 
-                  onClick={(e) => openEditModal(e, tx)}
-                  style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                >
-                  ⚙️ 編集
-                </button>
-                <button 
-                  onClick={(e) => handleDelete(e, tx)}
-                  style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                >
-                  🗑️ 削除
-                </button>
-              </div>
-
-              {/* 🌟 前面の取引データ（左にスライドする） */}
-              <div 
-                onTouchStart={handleTouchStart} 
-                onTouchMove={(e) => handleTouchMove(e, tx.id)} 
-                style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center', 
-                  background: '#11141a', 
-                  padding: '15px', 
-                  borderLeft: `3px solid ${color}`,
-                  transform: isSwiped ? 'translateX(-160px)' : 'translateX(0)',
-                  transition: 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-                  position: 'relative',
-                  zIndex: 1
-                }}
-              >
-                {/* 左側：日時・カテゴリ・決済元 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>
-                    {txDate.toLocaleDateString('ja-JP')} {txDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <span style={{ fontSize: '15px', color: '#fff', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {tx.type === 'transfer' ? `🔄 ${tx.paymentMethod} ▶ ${tx.category}` : tx.category}
-                  </span>
-                  <span style={{ fontSize: '11px', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {tx.type === 'transfer' ? '資金ルーティング' : tx.paymentMethod} 
-                    {tx.memo && <span style={{ color: '#666' }}> // {tx.memo}</span>}
-                  </span>
-                </div>
-
-                {/* 右側：金額 */}
-                <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                  <span style={{ color: color, fontWeight: 'bold', fontSize: '18px', fontFamily: 'monospace' }}>
-                    {isExpense ? '-' : '+'}¥{Number(tx.amount).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setExpandedId(null); setSwipedTxId(null); }}
+              style={{
+                flex: 1, minWidth: 'max-content', padding: '10px 5px', background: 'transparent', border: 'none',
+                borderBottom: isActive ? `3px solid ${tab.color}` : '3px solid transparent',
+                color: isActive ? tab.color : '#666', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.2s'
+              }}
+            >
+              {tab.label}
+            </button>
           );
         })}
       </div>
+
+      {/* 🌟 検索バー */}
+      <div style={{ marginBottom: '20px' }}>
+         <input 
+           type="text" 
+           value={searchQuery}
+           onChange={(e) => setSearchQuery(e.target.value)}
+           placeholder="Search logs... (店舗名, メモ, 場所など)" 
+           style={{ width: '100%', background: '#11141a', border: '1px solid #333', color: '#fff', padding: '12px', borderRadius: '6px', fontSize: '14px', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box', transition: 'border-color 0.2s' }} 
+           onFocus={(e) => e.target.style.borderColor = '#00bfff'}
+           onBlur={(e) => e.target.style.borderColor = '#333'}
+         />
+      </div>
+
+      {/* 🌟 履歴リスト領域 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {filteredTx.length === 0 ? (
+          <div style={{ color: '#555', textAlign: 'center', padding: '60px 20px', fontFamily: 'monospace', fontSize: '14px' }}>NO DATA FOUND.</div>
+        ) : (
+          filteredTx.map((tx) => {
+            const isExpanded = expandedId === tx.id;
+            const isSwiped = swipedTxId === tx.id;
+            const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
+            const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+            const timeStr = txDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            
+            const isRecent = (new Date() - txDate) < 1000 * 60 * 60 * 24; 
+            
+            let typeColor = '#fff';
+            let typeSign = '';
+            if (tx.type === 'expense') { typeColor = '#ff3366'; typeSign = '-'; }
+            if (tx.type === 'income') { typeColor = '#00ff66'; typeSign = '+'; }
+            if (tx.type === 'transfer') { typeColor = '#b666ff'; typeSign = '±'; }
+
+            return (
+              <div 
+                key={tx.id}
+                style={{ 
+                  position: 'relative', 
+                  borderRadius: '8px', 
+                  border: `1px solid ${isExpanded ? typeColor : '#252838'}`,
+                  background: '#0a0c10',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+                  transition: 'border-color 0.2s'
+                }}
+              >
+                {/* === 背面のスワイプアクションボタンエリア === */}
+                <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
+                  <button 
+                    onClick={(e) => openEditModal(e, tx)}
+                    style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    ⚙️ 編集
+                  </button>
+                  <button 
+                    onClick={(e) => handleDelete(e, tx)}
+                    style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 20px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    🗑️ 削除
+                  </button>
+                </div>
+
+                {/* === 前面の取引データ（タップで詳細展開、スワイプで編集） === */}
+                <div 
+                  onTouchStart={handleTouchStart} 
+                  onTouchMove={(e) => handleTouchMove(e, tx.id)} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isSwiped) {
+                      setSwipedTxId(null);
+                    } else {
+                      setExpandedId(isExpanded ? null : tx.id);
+                    }
+                  }}
+                  style={{ 
+                    background: isExpanded ? '#11141a' : '#0a0c10', 
+                    borderLeft: `4px solid ${typeColor}`, 
+                    transform: isSwiped ? 'translateX(-170px)' : 'translateX(0)',
+                    transition: 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s',
+                    position: 'relative',
+                    zIndex: 1,
+                    minHeight: '100%',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {/* メイン行情報 */}
+                  <div style={{ padding: '15px', position: 'relative' }}>
+                    {isRecent && <div style={{ position: 'absolute', top: '10px', right: '10px', width: '6px', height: '6px', borderRadius: '50%', background: '#00bfff', boxShadow: '0 0 8px #00bfff' }} />}
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '11px', color: '#888', fontFamily: 'monospace' }}>
+                        {txDate.getFullYear()}/{txDate.getMonth() + 1}/{txDate.getDate()} {timeStr}
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace', color: typeColor }}>
+                        {typeSign}¥{Number(tx.amount).toLocaleString()}
+                      </div>
+                    </div>
+                    
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fff', marginBottom: '6px' }}>
+                      {tx.type === 'transfer' ? <span style={{color: '#b666ff'}}>🔁 振替</span> : renderIconOrText(tx.category, '18px')}
+                    </div>
+                    
+                    <div style={{ fontSize: '12px', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {tx.type === 'transfer' ? `${tx.paymentMethod} ➔ ${tx.category}` : tx.paymentMethod} {tx.memo ? `// ${tx.memo}` : ''}
+                    </div>
+                  </div>
+
+                  {/* タップ展開時の詳細部分 (Forensic Data) */}
+                  {isExpanded && (
+                    <div onClick={(e) => e.stopPropagation()} style={{ background: '#050608', borderTop: '1px solid #1a1d24', padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', animation: 'slideDown 0.2s ease-out' }}>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #333', paddingBottom: '10px' }}>
+                        <span style={{ color: '#00bfff', fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold', letterSpacing: '1px' }}>FORENSIC DATA //</span>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontFamily: 'monospace', fontSize: '12px' }}>
+                        <div style={{ display: 'flex' }}><span style={{ color: '#666', width: '80px', flexShrink: 0 }}>TX_ID:</span> <span style={{ color: '#555', wordBreak: 'break-all' }}>{tx.id}</span></div>
+                        <div style={{ display: 'flex' }}>
+                          <span style={{ color: '#666', width: '80px', flexShrink: 0 }}>SOURCE:</span> 
+                          <span style={{ color: '#ccc' }}>{tx.paymentMethod}</span>
+                        </div>
+                        <div style={{ display: 'flex' }}>
+                          <span style={{ color: '#666', width: '80px', flexShrink: 0 }}>TARGET:</span> 
+                          <span style={{ color: '#ccc' }}>{tx.category}</span>
+                        </div>
+                        <div style={{ display: 'flex' }}>
+                          <span style={{ color: '#666', width: '80px', flexShrink: 0 }}>LOCATION:</span> 
+                          <span style={{ color: tx.location ? '#00bfff' : '#aaa', wordBreak: 'break-all' }}>
+                            {tx.location ? `📍 ${tx.location}` : 'UNKNOWN NODE'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#11141a', borderLeft: `3px solid ${typeColor}`, padding: '10px', borderRadius: '4px' }}>
+                        <div style={{ fontSize: '10px', color: '#666', marginBottom: '4px', fontFamily: 'monospace' }}>MEMO / LOG:</div>
+                        <div style={{ color: '#fff', fontSize: '13px', lineHeight: '1.4' }}>{tx.memo || 'NO MEMO PROVIDED.'}</div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <style>{`
+        @keyframes slideDown { 
+          from { opacity: 0; transform: translateY(-10px); } 
+          to { opacity: 1; transform: translateY(0); } 
+        }
+      `}</style>
     </div>
   );
 }
-
-const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #333', borderRadius: '6px', fontSize: '14px', outline: 'none' };
