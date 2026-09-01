@@ -39,7 +39,8 @@ export default function MobileInputForm() {
   const [memo, setMemo] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [scanLocation, setScanLocation] = useState('');
+  // 🌟 位置情報オブジェクトを保存するStateに変更
+  const [scanLocation, setScanLocation] = useState(null);
 
   const [isArModalOpen, setIsArModalOpen] = useState(false);
   const [arImageSrc, setArImageSrc] = useState(null);
@@ -57,8 +58,6 @@ export default function MobileInputForm() {
   const [newAccBudget, setNewAccBudget] = useState('');
   const [newAccResetDay, setNewAccResetDay] = useState('1');
   const [newAccPaymentDay, setNewAccPaymentDay] = useState('27');
-  
-  // 🌟 追加：クレカの引き落とし元口座を記憶するState
   const [newAccWithdrawalSource, setNewAccWithdrawalSource] = useState('');
   
   const [savedCards, setSavedCards] = useState({});
@@ -105,7 +104,7 @@ export default function MobileInputForm() {
   
   const handleOpenAccountPanel = () => {
     setNewAccName(''); setNewAccType('bank'); setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
-    setNewAccWithdrawalSource(''); // リセット
+    setNewAccWithdrawalSource('');
     setAccountPanelMode('add'); setEditTargetCard('');
     const cards = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
     setSavedCards(cards);
@@ -119,7 +118,7 @@ export default function MobileInputForm() {
       setNewAccBudget(savedCards[cardName].budget);
       setNewAccResetDay(savedCards[cardName].resetDay);
       setNewAccPaymentDay(savedCards[cardName].paymentDay);
-      setNewAccWithdrawalSource(savedCards[cardName].withdrawalSource || ''); // 読込
+      setNewAccWithdrawalSource(savedCards[cardName].withdrawalSource || '');
     } else {
       setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27'); setNewAccWithdrawalSource('');
     }
@@ -140,7 +139,6 @@ export default function MobileInputForm() {
 
       if (newAccType === 'credit') {
         const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-        // 🌟 保存時に withdrawalSource も記憶させる
         currentSettings[newAccName.trim()] = { 
           budget: Number(newAccBudget) || 0, 
           resetDay: Number(newAccResetDay) || 1, 
@@ -155,7 +153,6 @@ export default function MobileInputForm() {
     } else {
       if (!editTargetCard) { showAlert("修正する項目を選択してください", "error"); return; }
       const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-      // 🌟 保存時に withdrawalSource も記憶させる
       currentSettings[editTargetCard] = { 
         budget: Number(newAccBudget) || 0, 
         resetDay: Number(newAccResetDay) || 1, 
@@ -278,6 +275,7 @@ export default function MobileInputForm() {
     showAlert("⚡ TARGET DATA TRANSFERRED!", "success");
   };
 
+  // 🌟 ここで住所データも一緒にFirebaseに送信するように改修！
   const handleSubmit = async () => {
     const finalAmount = calcStr ? evaluateMath(calcStr) : amount;
     if (!finalAmount || Number(finalAmount) <= 0) { showAlert("金額を入力してください！", "error"); return; }
@@ -296,14 +294,21 @@ export default function MobileInputForm() {
         category: cleanCategory, 
         paymentMethod: cleanPaymentMethod, 
         memo: memo,
-        location: scanLocation,
+        // LocationScannerから受け取った県・市・区のデータを保存
+        location: scanLocation ? scanLocation.raw : '',
+        lat: scanLocation ? scanLocation.lat : null,
+        lng: scanLocation ? scanLocation.lng : null,
+        prefecture: scanLocation ? scanLocation.prefecture : '',
+        city: scanLocation ? scanLocation.city : '',
+        ward: scanLocation ? scanLocation.ward : '',
+        fullAddress: scanLocation ? scanLocation.fullAddress : '',
         date: Timestamp.fromDate(new Date(date)), 
         createdAt: Timestamp.now()
       };
 
       await addDoc(collection(db, "transactions"), txData);
       addToHistory(finalAmount);
-      setAmount(''); setCalcStr(''); setMemo(''); setScanLocation('');
+      setAmount(''); setCalcStr(''); setMemo(''); setScanLocation(null);
       showAlert("記録完了！", "success");
     } catch (error) { 
       showAlert("エラー発生", "error"); 
@@ -484,7 +489,6 @@ export default function MobileInputForm() {
                       </div>
                     </div>
 
-                    {/* 🌟 紐付け設定 UI */}
                     <div>
                       <div style={{ ...labelStyle, color: '#00bfff', fontSize: '10px' }}>[5] 引き落とし口座 (LINK NODE)</div>
                       <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
@@ -540,7 +544,6 @@ export default function MobileInputForm() {
                       </div>
                     </div>
                     
-                    {/* 🌟 紐付け設定 UI (編集モード) */}
                     <div>
                       <div style={{ ...labelStyle, color: '#00bfff', fontSize: '10px' }}>[5] 引き落とし口座 (LINK NODE)</div>
                       <div style={{ ...inputStyle, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
@@ -570,7 +573,6 @@ export default function MobileInputForm() {
         </div>
       )}
 
-      {/* ヘッダー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
         <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />

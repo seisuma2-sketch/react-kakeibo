@@ -18,7 +18,7 @@ export default function LocationScanner({ onLocationFixed }) {
     localStorage.setItem('m402_location_history', JSON.stringify(history));
   }, [history]);
 
-  // 🌟 自動スキャン（GPS取得）の実行
+  // 🌟 自動スキャン（GPS取得 ＋ 住所自動変換エンジン）の実行
   const executeAutoScan = () => {
     setStep('scanning');
     if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
@@ -30,23 +30,66 @@ export default function LocationScanner({ onLocationFixed }) {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        // 成功時: 本来はここでGoogle Maps API等で逆ジオコーディングしますが、今回は座標をそれっぽく表示
-        const lat = position.coords.latitude.toFixed(4);
-        const lng = position.coords.longitude.toFixed(4);
-        const autoLocName = `GEO-NODE [${lat}, ${lng}]`;
-        
-        setLocationName(autoLocName);
-        setStep('done');
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        if (onLocationFixed) onLocationFixed(autoLocName);
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        try {
+          // 🌟 無料の逆ジオコーディングAPI (Nominatim) を叩いて住所を特定
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+          const data = await res.json();
+          const address = data.address || {};
+
+          // 県・市・区を抽出
+          const prefecture = address.province || address.state || '';
+          const city = address.city || address.town || address.village || address.county || '';
+          const ward = address.ward || address.suburb || address.quarter || '';
+
+          const fullAddress = `${prefecture} ${city} ${ward}`.trim() || `GEO-NODE [${lat.toFixed(4)}, ${lng.toFixed(4)}]`;
+          
+          setLocationName(fullAddress);
+          setStep('done');
+          if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+          // 親コンポーネント(MobileInputForm)にオブジェクト形式でデータを渡す
+          if (onLocationFixed) {
+            onLocationFixed({
+              raw: `GEO-NODE [${lat}, ${lng}]`,
+              lat: lat,
+              lng: lng,
+              prefecture: prefecture,
+              city: city,
+              ward: ward,
+              fullAddress: fullAddress
+            });
+          }
+
+        } catch (err) {
+          console.error(err);
+          // API失敗時（オフライン時など）は従来の座標表示にフォールバック
+          const fallbackName = `GEO-NODE [${lat.toFixed(4)}, ${lng.toFixed(4)}]`;
+          setLocationName(fallbackName);
+          setStep('done');
+          
+          if (onLocationFixed) {
+            onLocationFixed({
+              raw: `GEO-NODE [${lat}, ${lng}]`,
+              lat: lat,
+              lng: lng,
+              prefecture: '',
+              city: '',
+              ward: '',
+              fullAddress: ''
+            });
+          }
+        }
       },
       (error) => {
         // 拒否された場合やエラー
         alert("❌ アクセス拒否、または信号ロスト (ERROR_CODE: " + error.code + ")");
         setStep('warning');
       },
-      { timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
@@ -61,7 +104,19 @@ export default function LocationScanner({ onLocationFixed }) {
     setLocationName(manualInput);
     setStep('done');
     if (navigator.vibrate) navigator.vibrate([50]);
-    if (onLocationFixed) onLocationFixed(manualInput);
+    
+    // マニュアル入力の場合は住所データがないため空にして渡す
+    if (onLocationFixed) {
+      onLocationFixed({
+        raw: manualInput,
+        lat: null,
+        lng: null,
+        prefecture: '',
+        city: '',
+        ward: '',
+        fullAddress: manualInput
+      });
+    }
   };
 
   // UI描画
@@ -149,11 +204,11 @@ export default function LocationScanner({ onLocationFixed }) {
       {/* --- STEP 5: 完了（座標確定） --- */}
       {step === 'done' && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0, 255, 102, 0.1)', border: '1px solid #00ff66', padding: '12px', borderRadius: '6px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0, paddingRight: '10px' }}>
             <span style={{ color: '#00ff66', fontSize: '10px', fontWeight: 'bold' }}>LOCATION LOCKED 🔒</span>
-            <span style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>{locationName}</span>
+            <span style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{locationName}</span>
           </div>
-          <button onClick={() => setStep('warning')} style={{ background: 'transparent', border: '1px solid #00ff66', color: '#00ff66', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>再取得</button>
+          <button onClick={() => setStep('warning')} style={{ background: 'transparent', border: '1px solid #00ff66', color: '#00ff66', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', flexShrink: 0 }}>再取得</button>
         </div>
       )}
 
