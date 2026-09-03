@@ -42,7 +42,9 @@ function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [tempUserName, setTempUserName] = useState('');
 
-  // 🌟 初回起動ウィザード用の複数登録State
+  // 🌟 追加：裏メニューでゴースト口座を直接手入力するためのState
+  const [newGhostBank, setNewGhostBank] = useState('');
+
   const [hasSkippedBoot, setHasSkippedBoot] = useState(false);
   const [setupAccounts, setSetupAccounts] = useState([{ name: '', balance: '' }]);
   const [activeSuggestIndex, setActiveSuggestIndex] = useState(null);
@@ -75,6 +77,7 @@ function App() {
   useEffect(() => {
     localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
   }, [stealthConfig]);
+  
   const CORRECT_PASSWORD = 'cyber';
 
   useEffect(() => {
@@ -145,7 +148,6 @@ function App() {
     }
   };
 
-  // 🌟 初回ウィザード：複数口座を一気にデータベースへ送信する処理
   const handleBootSubmit = async () => {
     const validAccounts = setupAccounts.filter(acc => acc.name && acc.balance);
     if (validAccounts.length === 0 || !user) return;
@@ -167,7 +169,6 @@ function App() {
           createdAt: Timestamp.now()
         };
         
-        // フォームにも自動で追加
         if (!updatedAccounts.includes(acc.name) && !updatedAccounts.some(existing => existing.includes(acc.name))) {
           updatedAccounts.push(`/icon-other.png ${acc.name}`);
         }
@@ -252,6 +253,21 @@ function App() {
     }
   };
 
+  // 🌟 追加：テキスト入力から任意のゴースト口座を追加する機能
+  const handleAddCustomGhost = async () => {
+    if (!newGhostBank.trim() || !user) return;
+    const addedBank = newGhostBank.trim();
+    // 重複を避けて追加
+    const updated = [...new Set([...stealthConfig.ghostAccounts, addedBank])];
+    setStealthConfig(prev => ({ ...prev, ghostAccounts: updated }));
+    try {
+      await setDoc(doc(db, "user_settings", user.uid), { stealthAccounts: updated }, { merge: true });
+    } catch (error) {
+      console.error("手動追加エラー:", error);
+    }
+    setNewGhostBank(''); // 入力欄をクリア
+  };
+
   const displayTransactions = transactions.map(tx => {
     if (!stealthConfig.active) return tx; 
     const isFromGhost = stealthConfig.ghostAccounts.includes(tx.paymentMethod);
@@ -265,7 +281,9 @@ function App() {
     return tx;
   }).filter(Boolean); 
 
-  const uniqueAccounts = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
+  // 🌟 修正：既存の取引履歴にある口座と、手動で追加したゴースト口座の両方を表示用リストにまとめる
+  const uniqueAccountsFromTx = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
+  const allAccountsToDisplay = [...new Set([...uniqueAccountsFromTx, ...stealthConfig.ghostAccounts])];
 
   const cyclePeriod = useMemo(() => {
     const now = new Date();
@@ -310,7 +328,6 @@ function App() {
     'map': ' マップ','feed': ' 情報傍受'
   };
 
-  // 🌟 ステルスリストの抽出
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
 
   const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot;
@@ -455,7 +472,6 @@ function App() {
               <SummaryPanel currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  {/* 🌟 隠しコマンド（ダブルタップ）用の props と ghostList を接続！ */}
                   <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
@@ -489,14 +505,13 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {/* 🌟 隠しコマンド（ダブルタップ）用の props と ghostList を接続！ */}
           {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'playground' && <Playground transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'map' && <MoneyFlowMap transactions={displayTransactions} />}
-          {currentTab === 'feed' && <NewsFeed />}
+          {currentTab === 'feed' && <NewsFeed transactions={displayTransactions} />}
         </div>
       </div>
 
@@ -667,6 +682,7 @@ function App() {
         </div>
       )}
 
+      {/* パスワード入力モーダル */}
       {isAuthModalOpen && (
         <div style={overlayStyle}>
           <div style={modalStyle}>
@@ -677,6 +693,7 @@ function App() {
         </div>
       )}
       
+      {/* 🌟 パスワード認証後に開く、ステルス設定モーダル */}
       {isConfigModalOpen && (
         <div style={overlayStyle}>
           <div style={{...modalStyle, maxHeight: '80vh', overflowY: 'auto', width: '90%', maxWidth: '400px'}}>
@@ -685,21 +702,45 @@ function App() {
               <span style={{ color: stealthConfig.active ? '#00ff66' : '#aaa' }}>稼働状況</span>
               <button onClick={() => setStealthConfig(prev => ({ ...prev, active: !prev.active }))} style={toggleBtnStyle(stealthConfig.active, '#00ff66')}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
             </div>
+            
             <ConfigRow label="サマリー・コア" configKey="hideSummary" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />
             <ConfigRow label="口座別残高" configKey="hideCartridges" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />
             <ConfigRow label="履歴・カテゴリ" configKey="hideHistory" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />
+            
             <div style={{ marginTop: '20px', borderTop: '1px solid #ff3366', paddingTop: '10px' }}>
-              <div style={{ color: '#ff3366', fontSize: '14px', marginBottom: '10px' }}>☠️ ゴースト口座</div>
+              <div style={{ color: '#ff3366', fontSize: '14px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>☠️</span> ゴースト口座の設定
+              </div>
+
+              {/* 🌟 みずほ銀行などを自由に手動追加できる入力フォーム */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  value={newGhostBank} 
+                  onChange={(e) => setNewGhostBank(e.target.value)} 
+                  placeholder="隠したい口座名を入力" 
+                  style={{ flex: 1, padding: '10px', background: '#11141a', color: '#fff', border: '1px solid #ff336655', borderRadius: '4px', fontSize: '13px', outline: 'none' }}
+                />
+                <button 
+                  onClick={handleAddCustomGhost} 
+                  style={{ background: '#ff3366', color: '#000', border: 'none', padding: '0 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+                >
+                  追加
+                </button>
+              </div>
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {uniqueAccounts.map(account => (
-                  <label key={account} style={{ fontSize: '12px', background: stealthConfig.ghostAccounts.includes(account) ? '#ff336622' : '#1a1d24', padding: '6px 10px', borderRadius: '4px', border: `1px solid ${stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : '#252838'}` }}>
+                {allAccountsToDisplay.map(account => (
+                  <label key={account} style={{ fontSize: '12px', background: stealthConfig.ghostAccounts.includes(account) ? '#ff336622' : '#1a1d24', padding: '8px 12px', borderRadius: '4px', border: `1px solid ${stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : '#252838'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input type="checkbox" checked={stealthConfig.ghostAccounts.includes(account)} onChange={(e) => toggleGhostAccount(account, e.target.checked)} style={{ display: 'none' }} />
-                    {stealthConfig.ghostAccounts.includes(account) ? '' : ''} {account}
+                    <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : 'transparent', border: '1px solid #ff3366' }} />
+                    {account}
                   </label>
                 ))}
               </div>
             </div>
-            <button onClick={() => setIsConfigModalOpen(false)} style={{ ...btnStyle('#00bfff'), width: '100%', marginTop: '20px' }}>閉じる</button>
+
+            <button onClick={() => setIsConfigModalOpen(false)} style={{ ...btnStyle('#00bfff'), width: '100%', marginTop: '25px', fontWeight: 'bold' }}>パネルを閉じる</button>
           </div>
         </div>
       )}
@@ -711,25 +752,25 @@ function App() {
 }
 
 const quickAccessStyle = (color) => ({ flex: 1, background: '#11141a', border: `1px solid ${color}`, borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', padding: '15px 0' });
-const overlayStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(5px)' };
-const modalStyle = { background: '#0a0c10', padding: '20px', borderRadius: '8px', border: '1px solid #ff3366' };
-const inputStyle = { width: '100%', padding: '10px', background: '#11141a', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', textAlign: 'center', fontSize: '18px', letterSpacing: '2px' };
-const btnStyle = (color) => ({ padding: '10px', background: 'transparent', color: color, border: `1px solid ${color}`, borderRadius: '4px', cursor: 'pointer' });
-const toggleBtnStyle = (isActive, color) => ({ background: isActive ? color : 'transparent', color: isActive ? '#000' : '#aaa', border: `1px solid ${isActive ? color : '#555'}`, padding: '4px 12px', borderRadius: '4px' });
+const overlayStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' };
+const modalStyle = { background: '#0a0c10', padding: '20px', borderRadius: '8px', border: '1px solid #ff3366', boxShadow: '0 0 40px rgba(255,51,102,0.2)' };
+const inputStyle = { width: '100%', padding: '12px', background: '#11141a', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', textAlign: 'center', fontSize: '20px', letterSpacing: '4px', outline: 'none', boxSizing: 'border-box' };
+const btnStyle = (color) => ({ padding: '12px', background: 'transparent', color: color, border: `1px solid ${color}`, borderRadius: '4px', cursor: 'pointer' });
+const toggleBtnStyle = (isActive, color) => ({ background: isActive ? color : 'transparent', color: isActive ? '#000' : '#aaa', border: `1px solid ${isActive ? color : '#555'}`, padding: '6px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' });
 
 function ConfigRow({ label, configKey, stealthConfig, setStealthConfig }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '12px' }}>
-      <span style={{ color: '#fff' }}>{label}</span>
-      <input type="checkbox" checked={stealthConfig[configKey]} onChange={() => setStealthConfig(prev => ({ ...prev, [configKey]: !prev[configKey] }))} />
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', fontSize: '13px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <span style={{ color: '#ddd' }}>{label}</span>
+      <input type="checkbox" checked={stealthConfig[configKey]} onChange={() => setStealthConfig(prev => ({ ...prev, [configKey]: !prev[configKey] }))} style={{ transform: 'scale(1.2)', cursor: 'pointer', accentColor: '#ff3366' }} />
     </div>
   );
 }
 
 function BottomTab({ icon, label, isActive, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'color 0.2s' }}>
-      <div style={{ fontSize: '20px', marginBottom: '2px', textShadow: isActive ? '0 0 10px #00ff66' : 'none' }}>{icon}</div>
+    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'all 0.2s', transform: isActive ? 'scale(1.1)' : 'scale(1)' }}>
+      <div style={{ fontSize: '22px', marginBottom: '2px', filter: isActive ? 'drop-shadow(0 0 10px rgba(0,255,102,0.5))' : 'none' }}>{icon}</div>
       <div style={{ fontSize: '10px', fontWeight: isActive ? 'bold' : 'normal' }}>{label}</div>
     </div>
   );

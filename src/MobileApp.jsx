@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; // 🌟 setDocを追加
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -47,6 +47,8 @@ export default function MobileApp() {
   });
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
+  // 🌟 ゴースト銀行を自由に追加するためのState
+  const [newGhostBank, setNewGhostBank] = useState('');
 
   const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
   const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'desc');
@@ -102,6 +104,21 @@ export default function MobileApp() {
       stopSnappingDetection(); 
     };
   }, [user]);
+
+  // 🌟 ゴースト銀行の追加処理
+  const handleAddGhostBank = async () => {
+    if (!newGhostBank.trim() || !user) return;
+    const updated = [...stealthAccounts, newGhostBank.trim()];
+    await setDoc(doc(db, "user_settings", user.uid), { stealthAccounts: updated }, { merge: true });
+    setNewGhostBank(''); // 入力後リセット
+  };
+
+  // 🌟 ゴースト銀行の削除処理
+  const handleRemoveGhostBank = async (bankToRemove) => {
+    if (!user) return;
+    const updated = stealthAccounts.filter(b => b !== bankToRemove);
+    await setDoc(doc(db, "user_settings", user.uid), { stealthAccounts: updated }, { merge: true });
+  };
 
   const handleLogout = async () => {
     if (window.confirm("システムから切断（ログアウト）しますか？")) {
@@ -317,6 +334,29 @@ export default function MobileApp() {
               </button>
             </div>
 
+            {/* 🌟 復元＆追加：ゴースト口座管理パネル */}
+            <div>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>👻 ゴースト口座（隠し銀行）管理</div>
+              <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                <input 
+                  value={newGhostBank} 
+                  onChange={(e) => setNewGhostBank(e.target.value)} 
+                  placeholder="例: みずほ銀行" 
+                  style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', color: '#fff', fontSize: '12px' }}
+                />
+                <button onClick={handleAddGhostBank} style={{ background: themeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '120px', overflowY: 'auto' }}>
+                {stealthAccounts.map(bank => (
+                  <div key={bank} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1d24', padding: '6px 10px', borderRadius: '4px', fontSize: '12px' }}>
+                    <span>{bank}</span>
+                    <button onClick={() => handleRemoveGhostBank(bank)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: '9px', color: '#555', marginTop: '5px' }}>※ここで追加した口座のデータは、ロック中（🔒）マップや残高から完全に消滅します。</div>
+            </div>
+
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>残高並び替え</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', marginBottom: '10px' }}>
@@ -381,8 +421,9 @@ export default function MobileApp() {
         )}
         {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={themeColor} />}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
-        {/* 🌟 NewsFeedに feedMode と setFeedMode を渡す */}
-        {currentTab === 'feed' && <NewsFeed feedMode={feedMode} setFeedMode={setFeedMode} />}
+        
+        {/* 🌟 NewsFeedに ゴースト銀行を消去済みの safeTransactions を渡す！ */}
+        {currentTab === 'feed' && <NewsFeed feedMode={feedMode} setFeedMode={setFeedMode} transactions={safeTransactions} />}
       </div>
 
       {/* 🚀 ハイブリッド・タブバーエリア */}
@@ -452,5 +493,5 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       )}
       <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
-  );                                                                 
+  );                                                               
 }
