@@ -9,6 +9,7 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
   const [customCard, setCustomCard] = useState('');
   const [selectedAccount, setSelectedAccount] = useState('EVERING');
   const [customAccount, setCustomAccount] = useState('');
+  const [usePwaMode, setUsePwaMode] = useState(true); // true: webapp:// (ホーム画面PWA起動), false: https://
 
   if (!isOpen) return null;
 
@@ -21,6 +22,18 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
   const ghostUnlockUrl = `${origin}/?action=unlock_ghost`;
   const creditResetUrl = `${origin}/?action=reset_credit&card=${encodeURIComponent(targetCard)}`;
   const quickInputUrl = `${origin}/?action=quick_input&account=${encodeURIComponent(targetAccount)}`;
+  // 生成URL（usePwaModeがONの場合は webapp:// スキームでホーム画面アプリを直接呼出）
+  const getUrl = (pathWithQuery) => {
+    const fullUrl = `${origin}${pathWithQuery}`;
+    if (usePwaMode) {
+      return fullUrl.replace(/^https?:\/\//, 'webapp://');
+    }
+    return fullUrl;
+  };
+
+  const ghostUnlockUrl = getUrl('/?action=unlock_ghost');
+  const creditResetUrl = getUrl(`/?action=reset_credit&card=${encodeURIComponent(targetCard)}`);
+  const quickInputUrl = getUrl(`/?action=quick_input&account=${encodeURIComponent(targetAccount)}`);
 
   const handleCopy = (url, label) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -94,6 +107,44 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
           
           <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.5', background: '#161b22', padding: '12px', borderRadius: '8px', borderLeft: `3px solid ${themeColor}` }}>
             iPhoneの「ショートカット」アプリに登録することで、カードやスマートリングをかざした瞬間にアプリが連動起動します。
+          </div>
+
+          {/* 起動先モード選択（ホーム画面PWA vs 通常ブラウザ） */}
+          <div style={{ background: '#111620', border: '1px solid #282f3d', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>
+              [起動先モード選択]
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setUsePwaMode(true)}
+                style={{
+                  background: usePwaMode ? `${themeColor}22` : '#080a0f',
+                  border: `1px solid ${usePwaMode ? themeColor : '#333'}`,
+                  color: usePwaMode ? themeColor : '#777',
+                  padding: '8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                ホーム画面アプリ用 (PWA)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsePwaMode(false)}
+                style={{
+                  background: !usePwaMode ? `${themeColor}22` : '#080a0f',
+                  border: `1px solid ${!usePwaMode ? themeColor : '#333'}`,
+                  color: !usePwaMode ? themeColor : '#777',
+                  padding: '8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                通常ブラウザ用 (Chrome等)
+              </button>
+            </div>
+            <div style={{ fontSize: '10px', color: usePwaMode ? themeColor : '#aaa', lineHeight: '1.4' }}>
+              {usePwaMode
+                ? '【ホーム画面アプリ起動】webapp:// スキームを使用し、Chrome等のブラウザ枠を出さずにホーム画面の全画面アプリを直接開きます。'
+                : '【ブラウザ起動】https:// を使用し、Chrome等の通常のブラウザタブで開きます。'}
+            </div>
           </div>
 
           {/* ① ゴースト口座アンロック */}
@@ -261,7 +312,13 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
               <li>「スキャン」を押し、登録したいカードまたはリングをiPhone上部背面にタッチして名前をつける</li>
               <li><strong>「すぐに実行」</strong>を選択（実行前通知はOFFがおすすめ）</li>
               <li>「次へ」＞ アクションで<strong>「URLを開く」</strong>を追加し、上記でコピーしたURLを貼り付けて「完了」！</li>
+              <li>「次へ」＞ アクションで<strong>「URLを開く」</strong>を追加し、上記でコピーしたURL（<code>webapp://...</code>）を貼り付けて「完了」！</li>
             </ol>
+            <div style={{ marginTop: '10px', padding: '8px 10px', background: '#0a0d14', borderRadius: '6px', fontSize: '10px', color: '#888', border: '1px dashed #444', lineHeight: '1.5' }}>
+              <div style={{ color: themeColor, fontWeight: 'bold', marginBottom: '2px' }}>[POINT: Chromeではなくホーム画面アプリを開くには？]</div>
+              URLの先頭を <code>webapp://</code> にすることで、iOSがブラウザではなくホーム画面の全画面PWAアプリを直接起動します。<br/>
+              ※パラメータ連携が不要で単にアプリを開きたい場合は、アクション検索で<strong>「Appを開く」</strong>を選び、ホーム画面に追加した本アプリ名を指定することもできます。
+            </div>
           </div>
 
         </div>
