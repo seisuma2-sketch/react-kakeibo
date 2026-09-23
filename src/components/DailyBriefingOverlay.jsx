@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 
-export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete }) {
+export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete, dbMode = 'personal', onOpenReset }) {
   const [displayedText, setDisplayedText] = useState([]);
   const [isTypingDone, setIsTypingDone] = useState(false);
+
+  const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
 
   // 🌟 分析ロジック：昨日・今月・引き落としアラートの解析
   const briefingData = useMemo(() => {
@@ -58,7 +60,7 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
     const todayLimit = Math.round(remainingBudget / remainingDays);
 
     // 引き落とし・警告アラートの検知
-    const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+    const creditSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
     const threats = [];
     const todayDate = now.getDate();
 
@@ -66,7 +68,11 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
       const payDay = Number(config.paymentDay) || 27;
       const diff = payDay - todayDate;
       if (diff >= 0 && diff <= 4) {
-        threats.push(`💳 ${cardName}の引き落とし（${payDay}日）まであと ${diff === 0 ? '本日です！' : diff + ' 日'} `);
+        threats.push({
+          cardName,
+          text: `[${cardName}] 引き落とし（${payDay}日）まであと ${diff === 0 ? '本日です！' : diff + ' 日'}`,
+          diff
+        });
       }
     });
 
@@ -77,27 +83,32 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
       threats,
       thisMonthExpense
     };
-  }, [transactions, ghostAccounts]);
+  }, [transactions, ghostAccounts, cardKey]);
 
   // 🌟 タイプライター演出の組み立て
   useEffect(() => {
     const lines = [
-      { text: "🤖 SYSTEM BRIEFING // J.A.R.V.I.S. PROTOCOL ONLINE", color: "#00ff66", type: "header" },
-      { text: `[1/4 YESTERDAY'S LOG]`, color: "#00bfff", type: "title" },
+      { text: "[SYSTEM] BRIEFING // J.A.R.V.I.S. PROTOCOL ONLINE", color: "#00ff66", type: "header" },
+      { text: `[1/4 前日ログ]`, color: "#00bfff", type: "title" },
       briefingData.yesterdayTotal > 0 
         ? { text: `昨日の資金流出: ¥${briefingData.yesterdayTotal.toLocaleString()} （主出費: ${briefingData.topCat}）`, color: "#ff3366", type: "body" }
-        : { text: "昨日の資金流出: ¥0 （見事な防衛戦でした。流出ゼロを維持）", color: "#00ff66", type: "body" },
+        : { text: "昨日の資金流出: ¥0 （流出ゼロを維持）", color: "#00ff66", type: "body" },
       
-      { text: `[2/4 TODAY'S MISSION]`, color: "#00bfff", type: "title" },
+      { text: `[2/4 本日の推奨上限]`, color: "#00bfff", type: "title" },
       { text: `残日数から算出した本日の推奨使用上限: ¥${briefingData.todayLimit.toLocaleString()}`, color: "#ff9900", type: "body" },
 
-      { text: `[3/4 THREAT DETECTION]`, color: "#00bfff", type: "title" },
+      { text: `[3/4 引き落とし・リスク検知]`, color: "#00bfff", type: "title" },
       ...(briefingData.threats.length > 0 
-        ? briefingData.threats.map(t => ({ text: `⚠️ WARNING: ${t}`, color: "#ff3366", type: "body" }))
+        ? briefingData.threats.map(t => ({ 
+            text: `[警告] ${t.text}`, 
+            color: "#ff3366", 
+            type: "body",
+            cardName: t.cardName
+          }))
         : [{ text: "現在、直近で差し迫った口座引き落とし・異常流出は検出されていません。", color: "#888", type: "body" }]
       ),
 
-      { text: `[4/4 SYSTEM STATUS]`, color: "#00bfff", type: "title" },
+      { text: `[4/4 システムステータス]`, color: "#00bfff", type: "title" },
       { text: "全セキュリティプロトコル稼働中。本日も良い一日を。", color: "#00ff66", type: "body" }
     ];
 
@@ -111,7 +122,7 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
         setIsTypingDone(true);
         clearInterval(interval);
       }
-    }, 400); // 0.4秒ごとに行が追加される
+    }, 350);
 
     return () => clearInterval(interval);
   }, [briefingData]);
@@ -170,11 +181,40 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
                 fontWeight: item.type === 'body' ? 'bold' : 'normal',
                 marginTop: item.type === 'title' ? '6px' : '0px',
                 lineHeight: '1.4',
-                animation: 'slideInText 0.2s ease-out'
+                animation: 'slideInText 0.2s ease-out',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
               }}
             >
-              {item.type === 'body' && <span style={{ opacity: 0.5, marginRight: '6px' }}>&gt;</span>}
-              {item.text}
+              <div>
+                {item.type === 'body' && <span style={{ opacity: 0.5, marginRight: '6px' }}>&gt;</span>}
+                {item.text}
+              </div>
+              {item.cardName && onOpenReset && (
+                <button
+                  onClick={() => {
+                    onComplete();
+                    onOpenReset(item.cardName);
+                  }}
+                  style={{
+                    background: '#ff3366',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 10px rgba(255,51,102,0.4)',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  精算する
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -198,7 +238,7 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
             transition: 'all 0.3s'
           }}
         >
-          {isTypingDone ? '⚡ [ ACKNOWLEDGE // 了解 ]' : 'ANALYZING...'}
+          {isTypingDone ? '[ ACKNOWLEDGE // 了解 ]' : 'ANALYZING...'}
         </button>
       </div>
 

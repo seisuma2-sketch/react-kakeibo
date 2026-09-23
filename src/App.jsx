@@ -22,6 +22,11 @@ import DesktopCockpitOS from './components/DesktopCockpitOS';
 
 function App() {
   const [user, setUser] = useState(null);
+  
+  // 🌟 追加：デュアルコアシステムの核（現在どちらの金庫を見ているか）
+  const [dbMode, setDbMode] = useState('personal'); // 'personal' or 'sync'
+  const [familyId, setFamilyId] = useState(null);
+
   const [transactions, setTransactions] = useState([]);
   const [isTxLoaded, setIsTxLoaded] = useState(false); 
   const [currentTab, setCurrentTab] = useState('home');
@@ -42,7 +47,6 @@ function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [tempUserName, setTempUserName] = useState('');
 
-  // 🌟 追加：裏メニューでゴースト口座を直接手入力するためのState
   const [newGhostBank, setNewGhostBank] = useState('');
 
   const [hasSkippedBoot, setHasSkippedBoot] = useState(false);
@@ -104,6 +108,20 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // 🌟 PC版でもNFC/ディープリンクのパラメータを認識可能にする
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    if (action) {
+      if (action === 'unlock_ghost') {
+        setStealthConfig(prev => ({ ...prev, active: false }));
+      } else if (action === 'reset_credit') {
+        setCurrentTab('balance');
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -160,6 +178,8 @@ function App() {
       const promises = validAccounts.map(acc => {
         const txData = {
           userId: user.uid,
+          familyId: familyId || user.uid,
+          mode: 'personal',
           type: 'income',
           amount: Number(acc.balance),
           category: '初期設定 (INIT)',
@@ -201,19 +221,13 @@ function App() {
     }
   };
 
+  // 🌟 変更点①：Family Sync (Next.js) と同じ「users」の引き出しを見て自動連携する！
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
-      data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
-      setTransactions(data);
-      setIsTxLoaded(true); 
-    });
-
-    const unsubscribeSettings = onSnapshot(doc(db, "user_settings", user.uid), (document) => {
-      if (document.exists()) {
-        const data = document.data();
+    
+    const unsubSettings = onSnapshot(doc(db, "user_settings", user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         setStealthConfig(prev => ({ ...prev, ghostAccounts: data.stealthAccounts || [] }));
         if (data.userName !== undefined) setUserName(data.userName);
         else setIsProfileModalOpen(true);
@@ -226,10 +240,39 @@ function App() {
       }
     });
 
-    return () => { unsubscribe(); unsubscribeSettings(); };
+    const unsubUsers = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+      let currentFamilyId = user.uid; 
+      if (docSnap.exists() && docSnap.data().familyId) {
+        currentFamilyId = docSnap.data().familyId; 
+      }
+      setFamilyId(currentFamilyId);
+    });
+
+    return () => { unsubSettings(); unsubUsers(); };
   }, [user]);
 
-  useEffect(() => { localStorage.setItem('stealthActive', stealthConfig.active); }, [stealthConfig.active]);
+  useEffect(() => {
+    if (!user) return;
+    let q;
+    if (dbMode === 'sync') {
+      if (!familyId) return;
+      q = query(collection(db, "transactions"), where("familyId", "==", familyId), where("mode", "==", "sync"));
+    } else {
+      q = query(collection(db, "transactions"), where("userId", "==", user.uid));
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+      if (dbMode === 'personal') {
+        data = data.filter(tx => tx.mode !== 'sync');
+      }
+      data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
+      setTransactions(data);
+      setIsTxLoaded(true); 
+    });
+
+    return () => unsubscribe();
+  }, [user, familyId, dbMode]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -253,11 +296,9 @@ function App() {
     }
   };
 
-  // 🌟 追加：テキスト入力から任意のゴースト口座を追加する機能
   const handleAddCustomGhost = async () => {
     if (!newGhostBank.trim() || !user) return;
     const addedBank = newGhostBank.trim();
-    // 重複を避けて追加
     const updated = [...new Set([...stealthConfig.ghostAccounts, addedBank])];
     setStealthConfig(prev => ({ ...prev, ghostAccounts: updated }));
     try {
@@ -265,7 +306,7 @@ function App() {
     } catch (error) {
       console.error("手動追加エラー:", error);
     }
-    setNewGhostBank(''); // 入力欄をクリア
+    setNewGhostBank(''); 
   };
 
   const displayTransactions = transactions.map(tx => {
@@ -281,7 +322,6 @@ function App() {
     return tx;
   }).filter(Boolean); 
 
-  // 🌟 修正：既存の取引履歴にある口座と、手動で追加したゴースト口座の両方を表示用リストにまとめる
   const uniqueAccountsFromTx = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
   const allAccountsToDisplay = [...new Set([...uniqueAccountsFromTx, ...stealthConfig.ghostAccounts])];
 
@@ -329,12 +369,16 @@ function App() {
   };
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
-
-  const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot;
+  
+  // 🌟 初期化ウィザードは個人モードの時だけ起動
+  const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot && dbMode === 'personal';
+  
+  // モードごとのテーマカラー
+  const themeColor = dbMode === 'sync' ? '#00ff66' : '#00bfff';
 
   if (isAuthChecking) {
     return (
-      <div style={{ height: '100vh', background: '#050608', color: '#00ff66', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'monospace', fontSize: '18px' }}>
+      <div style={{ height: '100vh', background: '#050608', color: '#00bfff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'monospace', fontSize: '18px' }}>
         <div style={{ animation: 'pulse 1.5s infinite' }}>[SYSTEM] CHECKING AUTHENTICATION...</div>
       </div>
     );
@@ -342,12 +386,12 @@ function App() {
 
   if (!user) {
     return (
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100vh', background: '#050608', color: '#00ff66', fontFamily: 'monospace', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100vh', background: '#050608', color: '#00bfff', fontFamily: 'monospace', overflow: 'hidden' }}>
         {!isMobile && (
-          <div style={{ flex: 1.2, borderRight: '1px solid #00ff6644', background: 'radial-gradient(circle at center, #11141a 0%, #050608 100%)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '60px' }}>
+          <div style={{ flex: 1.2, borderRight: '1px solid #00bfff44', background: 'radial-gradient(circle at center, #11141a 0%, #050608 100%)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '60px' }}>
             <div style={{ zIndex: 10 }}>
               <div style={{ fontSize: '14px', color: '#00bfff', letterSpacing: '2px', marginBottom: '10px' }}>SECURE ACCESS PROTOCOL ONLINE</div>
-              <h1 style={{ fontSize: '48px', margin: '0 0 20px 0', textShadow: '0 0 20px rgba(0,255,102,0.5)', lineHeight: '1.1' }}>
+              <h1 style={{ fontSize: '48px', margin: '0 0 20px 0', textShadow: '0 0 20px rgba(0,191,255,0.5)', lineHeight: '1.1' }}>
                 M402 // FINANCIAL <br/> COCKPIT OS
               </h1>
               <p style={{ color: '#aaa', fontSize: '14px', maxWidth: '400px', lineHeight: '1.6' }}>
@@ -358,7 +402,7 @@ function App() {
             </div>
             <div style={{ marginTop: 'auto', zIndex: 10 }}>
               <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                <div style={{ padding: '10px 15px', border: '1px solid #00ff66', color: '#00ff66', borderRadius: '4px', fontSize: '12px' }}>STATUS: OPTIMAL</div>
+                <div style={{ padding: '10px 15px', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '4px', fontSize: '12px' }}>STATUS: OPTIMAL</div>
                 <div style={{ padding: '10px 15px', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '4px', fontSize: '12px' }}>NODE: CONNECTED</div>
               </div>
               <div style={{ fontSize: '10px', color: '#555' }}>
@@ -367,7 +411,7 @@ function App() {
                 &gt; WAITING FOR USER AUTHENTICATION...
               </div>
             </div>
-            <div style={{ position: 'absolute', right: '-10%', top: '-10%', width: '600px', height: '600px', border: '1px dashed rgba(0, 255, 102, 0.1)', borderRadius: '50%', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', right: '-10%', top: '-10%', width: '600px', height: '600px', border: '1px dashed rgba(0, 191, 255, 0.1)', borderRadius: '50%', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', right: '5%', top: '5%', width: '400px', height: '400px', border: '1px dashed rgba(0, 191, 255, 0.1)', borderRadius: '50%', pointerEvents: 'none' }} />
           </div>
         )}
@@ -376,13 +420,13 @@ function App() {
           <form onSubmit={handleAuthSubmit} style={{ width: '100%', maxWidth: '380px', display: 'flex', flexDirection: 'column', gap: '25px', zIndex: 10 }}>
             {isMobile && (
               <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-                <h1 style={{ fontSize: '28px', margin: 0, textShadow: '0 0 15px rgba(0,255,102,0.5)' }}>M402 OS</h1>
+                <h1 style={{ fontSize: '28px', margin: 0, textShadow: '0 0 15px rgba(0,191,255,0.5)' }}>M402 OS</h1>
                 <div style={{ fontSize: '10px', color: '#00bfff', letterSpacing: '2px', marginTop: '5px' }}>SECURE ACCESS PROTOCOL</div>
               </div>
             )}
 
             <div style={{ display: 'flex', borderBottom: '2px solid #252838', marginBottom: '10px' }}>
-              <button type="button" onClick={() => { setAuthMode('login'); setLoginError(''); }} style={{ flex: 1, background: 'transparent', border: 'none', color: authMode === 'login' ? '#00ff66' : '#666', padding: '15px 10px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', borderBottom: authMode === 'login' ? '3px solid #00ff66' : 'none', transition: 'all 0.2s', fontFamily: 'monospace' }}>LOGIN</button>
+              <button type="button" onClick={() => { setAuthMode('login'); setLoginError(''); }} style={{ flex: 1, background: 'transparent', border: 'none', color: authMode === 'login' ? '#00bfff' : '#666', padding: '15px 10px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', borderBottom: authMode === 'login' ? '3px solid #00bfff' : 'none', transition: 'all 0.2s', fontFamily: 'monospace' }}>LOGIN</button>
               <button type="button" onClick={() => { setAuthMode('register'); setLoginError(''); }} style={{ flex: 1, background: 'transparent', border: 'none', color: authMode === 'register' ? '#00bfff' : '#666', padding: '15px 10px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', borderBottom: authMode === 'register' ? '3px solid #00bfff' : 'none', transition: 'all 0.2s', fontFamily: 'monospace' }}>REGISTER</button>
             </div>
 
@@ -395,16 +439,16 @@ function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                 <div style={{ fontSize: '12px', marginBottom: '8px', color: '#aaa', fontWeight: 'bold' }}>[ IDENTITY ] E-MAIL ADDRESS</div>
-                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="agent@m402.com" style={{ width: '100%', padding: '15px', background: '#11141a', border: `1px solid ${authMode === 'login' ? '#00ff6644' : '#00bfff44'}`, color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '16px', transition: 'border-color 0.2s' }} required />
+                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="agent@m402.com" style={{ width: '100%', padding: '15px', background: '#11141a', border: `1px solid ${authMode === 'login' ? '#00bfff44' : '#00bfff44'}`, color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '16px', transition: 'border-color 0.2s' }} required />
               </div>
               
               <div>
                 <div style={{ fontSize: '12px', marginBottom: '8px', color: '#aaa', fontWeight: 'bold' }}>[ KEY ] SECURITY PASSWORD</div>
-                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" style={{ width: '100%', padding: '15px', background: '#11141a', border: `1px solid ${authMode === 'login' ? '#00ff6644' : '#00bfff44'}`, color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '16px', transition: 'border-color 0.2s', letterSpacing: '2px' }} required />
+                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" style={{ width: '100%', padding: '15px', background: '#11141a', border: `1px solid ${authMode === 'login' ? '#00bfff44' : '#00bfff44'}`, color: '#fff', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontSize: '16px', transition: 'border-color 0.2s', letterSpacing: '2px' }} required />
               </div>
             </div>
 
-            <button type="submit" disabled={isProcessingAuth} style={{ padding: '18px', background: authMode === 'login' ? '#00ff66' : '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '18px', cursor: isProcessingAuth ? 'not-allowed' : 'pointer', marginTop: '10px', boxShadow: isProcessingAuth ? 'none' : `0 0 20px ${authMode === 'login' ? 'rgba(0,255,102,0.4)' : 'rgba(0,191,255,0.4)'}`, transition: 'all 0.2s', fontFamily: 'monospace' }}>
+            <button type="submit" disabled={isProcessingAuth} style={{ padding: '18px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '18px', cursor: isProcessingAuth ? 'not-allowed' : 'pointer', marginTop: '10px', boxShadow: isProcessingAuth ? 'none' : `0 0 20px rgba(0,191,255,0.4)`, transition: 'all 0.2s', fontFamily: 'monospace' }}>
               {isProcessingAuth ? 'AUTHENTICATING...' : (authMode === 'login' ? '⚡ INITIATE LOGIN' : '✨ CREATE SYSTEM NODE')}
             </button>
             <div style={{ textAlign: 'center', fontSize: '11px', color: '#555', marginTop: '10px' }}>&copy; 2026 M402 CYBERNETIC FINANCE CORP.</div>
@@ -434,34 +478,42 @@ function App() {
 
       <div style={{ flex: 1, padding: isMobile ? '15px' : '30px', overflowY: 'auto', width: '100%', paddingBottom: isMobile ? '80px' : '30px' }}>
         
+        {/* 🌟 メインヘッダー＆デュアルコア・スイッチ */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {tabTitles[currentTab] || '開発中...'}
-              
-              {isMobile && (
-                <button 
-                  onClick={() => { setTempUserName(userName); setIsProfileModalOpen(true); }} 
-                  title="プロフィール設定"
-                  style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', padding: 0, opacity: 0.6, transition: 'all 0.2s', filter: 'grayscale(100%) brightness(1.5)' }} 
-                >
-                  ⚙️
-                </button>
-              )}
             </h2>
+
+            {/* 🌟 デュアルコア・切り替えスイッチ */}
+            <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '4px', border: `1px solid ${themeColor}`, boxShadow: `0 0 15px ${themeColor}33`, marginLeft: '10px' }}>
+              <button 
+                onClick={() => setDbMode('personal')}
+                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? '#00bfff' : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
+              >
+                👤 個人
+              </button>
+              <button 
+                onClick={() => setDbMode('sync')}
+                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
+              >
+                🔗 共有
+              </button>
+            </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }} style={{ background: 'rgba(0, 255, 102, 0.08)', border: '1px solid rgba(0, 255, 102, 0.3)', color: '#00ff66', padding: '5px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', fontFamily: 'monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: '0 0 10px rgba(0, 255, 102, 0.1)' }} title="集計期間を変更">
+            <button onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }} style={{ background: `${themeColor}15`, border: `1px solid ${themeColor}55`, color: themeColor, padding: '5px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', fontFamily: 'monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: `0 0 10px ${themeColor}22` }} title="集計期間を変更">
               <span>🗓️</span> サイクル ({cyclePeriod.label})
             </button>
             {!isMobile && (
-              <button onClick={() => switchMode('os')} style={{ background: 'linear-gradient(45deg, #00ff6622, #00bfff22)', border: '1px solid #00ff66', color: '#00ff66', padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 0 10px rgba(0, 255, 102, 0.2)', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
+              <button onClick={() => switchMode('os')} style={{ background: `linear-gradient(45deg, ${themeColor}22, transparent)`, border: `1px solid ${themeColor}`, color: themeColor, padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: `0 0 10px ${themeColor}33`, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
                 <span>🖥️</span> コックピットOSへ
               </button>
             )}
-            <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? '#00bfff' : '#ff3366') : '#ff9900' }}>
-              {isOnline ? (user ? '🟢 接続済 (SYNC)' : '🔴 切断') : '📡 オフライン (LOCAL)'}
+            <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? themeColor : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? themeColor : '#ff3366') : '#ff9900' }}>
+              {isOnline ? (user ? '🟢 CONNECTED' : '🔴 OFFLINE') : '📡 LOCAL'}
             </div>
           </div>
         </div>
@@ -472,7 +524,7 @@ function App() {
               <SummaryPanel currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
+                  <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} dbMode={dbMode} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} />
@@ -483,7 +535,7 @@ function App() {
 
               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: '15px' }}>
-                  <div onClick={() => setCurrentTab('input')} style={quickAccessStyle('#00ff66')}><div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>✏️</div><div style={{ color: '#00ff66', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>入力フォーム</div></div>
+                  <div onClick={() => setCurrentTab('input')} style={quickAccessStyle(themeColor)}><div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>✏️</div><div style={{ color: themeColor, fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>入力フォーム</div></div>
                   <div onClick={() => setCurrentTab('balance')} style={quickAccessStyle('#ff9900')}><div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>🔒</div><div style={{ color: '#ff9900', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>残高管理</div></div>
                   <div onClick={() => setCurrentTab('playground')} style={quickAccessStyle('#b666ff')}><div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>🌌</div><div style={{ color: '#b666ff', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>遊び場</div></div>
                   <div onClick={() => setCurrentTab('map')} style={quickAccessStyle('#ff3366')}><div style={{ fontSize: isMobile ? '20px' : '30px', marginBottom: '5px' }}>📍</div><div style={{ color: '#ff3366', fontWeight: 'bold', fontSize: isMobile ? '12px' : '16px' }}>トラッカー</div></div>
@@ -498,14 +550,14 @@ function App() {
 
           {currentTab === 'input' && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '600px' }}>
-              <div style={{ width: '100%', maxWidth: '400px', border: '1px solid #00ff66', borderRadius: '12px', boxShadow: '0 0 30px rgba(0,255,102,0.1)' }}>
-                <MobileInputForm />
+              <div style={{ width: '100%', maxWidth: '400px', border: `1px solid ${themeColor}`, borderRadius: '12px', boxShadow: `0 0 30px ${themeColor}22` }}>
+                <MobileInputForm dbMode={dbMode} familyId={familyId} />
               </div>
             </div>
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
+          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} dbMode={dbMode} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
@@ -517,8 +569,8 @@ function App() {
 
       {(!isProfileModalOpen && showBootWizard) && (
         <div style={overlayStyle}>
-          <div style={{ ...modalStyle, width: '420px', maxHeight: '85vh', overflowY: 'auto', border: '1px solid #00ff66', padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0,255,102,0.3)' }}>
-            <h3 style={{ margin: 0, color: '#00ff66', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
+          <div style={{ ...modalStyle, width: '420px', maxHeight: '85vh', overflowY: 'auto', border: `1px solid ${themeColor}`, padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: `0 0 40px ${themeColor}44` }}>
+            <h3 style={{ margin: 0, color: themeColor, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
               <span style={{ animation: 'spin 4s linear infinite' }}>⚙️</span> INITIAL BOOT PROTOCOL
             </h3>
             <div style={{ color: '#aaa', fontSize: '12px', lineHeight: '1.5', paddingBottom: '10px', borderBottom: '1px dashed #333' }}>
@@ -617,7 +669,7 @@ function App() {
               <button 
                 onClick={handleBootSubmit} 
                 disabled={!setupAccounts.some(acc => acc.name && acc.balance) || isBooting}
-                style={{ padding: '12px', background: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? '#333' : '#00ff66', color: '#000', border: 'none', borderRadius: '6px', cursor: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', flex: 2, boxShadow: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? 'none' : '0 0 15px rgba(0,255,102,0.4)', transition: 'all 0.3s' }}
+                style={{ padding: '12px', background: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? '#333' : themeColor, color: '#000', border: 'none', borderRadius: '6px', cursor: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '14px', flex: 2, boxShadow: (!setupAccounts.some(acc => acc.name && acc.balance) || isBooting) ? 'none' : `0 0 15px ${themeColor}66`, transition: 'all 0.3s' }}
               >
                 {isBooting ? 'BOOTING...' : 'SYSTEM BOOT ⚡'}
               </button>
@@ -652,8 +704,8 @@ function App() {
 
       {isCycleModalOpen && (
         <div style={overlayStyle}>
-          <div style={{ ...modalStyle, width: '320px', border: '1px solid #00ff66' }}>
-            <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ ...modalStyle, width: '320px', border: `1px solid ${themeColor}` }}>
+            <h3 style={{ margin: 0, color: themeColor, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>🗓️</span> 集計サイクル設定
             </h3>
             <p style={{ color: '#aaa', fontSize: '12px', lineHeight: '1.4', margin: '10px 0' }}>
@@ -662,23 +714,14 @@ function App() {
             </p>
             <div style={{ display: 'flex', alignItems: 'center', background: '#11141a', border: '1px solid #333', borderRadius: '6px', padding: '10px', margin: '15px 0' }}>
               <span style={{ color: '#888', fontSize: '14px', flex: 1 }}>毎月</span>
-              <input type="number" min="1" max="31" value={tempCycleDay} onChange={(e) => setTempCycleDay(e.target.value)} style={{ width: '80px', background: 'transparent', border: 'none', borderBottom: '2px solid #00ff66', color: '#00ff66', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', outline: 'none', fontFamily: 'monospace' }} />
+              <input type="number" min="1" max="31" value={tempCycleDay} onChange={(e) => setTempCycleDay(e.target.value)} style={{ width: '80px', background: 'transparent', border: 'none', borderBottom: `2px solid ${themeColor}`, color: themeColor, fontSize: '24px', fontWeight: 'bold', textAlign: 'center', outline: 'none', fontFamily: 'monospace' }} />
               <span style={{ color: '#888', fontSize: '14px', paddingLeft: '8px' }}>日 開始</span>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setIsCycleModalOpen(false)} style={{ ...btnStyle('#aaa'), flex: 1 }}>キャンセル</button>
-              <button onClick={handleSaveCycle} style={{ ...btnStyle('#00ff66'), flex: 1, background: '#00ff66', color: '#000', fontWeight: 'bold' }}>保存</button>
+              <button onClick={handleSaveCycle} style={{ ...btnStyle(themeColor), flex: 1, background: themeColor, color: '#000', fontWeight: 'bold' }}>保存</button>
             </div>
           </div>
-        </div>
-      )}
-
-      {isMobile && (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#11141a', borderTop: '1px solid #252838', display: 'flex', justifyContent: 'space-around', padding: '10px 0', zIndex: 100, backdropFilter: 'blur(10px)' }}>
-          <BottomTab icon="🏠" label="総合" isActive={currentTab === 'home'} onClick={() => setCurrentTab('home')} />
-          <BottomTab icon="✏️" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} />
-          <BottomTab icon="💰" label="収支" isActive={currentTab === 'income-expense'} onClick={() => setCurrentTab('income-expense')} />
-          <BottomTab icon="📊" label="分析" isActive={currentTab === 'category'} onClick={() => setCurrentTab('category')} />
         </div>
       )}
 
@@ -693,14 +736,14 @@ function App() {
         </div>
       )}
       
-      {/* 🌟 パスワード認証後に開く、ステルス設定モーダル */}
+      {/* 🌟 ステルス設定モーダル */}
       {isConfigModalOpen && (
         <div style={overlayStyle}>
-          <div style={{...modalStyle, maxHeight: '80vh', overflowY: 'auto', width: '90%', maxWidth: '400px'}}>
-            <h3 style={{ color: '#00ff66', marginTop: 0 }}>🕶️ ステルス制御</h3>
+          <div style={{...modalStyle, maxHeight: '80vh', overflowY: 'auto', width: '90%', maxWidth: '400px', border: `1px solid ${themeColor}`, boxShadow: `0 0 40px ${themeColor}44`}}>
+            <h3 style={{ color: themeColor, marginTop: 0 }}>🕶️ ステルス制御</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0' }}>
-              <span style={{ color: stealthConfig.active ? '#00ff66' : '#aaa' }}>稼働状況</span>
-              <button onClick={() => setStealthConfig(prev => ({ ...prev, active: !prev.active }))} style={toggleBtnStyle(stealthConfig.active, '#00ff66')}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
+              <span style={{ color: stealthConfig.active ? themeColor : '#aaa' }}>稼働状況</span>
+              <button onClick={() => setStealthConfig(prev => ({ ...prev, active: !prev.active }))} style={toggleBtnStyle(stealthConfig.active, themeColor)}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
             </div>
             
             <ConfigRow label="サマリー・コア" configKey="hideSummary" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />
@@ -712,7 +755,6 @@ function App() {
                 <span>☠️</span> ゴースト口座の設定
               </div>
 
-              {/* 🌟 みずほ銀行などを自由に手動追加できる入力フォーム */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
                 <input 
                   type="text" 
@@ -740,7 +782,7 @@ function App() {
               </div>
             </div>
 
-            <button onClick={() => setIsConfigModalOpen(false)} style={{ ...btnStyle('#00bfff'), width: '100%', marginTop: '25px', fontWeight: 'bold' }}>パネルを閉じる</button>
+            <button onClick={() => setIsConfigModalOpen(false)} style={{ ...btnStyle(themeColor), width: '100%', marginTop: '25px', fontWeight: 'bold' }}>パネルを閉じる</button>
           </div>
         </div>
       )}
@@ -767,10 +809,10 @@ function ConfigRow({ label, configKey, stealthConfig, setStealthConfig }) {
   );
 }
 
-function BottomTab({ icon, label, isActive, onClick }) {
+function BottomTab({ icon, label, isActive, onClick, themeColor }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', cursor: 'pointer', color: isActive ? '#00ff66' : '#555', transition: 'all 0.2s', transform: isActive ? 'scale(1.1)' : 'scale(1)' }}>
-      <div style={{ fontSize: '22px', marginBottom: '2px', filter: isActive ? 'drop-shadow(0 0 10px rgba(0,255,102,0.5))' : 'none' }}>{icon}</div>
+    <div onClick={onClick} style={{ display: 'flex', flexDirection: 'column', fontStyle: 'normal', alignItems: 'center', cursor: 'pointer', color: isActive ? themeColor : '#555', transition: 'all 0.2s', transform: isActive ? 'scale(1.1)' : 'scale(1)' }}>
+      <div style={{ fontSize: '22px', marginBottom: '2px', filter: isActive ? `drop-shadow(0 0 10px ${themeColor}88)` : 'none' }}>{icon}</div>
       <div style={{ fontSize: '10px', fontWeight: isActive ? 'bold' : 'normal' }}>{label}</div>
     </div>
   );

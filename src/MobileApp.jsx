@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; // 🌟 setDocを追加
+import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; 
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -11,6 +11,7 @@ import MobileCalendar from './components/MobileCalendar';
 import NebulaCore3D from './components/NebulaCore3D';
 import AuthScreen from './components/AuthScreen';
 import DailyBriefingOverlay from './components/DailyBriefingOverlay';
+import NfcSettingsModal from './components/NfcSettingsModal';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -21,11 +22,15 @@ const THEMES = {
 
 export default function MobileApp() {
   const [user, setUser] = useState(null);
+  
+  // 🌟 追加：デュアルコアシステムの核
+  const [dbMode, setDbMode] = useState('personal'); // 'personal' or 'sync'
+  const [familyId, setFamilyId] = useState(null);
+
   const [transactions, setTransactions] = useState([]);
   const [currentTab, setCurrentTab] = useState('input'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
-  // 🌟 情報タブ内の切り替えモード ('map' ⇔ 'news')
   const [feedMode, setFeedMode] = useState('map');
 
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || '2d');
@@ -33,7 +38,9 @@ export default function MobileApp() {
   
   const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'neon');
   useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
-  const themeColor = THEMES[appTheme].color;
+
+  // 🌟 共有モードの時は、テーマカラーを強制的に Family Sync と同じ「エメラルドグリーン」にする
+  const activeThemeColor = dbMode === 'sync' ? '#00ff66' : THEMES[appTheme].color;
 
   const [timeTreeToken, setTimeTreeToken] = useState(() => localStorage.getItem('timeTreeToken') || '');
   const handleSaveToken = (val) => {
@@ -47,7 +54,6 @@ export default function MobileApp() {
   });
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
   const [stealthAccounts, setStealthAccounts] = useState([]); 
-  // 🌟 ゴースト銀行を自由に追加するためのState
   const [newGhostBank, setNewGhostBank] = useState('');
 
   const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
@@ -67,6 +73,45 @@ export default function MobileApp() {
   const [isListening, setIsListening] = useState(false); 
 
   const [showBriefing, setShowBriefing] = useState(false);
+  const [pendingResetCard, setPendingResetCard] = useState(null);
+
+  // 🌟 NFC / ディープリンク連携用State
+  const [showNfcCyberUnlock, setShowNfcCyberUnlock] = useState(false);
+  const [showNfcModal, setShowNfcModal] = useState(false);
+  const [nfcToast, setNfcToast] = useState('');
+  const [nfcAccount, setNfcAccount] = useState(null);
+  const [nfcAutoKeypad, setNfcAutoKeypad] = useState(false);
+
+  // 🌟 NFC / URLディープリンク解析（マウント時に検知）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+
+    if (action) {
+      if (action === 'unlock_ghost') {
+        setIsStealthActive(false);
+        setShowNfcCyberUnlock(true);
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+        setTimeout(() => setShowNfcCyberUnlock(false), 3500);
+      } else if (action === 'reset_credit') {
+        const card = params.get('card') || 'リクルートカード';
+        setCurrentTab('balance');
+        setPendingResetCard(card);
+      } else if (action === 'quick_input') {
+        const account = params.get('account') || 'EVERING';
+        setCurrentTab('input');
+        setNfcAccount(account);
+        setNfcAutoKeypad(true);
+      }
+      // URLパラメータをクリアしてリロード時の重複実行を防止
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const triggerNfcToast = (msg) => {
+    setNfcToast(msg);
+    setTimeout(() => setNfcToast(''), 2500);
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -87,33 +132,69 @@ export default function MobileApp() {
     setShowBriefing(false);
   };
 
+  // 🌟 変更点①：ユーザー設定から familyId を取得する
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-    const unsubscribeTx = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
-      data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
-      setTransactions(data);
-    });
     const unsubscribeSettings = onSnapshot(doc(db, "user_settings", user.uid), (document) => {
-      if (document.exists()) setStealthAccounts(document.data().stealthAccounts || []);
+      let currentFamilyId = user.uid;
+      
+      if (document.exists()) {
+        const data = document.data();
+        if (data.familyId) {
+          currentFamilyId = data.familyId;
+        } else {
+          setDoc(doc(db, "user_settings", user.uid), { familyId: currentFamilyId }, { merge: true });
+        }
+        setStealthAccounts(data.stealthAccounts || []);
+      } else {
+        setDoc(doc(db, "user_settings", user.uid), { familyId: currentFamilyId }, { merge: true });
+      }
+      
+      setFamilyId(currentFamilyId);
     });
+
     return () => { 
-      unsubscribeTx(); 
       unsubscribeSettings(); 
       stopSnappingDetection(); 
     };
   }, [user]);
 
-  // 🌟 ゴースト銀行の追加処理
+  // 🌟 変更点②：デュアルコア・トランザクション取得（dbModeで取得先を切り替え）
+  useEffect(() => {
+    if (!user) return;
+    
+    let q;
+    if (dbMode === 'sync') {
+      if (!familyId) return;
+      // 🔗 家族モード：familyIdの一致、かつ modeが'sync'のものだけを取得
+      q = query(collection(db, "transactions"), where("familyId", "==", familyId), where("mode", "==", "sync"));
+    } else {
+      // 👤 個人モード：自分のIDのものだけを取得
+      q = query(collection(db, "transactions"), where("userId", "==", user.uid));
+    }
+
+    const unsubscribeTx = onSnapshot(q, (snapshot) => {
+      let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+      
+      // 個人モードの時は、SYNCで入力した相手のデータが混ざらないようにフィルタリング
+      if (dbMode === 'personal') {
+        data = data.filter(tx => tx.mode !== 'sync');
+      }
+
+      data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
+      setTransactions(data);
+    });
+
+    return () => unsubscribeTx();
+  }, [user, familyId, dbMode]);
+
   const handleAddGhostBank = async () => {
     if (!newGhostBank.trim() || !user) return;
     const updated = [...stealthAccounts, newGhostBank.trim()];
     await setDoc(doc(db, "user_settings", user.uid), { stealthAccounts: updated }, { merge: true });
-    setNewGhostBank(''); // 入力後リセット
+    setNewGhostBank('');
   };
 
-  // 🌟 ゴースト銀行の削除処理
   const handleRemoveGhostBank = async (bankToRemove) => {
     if (!user) return;
     const updated = stealthAccounts.filter(b => b !== bankToRemove);
@@ -253,7 +334,6 @@ export default function MobileApp() {
     }
   };
 
-  // 🌟 情報タブクリック時の特別処理（もう一度押したらトグル）
   const handleFeedTabClick = () => {
     if (currentTab === 'feed') {
       setFeedMode(prev => prev === 'map' ? 'news' : 'map');
@@ -289,14 +369,20 @@ export default function MobileApp() {
           transactions={safeTransactions} 
           ghostAccounts={ghostAccountsList} 
           onComplete={handleBriefingComplete} 
+          dbMode={dbMode}
+          onOpenReset={(cardName) => {
+            setCurrentTab('balance');
+            setPendingResetCard(cardName);
+          }}
         />
       )}
 
       {/* 🚀 ヘッダーバー */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${themeColor}44`, zIndex: 10 }}>
-        <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: themeColor, textShadow: `0 0 10px ${themeColor}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${activeThemeColor}44`, zIndex: 10 }}>
+        <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: activeThemeColor, textShadow: `0 0 10px ${activeThemeColor}` }}>
           ☰
         </div>
+        
         <div 
           onClick={() => {
             if (!isStealthActive) {
@@ -311,30 +397,51 @@ export default function MobileApp() {
             animation: !isStealthActive ? 'pulse 1.5s infinite ease-in-out' : 'none'
           }}
         >
-          M402 <span style={{ color: themeColor }}>家計簿</span>
+          M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
-        <div style={{ width: '24px' }}></div>
+
+        {/* 🌟 デュアルコア・切り替えスイッチ（スマホ版ヘッダー右側） */}
+        <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '3px', border: `1px solid ${activeThemeColor}`, boxShadow: `0 0 10px ${activeThemeColor}33` }}>
+          <button 
+            onClick={() => setDbMode('personal')}
+            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? activeThemeColor : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
+          >
+            👤 個人
+            [個人]
+          </button>
+          <button 
+            onClick={() => setDbMode('sync')}
+            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
+          >
+            [共有]
+          </button>
+        </div>
       </div>
 
       {/* 🚀 サイドメニュー */}
       {isMenuOpen && (
         <>
           <div onClick={() => setIsMenuOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 9998 }} />
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '80%', maxWidth: '300px', height: '100vh', background: '#0a0c10', borderRight: `1px solid ${themeColor}`, boxShadow: `5px 0 30px ${themeColor}33`, zIndex: 9999, padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '25px', overflowY: 'auto', animation: 'slideIn 0.3s ease-out' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '80%', maxWidth: '300px', height: '100vh', background: '#0a0c10', borderRight: `1px solid ${activeThemeColor}`, boxShadow: `5px 0 30px ${activeThemeColor}33`, zIndex: 9999, padding: '30px 20px', display: 'flex', flexDirection: 'column', gap: '25px', overflowY: 'auto', animation: 'slideIn 0.3s ease-out' }}>
             <style>{`@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
             
-            <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${themeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
+            <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${activeThemeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
-            <div style={{ marginBottom: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+              <button 
+                onClick={() => { setIsMenuOpen(false); setShowNfcModal(true); }} 
+                style={{ width: '100%', padding: '10px', background: 'rgba(0, 191, 255, 0.12)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center', fontSize: '12px' }}
+              >
+                [NFC] 物理カード・リング連携
+              </button>
               <button 
                 onClick={() => { setIsMenuOpen(false); setShowBriefing(true); }} 
-                style={{ width: '100%', padding: '10px', background: 'rgba(0, 255, 102, 0.1)', color: '#00ff66', border: '1px dashed #00ff66', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ width: '100%', padding: '10px', background: 'rgba(0, 255, 102, 0.1)', color: '#00ff66', border: '1px dashed #00ff66', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
               >
-                📡 朝のAI報告をテスト起動
+                [AI] 朝のAI報告をテスト起動
               </button>
             </div>
 
-            {/* 🌟 復元＆追加：ゴースト口座管理パネル */}
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>👻 ゴースト口座（隠し銀行）管理</div>
               <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
@@ -344,7 +451,7 @@ export default function MobileApp() {
                   placeholder="例: みずほ銀行" 
                   style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', color: '#fff', fontSize: '12px' }}
                 />
-                <button onClick={handleAddGhostBank} style={{ background: themeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
+                <button onClick={handleAddGhostBank} style={{ background: activeThemeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '120px', overflowY: 'auto' }}>
                 {stealthAccounts.map(bank => (
@@ -374,9 +481,9 @@ export default function MobileApp() {
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>タブバ―モード変更</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button onClick={() => setUiMode('2d')} style={menuBtnStyle(uiMode === '2d', themeColor)}> 2Dモード</button>
-                <button onClick={() => setUiMode('morph')} style={menuBtnStyle(uiMode === 'morph', themeColor)}> 3Dモード</button>
-                <button onClick={() => setUiMode('particle')} style={menuBtnStyle(uiMode === 'particle', themeColor)}> 3D粒子モード</button>
+                <button onClick={() => setUiMode('2d')} style={menuBtnStyle(uiMode === '2d', activeThemeColor)}> 2Dモード</button>
+                <button onClick={() => setUiMode('morph')} style={menuBtnStyle(uiMode === 'morph', activeThemeColor)}> 3Dモード</button>
+                <button onClick={() => setUiMode('particle')} style={menuBtnStyle(uiMode === 'particle', activeThemeColor)}> 3D粒子モード</button>
               </div>
             </div>
             
@@ -410,50 +517,64 @@ export default function MobileApp() {
 
       {/* メインコンテンツ */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {currentTab === 'input' && <MobileInputForm />}
+        {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
+        {currentTab === 'input' && (
+          <MobileInputForm 
+            dbMode={dbMode} 
+            familyId={familyId} 
+            initialAccount={nfcAccount} 
+            autoOpenKeypad={nfcAutoKeypad} 
+          />
+        )}
         {currentTab === 'balance' && (
           <div style={{ padding: '20px' }}>
             <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
               <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}> 口座・決済手段別の現在高</h2>
             </div>
-            <BalanceChart transactions={safeTransactions} ghostAccounts={ghostAccountsList} sortKey={sortKey} sortOrder={sortOrder} setSortKey={setSortKey} />
+            <BalanceChart 
+              transactions={safeTransactions} 
+              ghostAccounts={ghostAccountsList} 
+              sortKey={sortKey} 
+              sortOrder={sortOrder} 
+              setSortKey={setSortKey} 
+              dbMode={dbMode}
+              initialResetCard={pendingResetCard ? { name: pendingResetCard } : null}
+            />
           </div>
         )}
-        {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={themeColor} />}
+        {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={activeThemeColor} />}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
-        
-        {/* 🌟 NewsFeedに ゴースト銀行を消去済みの safeTransactions を渡す！ */}
         {currentTab === 'feed' && <NewsFeed feedMode={feedMode} setFeedMode={setFeedMode} transactions={safeTransactions} />}
       </div>
 
       {/* 🚀 ハイブリッド・タブバーエリア */}
       {uiMode === '2d' ? (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
-          <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={themeColor} />        
+        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
+          <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
             isActive={currentTab === 'balance'} 
             onClick={() => setCurrentTab('balance')} 
-            themeColor={themeColor} 
+            themeColor={activeThemeColor} 
             onPointerDown={(e) => handleStartHold(e, '残高')}
             onPointerUp={handleEndHold}
             onPointerLeave={handleEndHold}
           />
           <BottomTab 
             icon="📅" label="暦" 
+            icon="暦" label="暦" 
             isActive={currentTab === 'calendar'} 
             onClick={() => setCurrentTab('calendar')} 
-            themeColor={themeColor} 
+            themeColor={activeThemeColor} 
             onPointerDown={(e) => handleStartHold(e, 'カレンダー')}
             onPointerUp={handleEndHold}
             onPointerLeave={handleEndHold}
           />
-          <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} themeColor={themeColor} />
-          {/* 🌟 情報タブに handleFeedTabClick を割り当て */}
-          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={handleFeedTabClick} themeColor={themeColor} />
+          <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} themeColor={activeThemeColor} />
+          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={handleFeedTabClick} themeColor={activeThemeColor} />
         </div>
       ) : (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${themeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
+        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
           <div 
             onPointerDown={handle3DPointerDown}
             onPointerMove={handle3DPointerMove}
@@ -467,6 +588,69 @@ export default function MobileApp() {
             }}
           />
           <NebulaCore3D currentTab={currentTab} setCurrentTab={setCurrentTab} uiMode={uiMode} setUiMode={setUiMode} />
+        </div>
+      )}
+
+      {/* 🌟 NFC設定モーダル（iOSショートカット設定ガイド付き） */}
+      <NfcSettingsModal 
+        isOpen={showNfcModal} 
+        onClose={() => setShowNfcModal(false)} 
+        onToast={triggerNfcToast} 
+        themeColor={activeThemeColor} 
+      />
+
+      {/* 🌟 物理NFCカードタッチ解除サイバー演出オーバーレイ */}
+      {showNfcCyberUnlock && (
+        <div 
+          onClick={() => setShowNfcCyberUnlock(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'radial-gradient(circle, rgba(0,25,12,0.96) 0%, rgba(2,6,10,0.98) 100%)',
+            zIndex: 99999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: '24px', textAlign: 'center', cursor: 'pointer',
+            boxShadow: 'inset 0 0 100px rgba(0, 255, 102, 0.3)'
+          }}
+        >
+          {/* 走査線エフェクト */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03))',
+            backgroundSize: '100% 4px, 6px 100%', pointerEvents: 'none'
+          }} />
+
+          <div style={{ border: '2px solid #00ff66', padding: '24px', borderRadius: '12px', background: 'rgba(0, 20, 10, 0.85)', maxWidth: '380px', width: '90%', boxShadow: '0 0 40px rgba(0, 255, 102, 0.4)', position: 'relative' }}>
+            <div style={{ fontSize: '11px', letterSpacing: '3px', color: '#00ff66', marginBottom: '8px', textShadow: '0 0 8px #00ff66', fontWeight: 'bold' }}>
+              [ PHYSICAL KEYCARD DETECTED ]
+            </div>
+
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#fff', letterSpacing: '2px', marginBottom: '14px', textShadow: '0 0 15px #00ff66' }}>
+              ACCESS GRANTED
+            </div>
+
+            <div style={{ background: '#050a06', border: '1px solid #00ff6644', borderRadius: '6px', padding: '12px', textAlign: 'left', fontFamily: 'monospace', fontSize: '11px', color: '#00ff66', lineHeight: '1.6', marginBottom: '14px' }}>
+              <div>&gt; NFC_SIGNATURE: VERIFIED</div>
+              <div>&gt; DECRYPTING VAULT KEY... OK</div>
+              <div>&gt; GHOST PROTOCOL: DISENGAGED</div>
+              <div style={{ color: '#fff', marginTop: '6px', fontWeight: 'bold' }}>&gt;&gt; [OK] 隠し資産・口座が解放されました</div>
+            </div>
+
+            <div style={{ fontSize: '10px', color: '#888', letterSpacing: '1px' }}>
+              [ タップで閉じる ]
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 自作トースト通知（Chrome標準alert不使用） */}
+      {nfcToast && (
+        <div style={{
+          position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+          background: '#111822', border: `1px solid ${activeThemeColor}`, color: activeThemeColor,
+          padding: '10px 18px', borderRadius: '30px', fontSize: '12px', fontWeight: 'bold',
+          boxShadow: `0 0 20px ${activeThemeColor}44`, zIndex: 100000, pointerEvents: 'none',
+          whiteSpace: 'nowrap'
+        }}>
+          {nfcToast}
         </div>
       )}
       
@@ -493,5 +677,5 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       )}
       <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
     </div>
-  );                                                               
+  );                                                         
 }

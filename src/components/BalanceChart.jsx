@@ -20,22 +20,29 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
   return { startDate, endDate };
 };
 
-export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth }) {
+export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, dbMode = 'personal', initialResetCard = null }) {
   const chartRef = useRef(null);
   
+  // モード別の保存先キー
+  const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+  const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
+  const deletedKey = dbMode === 'sync' ? 'deletedAccountsConfig_sync' : 'deletedAccountsConfig';
+  const recycledKey = dbMode === 'sync' ? 'recycledAccountsConfig_sync' : 'recycledAccountsConfig';
+  const customOrderKey = dbMode === 'sync' ? 'customOrderConfig_sync' : 'customOrderConfig';
+
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
   const [tick, setTick] = useState(0); 
 
   const [isAIPredictionActive, setIsAIPredictionActive] = useState(false);
   const [reorderMode, setReorderMode] = useState(false);
-  const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem('customOrderConfig') || '[]'));
+  const [customOrder, setCustomOrder] = useState(() => JSON.parse(localStorage.getItem(customOrderKey) || '[]'));
   
   const [localUpdate, setLocalUpdate] = useState(0);
   
-  const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem('deletedAccountsConfig') || '[]'));
+  const [deletedAccounts, setDeletedAccounts] = useState(() => JSON.parse(localStorage.getItem(deletedKey) || '[]'));
 
   const [recycledAccounts, setRecycledAccounts] = useState(() => {
-    const saved = localStorage.getItem('recycledAccountsConfig');
+    const saved = localStorage.getItem(recycledKey);
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -48,6 +55,28 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [showSuggest, setShowSuggest] = useState(false);
   const [isAddingNode, setIsAddingNode] = useState(false);
 
+  // 🌟 クレジットカード手動リセット用State
+  const [resetModalCard, setResetModalCard] = useState(initialResetCard);
+  const [resetMethod, setResetMethod] = useState('bank'); // 'bank' or 'display_only'
+  const [resetSourceBank, setResetSourceBank] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // 🌟 口座残高棚卸し（差額調整）用State
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [auditAccName, setAuditAccName] = useState('');
+  const [auditTargetBalance, setAuditTargetBalance] = useState('');
+  const [isAuditing, setIsAuditing] = useState(false);
+
+  // 🌟 自作通知トースト用State (Chrome標準alert不使用)
+  const [appToast, setAppToast] = useState({ show: false, message: '', type: 'info' });
+  const showToast = (message, type = 'info') => {
+    setAppToast({ show: true, message, type });
+    setTimeout(() => setAppToast({ show: false, message: '', type: 'info' }), 3200);
+  };
+
+  // 🌟 自作確認モーダル用State (Chrome標準confirm不使用)
+  const [confirmModal, setConfirmModal] = useState({ show: false, title: '', message: '', onConfirm: null });
+
   const [cardMode, setCardMode] = useState(() => localStorage.getItem('m402_card_mode') || 'remain');
 
   const majorBanks = ['現金', '三菱UFJ銀行', '三井住友銀行', 'みずほ銀行', 'ゆうちょ銀行', 'りそな銀行', '楽天銀行', '住信SBIネット銀行', 'PayPay銀行', 'ソニー銀行', 'イオン銀行', 'PayPay', 'au PAY', 'd払い'];
@@ -59,7 +88,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const pressTimer = useRef(null);
   const clickTimer = useRef(null);
   
-  // 🌟 追加：ステルス画面を開くためのタイトル領域用ダブルタップタイマー
+  // 🌟 タイトル領域用ダブルタップタイマー
   const headerClickTimer = useRef(null);
 
   const dragData = useRef({ active: false, startY: 0, currentIndex: -1 });
@@ -80,6 +109,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const [editBudget, setEditBudget] = useState('');
   const [editResetDay, setEditResetDay] = useState('1');
   const [editPayDay, setEditPayDay] = useState('27');
+  const [editWithdrawalSource, setEditWithdrawalSource] = useState('');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -93,14 +123,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         const ONE_HOUR = 3600000;
         const valid = prev.filter(item => (Date.now() - item.deletedAt) < ONE_HOUR);
         if (valid.length !== prev.length) {
-          localStorage.setItem('recycledAccountsConfig', JSON.stringify(valid));
+          localStorage.setItem(recycledKey, JSON.stringify(valid));
           return valid;
         }
         return prev;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [recycledKey]);
 
   useEffect(() => {
     const handleGlobalClick = () => setSwipedAcc(null);
@@ -116,7 +146,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const systemData = useMemo(() => {
     const now = new Date(); 
-    const creditSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+    const creditSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
     const cardData = {};
     Object.keys(creditSettings).forEach(name => {
       if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
@@ -124,6 +154,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         budget: Number(creditSettings[name].budget) || 0,
         resetDay: Number(creditSettings[name].resetDay) || 1,
         paymentDay: Number(creditSettings[name].paymentDay) || 27,
+        withdrawalSource: creditSettings[name].withdrawalSource || '',
+        lastResetDate: creditSettings[name].lastResetDate || null,
         used: 0, usageCount: 0 
       };
     });
@@ -172,7 +204,12 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       if (cardData[method]) {
         cardData[method].usageCount = usageCounts[method] || 0;
         const bounds = getCycleBounds(cardData[method].resetDay, now);
-        if (txDate >= bounds.startDate && txDate <= bounds.endDate) {
+        
+        // 🌟 最終リセット日がある場合、それ以降の支出のみを集計（リセット機能の核）
+        const lastReset = cardData[method].lastResetDate ? new Date(cardData[method].lastResetDate) : null;
+        const isAfterReset = !lastReset || txDate > lastReset;
+
+        if (txDate >= bounds.startDate && txDate <= bounds.endDate && isAfterReset) {
           cardData[method].used += Number(tx.amount) || 0;
         }
       }
@@ -337,7 +374,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     if (!newCustomOrder.includes(itemB)) newCustomOrder.push(itemB);
     const idxA = newCustomOrder.indexOf(itemA); const idxB = newCustomOrder.indexOf(itemB);
     newCustomOrder[idxA] = itemB; newCustomOrder[idxB] = itemA;
-    setCustomOrder(newCustomOrder); localStorage.setItem('customOrderConfig', JSON.stringify(newCustomOrder));
+    setCustomOrder(newCustomOrder); localStorage.setItem(customOrderKey, JSON.stringify(newCustomOrder));
   };
 
   const handleTouchMove = (e, array, itemName) => {
@@ -374,7 +411,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const handleDragEnd = () => { dragData.current.active = false; dragData.current.currentIndex = -1; setDragOffset(0); };
 
   const openNodeManager = () => {
-    const accs = JSON.parse(localStorage.getItem('m402_accounts') || '[]');
+    const accs = JSON.parse(localStorage.getItem(accKey) || '[]');
     setM402Accounts(accs);
     setNewNodeName('');
     setNewInitBalance('');
@@ -386,7 +423,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     setIsAddingNode(true);
     
     try {
-      let currentAccs = JSON.parse(localStorage.getItem('m402_accounts') || '[]');
+      let currentAccs = JSON.parse(localStorage.getItem(accKey) || '[]');
       const cleanNewName = newNodeName.trim();
       const exists = currentAccs.some(a => (a.includes(' ') ? a.split(' ')[1] : a) === cleanNewName);
       
@@ -397,7 +434,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         };
         const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
         currentAccs.push(`${icon} ${cleanNewName}`);
-        localStorage.setItem('m402_accounts', JSON.stringify(currentAccs));
+        localStorage.setItem(accKey, JSON.stringify(currentAccs));
         setM402Accounts(currentAccs);
       }
 
@@ -414,15 +451,15 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
           createdAt: Timestamp.now()
         };
         await addDoc(collection(db, "transactions"), txData);
-        alert(`⚡ [${cleanNewName}] をシステムに接続し、初期資金 ¥${bal.toLocaleString()} を注入しました！`);
+        showToast(`[${cleanNewName}] を接続し、初期残高 ¥${bal.toLocaleString()} を設定しました`, 'success');
       } else {
-         alert(`⚡ [${cleanNewName}] をシステムに接続しました！`);
+        showToast(`[${cleanNewName}] を接続しました`, 'success');
       }
 
       if (deletedAccounts.includes(cleanNewName)) {
          const newDeleted = deletedAccounts.filter(a => a !== cleanNewName);
          setDeletedAccounts(newDeleted);
-         localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+         localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
       }
 
       setNewNodeName('');
@@ -430,7 +467,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       setLocalUpdate(prev => prev + 1);
     } catch(e) {
       console.error(e);
-      alert("エラーが発生しました。");
+      showToast("エラーが発生しました", "error");
     } finally {
       setIsAddingNode(false);
     }
@@ -438,18 +475,24 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const handleManagerDeleteNode = (rawAccName) => {
     const cleanName = rawAccName.includes(' ') ? rawAccName.split(' ')[1] : rawAccName;
-    if (window.confirm(`⚠️ [${cleanName}] をシステムから切断（削除・非表示）しますか？\n（※過去の取引履歴は消えません）`)) {
-      const updatedAccs = m402Accounts.filter(a => a !== rawAccName);
-      setM402Accounts(updatedAccs);
-      localStorage.setItem('m402_accounts', JSON.stringify(updatedAccs));
+    setConfirmModal({
+      show: true,
+      title: 'ノード切断の確認',
+      message: `[${cleanName}] を切断（非表示）にしますか？\n※過去の取引履歴は保持されます。`,
+      onConfirm: () => {
+        const updatedAccs = m402Accounts.filter(a => a !== rawAccName);
+        setM402Accounts(updatedAccs);
+        localStorage.setItem(accKey, JSON.stringify(updatedAccs));
 
-      if (!deletedAccounts.includes(cleanName)) {
-        const newDeleted = [...deletedAccounts, cleanName];
-        setDeletedAccounts(newDeleted);
-        localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+        if (!deletedAccounts.includes(cleanName)) {
+          const newDeleted = [...deletedAccounts, cleanName];
+          setDeletedAccounts(newDeleted);
+          localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+        }
+        setLocalUpdate(prev => prev + 1);
+        showToast(`[${cleanName}] を切断しました`, 'info');
       }
-      setLocalUpdate(prev => prev + 1);
-    }
+    });
   };
 
   const getOneMonthHistory = (accName) => {
@@ -523,8 +566,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       setEditBudget(item.budget.toString());
       setEditResetDay(item.resetDay.toString());
       setEditPayDay(item.paymentDay.toString());
+      setEditWithdrawalSource(item.withdrawalSource || '');
     } else {
-      setEditBudget(''); setEditResetDay('1'); setEditPayDay('27');
+      setEditBudget(''); setEditResetDay('1'); setEditPayDay('27'); setEditWithdrawalSource('');
     }
   };
 
@@ -533,90 +577,246 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const itemName = typeof item === 'string' ? item : item.name;
     const itemType = typeof item === 'object' ? item.type : 'bank';
 
-    if (window.confirm(`⚠️ [${itemName}] を非表示にしますか？\n（1時間以内なら右上のリストから完全復元できます）`)) {
-      setSwipedAcc(null);
-      
-      const newDeleted = [...deletedAccounts, itemName];
-      setDeletedAccounts(newDeleted);
-      localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
-      
-      const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
-      const savedConfig = currentSettings[itemName] || null;
+    setConfirmModal({
+      show: true,
+      title: '口座の非表示',
+      message: `[${itemName}] を非表示にしますか？\n（1時間以内なら右上の「復元」から完全復元できます）`,
+      onConfirm: () => {
+        setSwipedAcc(null);
+        
+        const newDeleted = [...deletedAccounts, itemName];
+        setDeletedAccounts(newDeleted);
+        localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+        
+        const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+        const savedConfig = currentSettings[itemName] || null;
 
-      const newRecycledItem = {
-        name: itemName,
-        type: itemType,
-        deletedAt: Date.now(),
-        config: savedConfig
-      };
-      
-      const newRecycledList = [newRecycledItem, ...recycledAccounts.filter(r => r.name !== itemName)];
-      setRecycledAccounts(newRecycledList);
-      localStorage.setItem('recycledAccountsConfig', JSON.stringify(newRecycledList));
+        const newRecycledItem = {
+          name: itemName,
+          type: itemType,
+          deletedAt: Date.now(),
+          config: savedConfig
+        };
+        
+        const newRecycledList = [newRecycledItem, ...recycledAccounts.filter(r => r.name !== itemName)];
+        setRecycledAccounts(newRecycledList);
+        localStorage.setItem(recycledKey, JSON.stringify(newRecycledList));
 
-      setLocalUpdate(prev => prev + 1);
-      if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
-    }
+        setLocalUpdate(prev => prev + 1);
+        if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+        showToast(`[${itemName}] を一時退避しました`, 'info');
+      }
+    });
   };
 
   const restoreAccount = (item) => {
     const itemName = item.name;
     const newDeleted = deletedAccounts.filter(a => a !== itemName);
     setDeletedAccounts(newDeleted);
-    localStorage.setItem('deletedAccountsConfig', JSON.stringify(newDeleted));
+    localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
 
     if (item.config) {
-      const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+      const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
       currentSettings[itemName] = item.config;
-      localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
     }
 
     const newRecycled = recycledAccounts.filter(r => r.name !== itemName);
     setRecycledAccounts(newRecycled);
-    localStorage.setItem('recycledAccountsConfig', JSON.stringify(newRecycled));
+    localStorage.setItem(recycledKey, JSON.stringify(newRecycled));
 
     setLocalUpdate(prev => prev + 1);
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    alert(`⚡ [${itemName}] を完全復元しました！`);
+    showToast(`[${itemName}] を復元しました`, 'success');
   };
 
   const restoreAllAccounts = () => {
-    if (window.confirm("非表示になっている全口座（PayPay等含む）をすべて画面に再表示しますか？")) {
-      setDeletedAccounts([]);
-      setRecycledAccounts([]);
-      localStorage.removeItem('deletedAccountsConfig');
-      localStorage.removeItem('recycledAccountsConfig');
-      setLocalUpdate(prev => prev + 1);
-      alert("✅ PayPayを含むすべての口座を正常に再表示しました！");
-    }
+    setConfirmModal({
+      show: true,
+      title: '全口座の強制再表示',
+      message: '非表示になっている全口座（PayPay等含む）をすべて再表示しますか？',
+      onConfirm: () => {
+        setDeletedAccounts([]);
+        setRecycledAccounts([]);
+        localStorage.removeItem(deletedKey);
+        localStorage.removeItem(recycledKey);
+        setLocalUpdate(prev => prev + 1);
+        showToast('全口座を再表示しました', 'success');
+      }
+    });
   };
 
   const saveEdit = () => {
-    const currentSettings = JSON.parse(localStorage.getItem('creditCardSettings') || '{}');
+    const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
     if (editType === 'card') {
+      const existing = currentSettings[editingAcc] || {};
       currentSettings[editingAcc] = {
+        ...existing,
         budget: Number(editBudget) || 0,
         resetDay: Number(editResetDay) || 1,
-        paymentDay: Number(editPayDay) || 27
+        paymentDay: Number(editPayDay) || 27,
+        withdrawalSource: editWithdrawalSource || ''
       };
     } else {
       delete currentSettings[editingAcc];
     }
-    localStorage.setItem('creditCardSettings', JSON.stringify(currentSettings));
+    localStorage.setItem(cardKey, JSON.stringify(currentSettings));
     setEditingAcc(null);
     setLocalUpdate(prev => prev + 1); 
+    showToast(`[${editingAcc}] の設定を保存しました`, 'success');
+  };
+
+  // 🌟 クレジットカード利用額リセットモーダルを開く
+  const handleOpenResetModal = (item) => {
+    setResetModalCard(item);
+    setResetMethod('bank');
+    // 引き落とし元の初期設定
+    setResetSourceBank(item.withdrawalSource || '三井住友銀行');
+    setSwipedAcc(null);
+  };
+
+  // 🌟 クレジットカード手動リセットの実行
+  const executeCardReset = async () => {
+    if (!resetModalCard) return;
+    setIsResetting(true);
+    try {
+      const cardName = resetModalCard.name;
+      const usedAmount = resetModalCard.used || 0;
+
+      // 銀行引き落とし連動の場合、振替トランザクションを作成
+      if (resetMethod === 'bank' && usedAmount > 0 && resetSourceBank && auth.currentUser) {
+        const txData = {
+          userId: auth.currentUser.uid,
+          type: 'transfer',
+          amount: usedAmount,
+          paymentMethod: resetSourceBank,
+          category: cardName,
+          memo: `カード利用額精算 (${cardName})`,
+          date: Timestamp.now(),
+          createdAt: Timestamp.now(),
+          mode: dbMode === 'sync' ? 'sync' : 'personal'
+        };
+        await addDoc(collection(db, "transactions"), txData);
+      }
+
+      // カード設定に lastResetDate を記録（直前の利用分はリセットされる）
+      const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+      if (!currentSettings[cardName]) {
+        currentSettings[cardName] = {
+          budget: resetModalCard.budget || 0,
+          resetDay: resetModalCard.resetDay || 1,
+          paymentDay: resetModalCard.paymentDay || 27,
+          withdrawalSource: resetSourceBank
+        };
+      }
+      currentSettings[cardName].lastResetDate = new Date().toISOString();
+      if (resetSourceBank) {
+        currentSettings[cardName].withdrawalSource = resetSourceBank;
+      }
+      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+
+      setResetModalCard(null);
+      setLocalUpdate(prev => prev + 1);
+      if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
+      showToast(
+        resetMethod === 'bank' && usedAmount > 0
+          ? `[${resetSourceBank}] から ¥${usedAmount.toLocaleString()} を引き落とし、[${cardName}] を精算リセットしました`
+          : `[${cardName}] の利用額表示をリセットしました`,
+        'success'
+      );
+    } catch (e) {
+      console.error(e);
+      showToast("リセット処理中にエラーが発生しました", "error");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  // 🌟 直前のリセットを取り消す（UNDO）
+  const handleUndoReset = (cardName) => {
+    const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+    if (currentSettings[cardName]) {
+      delete currentSettings[cardName].lastResetDate;
+      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+      setLocalUpdate(prev => prev + 1);
+      showToast(`[${cardName}] のリセットを取り消しました`, 'info');
+    }
+  };
+
+  // 🌟 口座残高棚卸し（差額調整）モーダルを開く
+  const openAuditModal = (accName) => {
+    const bankItem = systemData.combined.find(i => i.name === accName && i.type === 'bank');
+    const currentBal = bankItem ? bankItem.balance : 0;
+    setAuditAccName(accName);
+    setAuditTargetBalance(currentBal.toString());
+    setIsAuditModalOpen(true);
+  };
+
+  // 🌟 口座残高棚卸し（差額調整）の実行
+  const executeBalanceAudit = async () => {
+    const target = Number(auditTargetBalance);
+    if (isNaN(target) || !auditAccName || !auth.currentUser) {
+      showToast("正しい金額を入力してください", "error");
+      return;
+    }
+    const bankItem = systemData.combined.find(i => i.name === auditAccName && i.type === 'bank');
+    const currentBal = bankItem ? bankItem.balance : 0;
+    const diff = target - currentBal;
+
+    if (diff === 0) {
+      showToast("残高に差額はありません", "info");
+      setIsAuditModalOpen(false);
+      return;
+    }
+
+    setIsAuditing(true);
+    try {
+      const isIncrease = diff > 0;
+      const txData = {
+        userId: auth.currentUser.uid,
+        type: isIncrease ? 'income' : 'expense',
+        amount: Math.abs(diff),
+        category: '残高調整(棚卸し)',
+        paymentMethod: auditAccName,
+        memo: `実残高との一致調整 (差額: ${diff > 0 ? '+' : ''}¥${diff.toLocaleString()})`,
+        date: Timestamp.now(),
+        createdAt: Timestamp.now(),
+        mode: dbMode === 'sync' ? 'sync' : 'personal'
+      };
+      await addDoc(collection(db, "transactions"), txData);
+      setIsAuditModalOpen(false);
+      setLocalUpdate(prev => prev + 1);
+      if (navigator.vibrate) navigator.vibrate([50, 100]);
+      showToast(`[${auditAccName}] の残高を ¥${target.toLocaleString()} に調整しました`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast("残高調整中にエラーが発生しました", "error");
+    } finally {
+      setIsAuditing(false);
+    }
   };
 
   const executeTransfer = async () => {
     const numAmount = Number(transferAmount);
-    if (!transferAmount || isNaN(numAmount) || numAmount <= 0) { alert("⚠️ 正しい金額を入力してください"); return; }
+    if (!transferAmount || isNaN(numAmount) || numAmount <= 0) { showToast("正しい金額を入力してください", "error"); return; }
     setIsTransferring(true);
     try {
-      const txData = { userId: auth.currentUser.uid, type: 'transfer', amount: numAmount, paymentMethod: routingSource, category: routingTarget, memo: 'システム・ルーティング (UI)', date: Timestamp.now(), createdAt: Timestamp.now() };
+      const txData = { 
+        userId: auth.currentUser.uid, 
+        type: 'transfer', 
+        amount: numAmount, 
+        paymentMethod: routingSource, 
+        category: routingTarget, 
+        memo: 'システム・ルーティング (UI)', 
+        date: Timestamp.now(), 
+        createdAt: Timestamp.now(),
+        mode: dbMode === 'sync' ? 'sync' : 'personal'
+      };
       await addDoc(collection(db, "transactions"), txData);
       setRoutingSource(null); setRoutingTarget(null); setTransferAmount(''); setRoutingMode(false);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    } catch (e) { alert("❌ 通信エラーが発生しました"); console.error(e); } 
+      showToast(`[${routingSource}] から [${routingTarget}] へ ¥${numAmount.toLocaleString()} を振替しました`, 'success');
+    } catch (e) { showToast("通信エラーが発生しました", "error"); console.error(e); } 
     finally { setIsTransferring(false); }
   };
 
@@ -633,17 +833,63 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   return (
     <div style={containerStyle} onContextMenu={(e) => e.preventDefault()}>
       
+      {/* 🌟 自作確認モーダル (Chrome標準confirm不使用) */}
+      {confirmModal.show && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 999999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #ff3366', borderRadius: '12px', width: '90%', maxWidth: '360px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(255,51,102,0.3)' }}>
+            <h3 style={{ margin: 0, color: '#ff3366', fontSize: '16px', fontFamily: 'monospace' }}>
+              [確認] {confirmModal.title}
+            </h3>
+            <div style={{ fontSize: '13px', color: '#ccc', whiteSpace: 'pre-line', lineHeight: '1.5' }}>
+              {confirmModal.message}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button 
+                onClick={() => setConfirmModal({ show: false, title: '', message: '', onConfirm: null })}
+                style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={() => {
+                  if (confirmModal.onConfirm) confirmModal.onConfirm();
+                  setConfirmModal({ show: false, title: '', message: '', onConfirm: null });
+                }}
+                style={{ flex: 1, padding: '12px', background: '#ff3366', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 0 15px rgba(255,51,102,0.4)' }}
+              >
+                実行する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 自作通知トースト (Chrome標準alert不使用) */}
+      {appToast.show && (
+        <div style={{
+          position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+          background: appToast.type === 'error' ? '#2b0a10' : (appToast.type === 'success' ? '#0a2b16' : '#0a1d2b'),
+          border: `1px solid ${appToast.type === 'error' ? '#ff3366' : (appToast.type === 'success' ? '#00ff66' : '#00bfff')}`,
+          color: appToast.type === 'error' ? '#ff3366' : (appToast.type === 'success' ? '#00ff66' : '#00bfff'),
+          padding: '12px 24px', borderRadius: '30px', fontSize: '13px', fontWeight: 'bold',
+          boxShadow: '0 5px 25px rgba(0,0,0,0.6)', zIndex: 9999999, pointerEvents: 'none',
+          animation: 'fadeInDown 0.3s ease-out', maxWidth: '90%', textAlign: 'center'
+        }}>
+          {appToast.message}
+        </div>
+      )}
+
       {isRecycleModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '380px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0,255,102,0.3)', maxHeight: '80vh' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
-                ♻️ 復元センター (RECOVERY BIN)
+              <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', fontFamily: 'monospace' }}>
+                [復元] RECOVERY BIN
               </h3>
               <button onClick={() => setIsRecycleModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ fontSize: '11px', color: '#aaa' }}>
-              💡 削除から1時間以内であれば、設定とデータを元の状態に完全復元できます。
+              ※削除から1時間以内であれば、設定とデータを元の状態に完全復元できます。
             </div>
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px' }}>
               {recycledAccounts.length === 0 ? (
@@ -656,11 +902,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                     <div>
                       <div style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>{item.name}</div>
                       <div style={{ color: '#ff3366', fontSize: '10px', fontFamily: 'monospace', marginTop: '3px' }}>
-                        ⏳ 抹消まであと {getRemainingTimeStr(item.deletedAt)}
+                        抹消まであと {getRemainingTimeStr(item.deletedAt)}
                       </div>
                     </div>
                     <button onClick={() => restoreAccount(item)} style={{ background: '#00ff66', color: '#000', border: 'none', padding: '8px 12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 0 10px rgba(0,255,102,0.3)' }}>
-                      ⚡ 復元
+                      復元
                     </button>
                   </div>
                 ))
@@ -668,7 +914,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             </div>
             <div style={{ borderTop: '1px solid #222', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button onClick={restoreAllAccounts} style={{ width: '100%', padding: '10px', background: 'rgba(0,191,255,0.1)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-                🔓 PayPay等、非表示の全口座を強制再表示
+                非表示の全口座を強制再表示
               </button>
               <button onClick={() => setIsRecycleModalOpen(false)} style={{ width: '100%', padding: '10px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px' }}>閉じる</button>
             </div>
@@ -681,14 +927,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '420px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0,191,255,0.3)', maxHeight: '90vh' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
-                🏦 SYSTEM NODE MANAGER
+              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', fontFamily: 'monospace' }}>
+                [管理] 口座管理マネージャー
               </h3>
               <button onClick={() => setIsNodeManagerOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
 
             <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px dashed #00bfff' }}>
-              <div style={{ fontSize: '12px', color: '#00bfff', marginBottom: '10px', fontWeight: 'bold' }}>[+] 新規ノードの接続 (追加)</div>
+              <div style={{ fontSize: '12px', color: '#00bfff', marginBottom: '10px', fontWeight: 'bold' }}>[+] 新規口座の接続 (追加)</div>
               
               <div style={{ position: 'relative', marginBottom: '10px' }}>
                 <input
@@ -733,32 +979,41 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                   disabled={isAddingNode}
                   style={{ flex: 1, background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 0 10px rgba(0,191,255,0.3)' }}
                 >
-                  {isAddingNode ? '...' : 'ADD ⚡'}
+                  {isAddingNode ? '...' : '追加'}
                 </button>
               </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', minHeight: '150px' }}>
-              <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px', fontWeight: 'bold' }}>[-] 接続済みノード (切断・削除)</div>
+              <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px', fontWeight: 'bold' }}>[-] 接続済み口座 (切断・削除)</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {m402Accounts.length === 0 ? (
                   <div style={{ color: '#555', textAlign: 'center', fontSize: '12px', padding: '20px 0' }}>NO NODES FOUND</div>
                 ) : (
                   m402Accounts.map(acc => {
-                    const isHidden = deletedAccounts.includes(acc.includes(' ') ? acc.split(' ')[1] : acc);
+                    const clean = acc.includes(' ') ? acc.split(' ')[1] : acc;
+                    const isHidden = deletedAccounts.includes(clean);
                     return (
                       <div key={acc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#11141a', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${isHidden ? '#ff336655' : '#252838'}`, opacity: isHidden ? 0.5 : 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#ccc' }}>
-                          {acc.startsWith('/') ? <img src={acc.split(' ')[0]} alt="" style={{ width:'16px', height:'16px' }}/> : '💽'}
-                          <span>{acc.includes(' ') ? acc.split(' ')[1] : acc}</span>
+                          {acc.startsWith('/') && <img src={acc.split(' ')[0]} alt="" style={{ width:'16px', height:'16px' }}/>}
+                          <span>{clean}</span>
                         </div>
                         {!isHidden ? (
-                          <button 
-                            onClick={() => handleManagerDeleteNode(acc)}
-                            style={{ background: 'transparent', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
-                          >
-                            🗑️ 切断
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button 
+                              onClick={() => openAuditModal(clean)}
+                              style={{ background: 'transparent', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              残高棚卸
+                            </button>
+                            <button 
+                              onClick={() => handleManagerDeleteNode(acc)}
+                              style={{ background: 'transparent', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              切断
+                            </button>
+                          </div>
                         ) : (
                           <span style={{ fontSize: '10px', color: '#ff3366' }}>切断済</span>
                         )}
@@ -780,36 +1035,238 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '340px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 30px rgba(0, 191, 255, 0.3)' }}>
             <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-              ⚙️ [{editingAcc}] 設定
+              [設定] {editingAcc}
             </h3>
             
             <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #333' }}>
-              <button onClick={() => setEditType('bank')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'bank' ? '#00bfff' : 'transparent', color: editType === 'bank' ? '#000' : '#888' }}>🏦 一般口座</button>
-              <button onClick={() => setEditType('card')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'card' ? '#ff9900' : 'transparent', color: editType === 'card' ? '#000' : '#888' }}>💳 クレジット</button>
+              <button onClick={() => setEditType('bank')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'bank' ? '#00bfff' : 'transparent', color: editType === 'bank' ? '#000' : '#888' }}>銀行口座</button>
+              <button onClick={() => setEditType('card')} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '4px', fontWeight: 'bold', background: editType === 'card' ? '#ff9900' : 'transparent', color: editType === 'card' ? '#000' : '#888' }}>クレジット</button>
             </div>
 
             {editType === 'card' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
-                  <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>予算上限 (HP)</div>
-                  <input type="number" value={editBudget} onChange={e => setEditBudget(e.target.value)} style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff9900', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', outline: 'none' }} />
+                  <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>利用上限枠 (予算)</div>
+                  <input type="number" value={editBudget} onChange={e => setEditBudget(e.target.value)} style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff9900', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>更新日</div>
-                    <input type="number" value={editResetDay} onChange={e => setEditResetDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#00ff66', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none' }} />
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>締め日</div>
+                    <input type="number" value={editResetDay} onChange={e => setEditResetDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#00ff66', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>支払日</div>
-                    <input type="number" value={editPayDay} onChange={e => setEditPayDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff3366', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none' }} />
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>支払日 (引落)</div>
+                    <input type="number" value={editPayDay} onChange={e => setEditPayDay(e.target.value)} min="1" max="31" style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#ff3366', border: '1px solid #555', borderRadius: '6px', fontSize: '16px', textAlign: 'center', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
                 </div>
+                <div>
+                  <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '5px' }}>引き落とし元銀行</div>
+                  <select 
+                    value={editWithdrawalSource} 
+                    onChange={e => setEditWithdrawalSource(e.target.value)}
+                    style={{ width: '100%', padding: '10px', background: '#1a1d24', color: '#00bfff', border: '1px solid #555', borderRadius: '6px', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                  >
+                    <option value="">未設定</option>
+                    {majorBanks.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* 🌟 直前のリセット取り消し (UNDO) ボタン */}
+                {(() => {
+                  const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+                  const hasReset = currentSettings[editingAcc]?.lastResetDate;
+                  if (hasReset) {
+                    return (
+                      <div style={{ background: '#11141a', padding: '8px', borderRadius: '6px', border: '1px dashed #555', marginTop: '5px' }}>
+                        <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>前回の精算リセット: {new Date(hasReset).toLocaleDateString()}</div>
+                        <button 
+                          onClick={() => handleUndoReset(editingAcc)}
+                          style={{ width: '100%', padding: '6px', background: 'transparent', color: '#ff9900', border: '1px solid #ff9900', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                        >
+                          前回の精算リセットを取り消す
+                        </button>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-              <button onClick={saveEdit} style={{ width: '100%', padding: '12px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '16px' }}>保存する</button>
-              <button onClick={() => setEditingAcc(null)} style={{ width: '100%', padding: '10px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold' }}>キャンセル</button>
+              <button onClick={saveEdit} style={{ width: '100%', padding: '12px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>保存する</button>
+              <button onClick={() => setEditingAcc(null)} style={{ width: '100%', padding: '10px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 クレジットカード利用額リセット・精算自作モーダル */}
+      {resetModalCard && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00ff66', borderRadius: '12px', width: '90%', maxWidth: '380px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 0 35px rgba(0,255,102,0.3)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#00ff66', fontSize: '16px', fontFamily: 'monospace' }}>
+                [精算] クレジット利用額リセット
+              </h3>
+              <button onClick={() => setResetModalCard(null)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px solid #252838' }}>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>対象カード</div>
+              <div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{resetModalCard.name}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #333' }}>
+                <span style={{ fontSize: '12px', color: '#aaa' }}>現在の利用額 (マイナス)</span>
+                <span style={{ fontSize: '20px', color: '#ff3366', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                  ¥{(resetModalCard.used || 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '12px', color: '#aaa', fontWeight: 'bold' }}>精算方法を選択してください:</div>
+              
+              <div 
+                onClick={() => setResetMethod('bank')}
+                style={{ 
+                  padding: '12px', borderRadius: '6px', cursor: 'pointer',
+                  background: resetMethod === 'bank' ? 'rgba(0,255,102,0.1)' : '#11141a',
+                  border: `1px solid ${resetMethod === 'bank' ? '#00ff66' : '#252838'}`,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="radio" checked={resetMethod === 'bank'} onChange={() => setResetMethod('bank')} />
+                  <span style={{ fontWeight: 'bold', fontSize: '13px', color: resetMethod === 'bank' ? '#00ff66' : '#fff' }}>
+                    銀行口座から引き落として精算 (推奨)
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', marginLeft: '24px', lineHeight: '1.4' }}>
+                  銀行から ¥{(resetModalCard.used || 0).toLocaleString()} を引き落とす振替記録を作成し、カードの利用額を ¥0 に戻します。
+                </div>
+                {resetMethod === 'bank' && (
+                  <div style={{ marginTop: '10px', marginLeft: '24px' }}>
+                    <div style={{ fontSize: '11px', color: '#00bfff', marginBottom: '4px' }}>引き落とし元口座:</div>
+                    <select 
+                      value={resetSourceBank} 
+                      onChange={e => setResetSourceBank(e.target.value)}
+                      style={{ width: '100%', padding: '8px', background: '#0a0c10', color: '#fff', border: '1px solid #00bfff', borderRadius: '4px', fontSize: '12px', outline: 'none' }}
+                    >
+                      {majorBanks.map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div 
+                onClick={() => setResetMethod('display_only')}
+                style={{ 
+                  padding: '12px', borderRadius: '6px', cursor: 'pointer',
+                  background: resetMethod === 'display_only' ? 'rgba(0,191,255,0.1)' : '#11141a',
+                  border: `1px solid ${resetMethod === 'display_only' ? '#00bfff' : '#252838'}`,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="radio" checked={resetMethod === 'display_only'} onChange={() => setResetMethod('display_only')} />
+                  <span style={{ fontWeight: 'bold', fontSize: '13px', color: resetMethod === 'display_only' ? '#00bfff' : '#fff' }}>
+                    表示のみリセット (記録作成なし)
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', marginLeft: '24px', lineHeight: '1.4' }}>
+                  カードの利用額を ¥0 に戻します。(銀行口座残高への影響はありません)
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+              <button 
+                onClick={() => setResetModalCard(null)} 
+                style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={executeCardReset} 
+                disabled={isResetting}
+                style={{ flex: 1, padding: '12px', background: '#00ff66', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: isResetting ? 'not-allowed' : 'pointer', boxShadow: '0 0 15px rgba(0,255,102,0.3)' }}
+              >
+                {isResetting ? '処理中...' : '精算を実行する'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 口座残高棚卸し（差額調整）自作モーダル */}
+      {isAuditModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '360px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 0 35px rgba(0,191,255,0.3)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', fontFamily: 'monospace' }}>
+                [棚卸] 口座残高の補正・調整
+              </h3>
+              <button onClick={() => setIsAuditModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px solid #252838' }}>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>対象口座</div>
+              <div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{auditAccName}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #333' }}>
+                <span style={{ fontSize: '12px', color: '#aaa' }}>現在のアプリ残高</span>
+                <span style={{ fontSize: '16px', color: '#00bfff', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                  ¥{(systemData.combined.find(i => i.name === auditAccName)?.balance || 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '12px', color: '#aaa', fontWeight: 'bold', marginBottom: '6px' }}>実際の現在残高を入力:</div>
+              <div style={{ display: 'flex', alignItems: 'center', background: '#1a1d24', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 12px' }}>
+                <span style={{ color: '#00bfff', fontSize: '18px', fontWeight: 'bold' }}>¥</span>
+                <input 
+                  type="number" 
+                  autoFocus
+                  value={auditTargetBalance} 
+                  onChange={e => setAuditTargetBalance(e.target.value)} 
+                  style={{ width: '100%', padding: '12px 8px', background: 'transparent', color: '#fff', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}
+                />
+              </div>
+              {(() => {
+                const currentBal = systemData.combined.find(i => i.name === auditAccName)?.balance || 0;
+                const target = Number(auditTargetBalance);
+                if (!isNaN(target)) {
+                  const diff = target - currentBal;
+                  return (
+                    <div style={{ fontSize: '11px', marginTop: '6px', color: diff === 0 ? '#888' : (diff > 0 ? '#00ff66' : '#ff3366'), fontFamily: 'monospace' }}>
+                      差額調整: {diff >= 0 ? `+¥${diff.toLocaleString()} (収入調整)` : `-¥${Math.abs(diff).toLocaleString()} (支出調整)`}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+              <button 
+                onClick={() => setIsAuditModalOpen(false)} 
+                style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={executeBalanceAudit} 
+                disabled={isAuditing}
+                style={{ flex: 1, padding: '12px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: isAuditing ? 'not-allowed' : 'pointer', boxShadow: '0 0 15px rgba(0,191,255,0.3)' }}
+              >
+                {isAuditing ? '調整中...' : '残高を合わせる'}
+              </button>
             </div>
           </div>
         </div>
@@ -818,11 +1275,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       {routingSource && routingTarget && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(10px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '350px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 0 40px rgba(0, 191, 255, 0.3)' }}>
-            <h3 style={{ margin: 0, color: '#00bfff', fontFamily: 'monospace', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}><span style={{ fontSize: '20px' }}>🔁</span> ROUTING INITIATED</h3>
+            <h3 style={{ margin: 0, color: '#00bfff', fontFamily: 'monospace', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>[振替] 資金ルーティング</h3>
             <div style={{ background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px dashed #555' }}>
-              <div style={{ color: '#ff3366', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>📤 出金元 (SOURCE)</div><div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{routingSource}</div>
-              <div style={{ textAlign: 'center', color: '#666', fontSize: '20px', margin: '10px 0' }}>⬇</div>
-              <div style={{ color: '#00bfff', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>📥 入金先 (TARGET)</div><div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{routingTarget}</div>
+              <div style={{ color: '#ff3366', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>出金元</div><div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{routingSource}</div>
+              <div style={{ textAlign: 'center', color: '#666', fontSize: '20px', margin: '10px 0' }}>↓</div>
+              <div style={{ color: '#00bfff', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>入金先</div><div style={{ fontSize: '16px', color: '#fff', fontWeight: 'bold' }}>{routingTarget}</div>
             </div>
             <div>
               <div style={{ color: '#aaa', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>転送金額を入力</div>
@@ -832,8 +1289,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               </div>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button onClick={() => { setRoutingTarget(null); setTransferAmount(''); }} style={{ flex: 1, padding: '15px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>CANCEL</button>
-              <button onClick={executeTransfer} disabled={isTransferring} style={{ flex: 1, padding: '15px', background: isTransferring ? '#555' : '#00bfff', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isTransferring ? 'not-allowed' : 'pointer', boxShadow: isTransferring ? 'none' : '0 0 15px rgba(0, 191, 255, 0.4)' }}>{isTransferring ? '転送中...' : 'EXECUTE'}</button>
+              <button onClick={() => { setRoutingTarget(null); setTransferAmount(''); }} style={{ flex: 1, padding: '15px', background: 'transparent', color: '#aaa', border: '1px solid #555', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
+              <button onClick={executeTransfer} disabled={isTransferring} style={{ flex: 1, padding: '15px', background: isTransferring ? '#555' : '#00bfff', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isTransferring ? 'not-allowed' : 'pointer', boxShadow: isTransferring ? 'none' : '0 0 15px rgba(0, 191, 255, 0.4)' }}>{isTransferring ? '転送中...' : '実行'}</button>
             </div>
           </div>
         </div>
@@ -933,23 +1390,23 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                 setCardMode(next);
                 localStorage.setItem('m402_card_mode', next);
               }}
-              style={{ background: '#11141a', color: cardMode === 'remain' ? '#00ff66' : '#ff3366', border: `1px solid ${cardMode === 'remain' ? '#00ff66' : '#ff3366'}`, padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: cardMode === 'remain' ? '0 0 10px rgba(0,255,102,0.1)' : '0 0 10px rgba(255,51,102,0.1)' }}
+              style={{ background: '#11141a', color: cardMode === 'remain' ? '#00ff66' : '#ff3366', border: `1px solid ${cardMode === 'remain' ? '#00ff66' : '#ff3366'}`, padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: cardMode === 'remain' ? '0 0 10px rgba(0,255,102,0.1)' : '0 0 10px rgba(255,51,102,0.1)' }}
             >
-              {cardMode === 'remain' ? '💳 枠表示' : '💳 額表示'}
+              {cardMode === 'remain' ? '枠表示' : '利用額表示'}
             </button>
 
             <button 
               onClick={(e) => { e.stopPropagation(); openNodeManager(); }}
-              style={{ background: '#0a0c10', color: '#00bfff', border: '1px solid #00bfff', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 0 10px rgba(0,191,255,0.2)' }}
+              style={{ background: '#0a0c10', color: '#00bfff', border: '1px solid #00bfff', padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 0 10px rgba(0,191,255,0.2)' }}
             >
-              <span>🏦</span> 口座管理
+              口座管理
             </button>
 
             <button 
               onClick={(e) => { e.stopPropagation(); setIsRecycleModalOpen(true); }}
-              style={{ background: recycledAccounts.length > 0 ? '#00ff6622' : '#1a1d24', color: recycledAccounts.length > 0 ? '#00ff66' : '#888', border: `1px solid ${recycledAccounts.length > 0 ? '#00ff66' : '#333'}`, padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: recycledAccounts.length > 0 ? '0 0 10px rgba(0,255,102,0.2)' : 'none' }}
+              style={{ background: recycledAccounts.length > 0 ? '#00ff6622' : '#1a1d24', color: recycledAccounts.length > 0 ? '#00ff66' : '#888', border: `1px solid ${recycledAccounts.length > 0 ? '#00ff66' : '#333'}`, padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: recycledAccounts.length > 0 ? '0 0 10px rgba(0,255,102,0.2)' : 'none' }}
             >
-              <span>♻️</span> 復元 ({recycledAccounts.length})
+              復元 ({recycledAccounts.length})
             </button>
             <span style={{ fontSize: '11px', color: '#00bfff', fontFamily: 'monospace', pointerEvents: 'none' }}>TOTAL: ¥{visibleTotalBank.toLocaleString()}</span>
           </div>
@@ -988,12 +1445,34 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             return (
               <div key={item.name} style={{ position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
                 
+                {/* 🌟 スワイプアクションボタン（文字化 & 精算/棚卸しボタン追加） */}
                 <div style={{ position: 'absolute', top: 0, right: 0, height: '100%', display: 'flex', zIndex: 0 }}>
-                  <button onClick={(e) => openEditFromSwipe(e, item)} style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    <span>⚙️</span>
+                  {isCard ? (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleOpenResetModal(item); }} 
+                      style={{ background: '#00ff66', color: '#000', border: 'none', padding: '0 10px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      精算
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); openAuditModal(item.name); }} 
+                      style={{ background: '#00bfff', color: '#000', border: 'none', padding: '0 10px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      棚卸
+                    </button>
+                  )}
+                  <button 
+                    onClick={(e) => openEditFromSwipe(e, item)} 
+                    style={{ background: '#333', color: '#fff', border: 'none', padding: '0 10px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    設定
                   </button>
-                  <button onClick={(e) => deleteFromSwipe(e, item)} style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    <span>🗑️</span>
+                  <button 
+                    onClick={(e) => deleteFromSwipe(e, item)} 
+                    style={{ background: '#ff3366', color: '#fff', border: 'none', padding: '0 10px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    削除
                   </button>
                 </div>
 
@@ -1005,11 +1484,17 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                      onTouchMove={(e) => handleTouchMove(e, systemData.combined, item.name)} 
                      onTouchEnd={handleDragEnd}
                      onClick={(e) => handleCartridgeClick(e, item.name)}
-                     style={{ background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, borderRadius: '6px', padding: '15px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '85px', cursor: 'pointer', touchAction: reorderMode ? 'none' : 'pan-y', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-80px)' : 'translateX(0)'), zIndex: isDragging ? 100 : 1, boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s', opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1 }}>
+                     style={{ background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, borderRadius: '6px', padding: '15px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '85px', cursor: 'pointer', touchAction: reorderMode ? 'none' : 'pan-y', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-120px)' : 'translateX(0)'), zIndex: isDragging ? 100 : 1, boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s', opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1 }}>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {iconMap[item.name] ? <img src={iconMap[item.name]} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} /> : <span>{isCard ? '💳' : '💽'}</span>}
+                      {iconMap[item.name] ? (
+                        <img src={iconMap[item.name]} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} />
+                      ) : (
+                        <span style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '3px', background: isCard ? 'rgba(255,153,0,0.2)' : 'rgba(0,191,255,0.2)', color: isCard ? '#ff9900' : '#00bfff', fontFamily: 'monospace' }}>
+                          {isCard ? 'CRD' : 'BNK'}
+                        </span>
+                      )}
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                     </span>    
                     <span style={{ color: '#666', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
@@ -1036,6 +1521,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         .shake { animation: tilt-shaking 0.5s infinite; border-color: #ff9900 !important; }
         @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
         @keyframes tilt-shaking { 0% { transform: rotate(0deg); } 25% { transform: rotate(0.5deg); } 50% { transform: rotate(0deg); } 75% { transform: rotate(-0.5deg); } 100% { transform: rotate(0deg); } }
+        @keyframes fadeInDown { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
       `}</style>
     </div>
   );
