@@ -132,20 +132,25 @@ export default function MobileInputForm({ dbMode = 'personal', familyId = null, 
     setIncomeCategories(newIncCats);
     setAccounts(newAccs);
 
-    // リストが切り替わったら、選択状態も新しいリストの一番上に合わせる
+    // リストが切り替わったら、選択状態も新しいリストの一番上に合わせる（initialAccountがある場合は優先）
     setCategory(type === 'expense' ? newExpCats[0] : newIncCats[0]);
-    setPaymentMethod(newAccs[0] || '');
+    if (initialAccount) {
+      const matched = newAccs.find(acc => acc.includes(initialAccount));
+      setPaymentMethod(matched || initialAccount);
+    } else {
+      setPaymentMethod(newAccs[0] || '');
+    }
     setNewRecCategory(newExpCats[0] || '');
     setNewRecPaymentMethod(newAccs[0] || '');
   }, [dbMode, type]);
 
   // 🌟 NFCタッチ等で initialAccount が渡された場合の自動セット＆テンキー自動オープン
   useEffect(() => {
-    if (initialAccount && accounts.length > 0) {
+    if (initialAccount) {
       setType('expense');
-      const matched = accounts.find(acc => acc.includes(initialAccount));
-      if (matched) {
-        setPaymentMethod(matched);
+      if (accounts.length > 0) {
+        const matched = accounts.find(acc => acc.includes(initialAccount));
+        setPaymentMethod(matched || initialAccount);
       } else {
         setPaymentMethod(initialAccount);
       }

@@ -106,11 +106,26 @@ export default function MobileApp() {
     
     // ③ スマートリング即時決済入力
     if (actionStr.includes('quick_input')) {
-      const parts = actionStr.split(':');
-      const account = parts.length > 1 ? parts[parts.length - 1].trim() : 'EVERING';
+      let account = 'EVERING';
+      if (actionStr.includes('account=')) {
+        const match = actionStr.match(/account=([^&]+)/);
+        if (match && match[1]) account = decodeURIComponent(match[1]);
+      } else {
+        const parts = actionStr.split(':');
+        if (parts.length > 1) account = parts[parts.length - 1].trim();
+      }
       setCurrentTab('input');
       setNfcAccount(account || 'EVERING');
       setNfcAutoKeypad(true);
+      return true;
+    }
+
+    // ②-2 クレジットカード精算（URL形式対応）
+    if (actionStr.includes('reset_credit') && actionStr.includes('card=')) {
+      const match = actionStr.match(/card=([^&]+)/);
+      const card = match && match[1] ? decodeURIComponent(match[1]) : 'リクルートカード';
+      setCurrentTab('balance');
+      setPendingResetCard(card);
       return true;
     }
     
@@ -122,7 +137,7 @@ export default function MobileApp() {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {
         const text = await navigator.clipboard.readText();
-        if (text && (text.startsWith('nfc:') || text.startsWith('action:'))) {
+        if (text && (text.startsWith('nfc:') || text.startsWith('action:') || text.includes('action='))) {
           const executed = executeNfcAction(text);
           if (executed) {
             // 実行後はクリップボードをクリアして重複起動を防止
@@ -152,18 +167,37 @@ export default function MobileApp() {
       }
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
-      // URLパラメータがない場合はクリップボードをチェック
-      checkClipboardForNfc();
+      // URLパラメータがない場合はクリップボードをチェック（PWA起動のタイミングを考慮して少し遅延）
+      setTimeout(checkClipboardForNfc, 400);
     }
 
-    // 2. ショートカットで「Appを開く」された復帰時の検知
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkClipboardForNfc();
-      }
+    // 2. ショートカットで復帰・フォーカスされた時の検知
+    const handleCheck = () => {
+      setTimeout(checkClipboardForNfc, 250);
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+    window.addEventListener('focus', handleCheck);
+    
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') handleCheck();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // 初回タップ時にも念のためチェック
+    const handleFirstTouch = () => {
+      checkClipboardForNfc();
+      window.removeEventListener('touchstart', handleFirstTouch);
+      window.removeEventListener('click', handleFirstTouch);
+    };
+    window.addEventListener('touchstart', handleFirstTouch, { passive: true });
+    window.addEventListener('click', handleFirstTouch, { passive: true });
+
+    return () => {
+      window.removeEventListener('focus', handleCheck);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('touchstart', handleFirstTouch);
+      window.removeEventListener('click', handleFirstTouch);
+    };
   }, []);
 
   const triggerNfcToast = (msg) => {
@@ -578,6 +612,7 @@ export default function MobileApp() {
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
+            key={`${nfcAccount || ''}-${nfcAutoKeypad}`}
             dbMode={dbMode} 
             familyId={familyId} 
             initialAccount={nfcAccount} 
