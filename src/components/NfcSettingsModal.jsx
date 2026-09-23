@@ -3,53 +3,52 @@ import React, { useState } from 'react';
 /**
  * NFC設定モーダル（iOSショートカット / 物理カード / スマートリング連携用）
  * 絵文字は使わずテキストで統一、Chrome標準ダイアログは不使用
+ * 「Appを開く方式（推奨・誤爆ゼロ）」と「URLを開く方式（ブラウザ）」の両方に対応
  */
 export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor = '#00ff66' }) {
   const [selectedCard, setSelectedCard] = useState('リクルートカード');
   const [customCard, setCustomCard] = useState('');
   const [selectedAccount, setSelectedAccount] = useState('EVERING');
   const [customAccount, setCustomAccount] = useState('');
-  const [usePwaMode, setUsePwaMode] = useState(true); // true: webapp:// (ホーム画面PWA起動), false: https://
+  
+  // モード: 'app' (Appを開く・推奨方式), 'browser' (ブラウザURL方式)
+  const [launchMode, setLaunchMode] = useState('app');
 
   if (!isOpen) return null;
 
   const origin = window.location.origin;
-
   const targetCard = customCard.trim() || selectedCard;
   const targetAccount = customAccount.trim() || selectedAccount;
 
-  // 生成URL
-  const ghostUnlockUrl = `${origin}/?action=unlock_ghost`;
-  const creditResetUrl = `${origin}/?action=reset_credit&card=${encodeURIComponent(targetCard)}`;
-  const quickInputUrl = `${origin}/?action=quick_input&account=${encodeURIComponent(targetAccount)}`;
-  // 生成URL（usePwaModeがONの場合は webapp:// スキームでホーム画面アプリを直接呼出）
-  const getUrl = (pathWithQuery) => {
-    const fullUrl = `${origin}${pathWithQuery}`;
-    if (usePwaMode) {
-      return fullUrl.replace(/^https?:\/\//, 'webapp://');
-    }
-    return fullUrl;
-  };
+  // ① Appを開く方式用のアクションコード（クリップボード連携）
+  const ghostCode = 'nfc:unlock_ghost';
+  const creditCode = `nfc:reset_credit:${targetCard}`;
+  const quickInputCode = `nfc:quick_input:${targetAccount}`;
 
-  const ghostUnlockUrl = getUrl('/?action=unlock_ghost');
-  const creditResetUrl = getUrl(`/?action=reset_credit&card=${encodeURIComponent(targetCard)}`);
-  const quickInputUrl = getUrl(`/?action=quick_input&account=${encodeURIComponent(targetAccount)}`);
+  // ② 通常ブラウザ用URL
+  const ghostBrowserUrl = `${origin}/?action=unlock_ghost`;
+  const creditBrowserUrl = `${origin}/?action=reset_credit&card=${encodeURIComponent(targetCard)}`;
+  const quickInputBrowserUrl = `${origin}/?action=quick_input&account=${encodeURIComponent(targetAccount)}`;
 
-  const handleCopy = (url, label) => {
+  // 現在のモードに応じた値
+  const ghostVal = launchMode === 'app' ? ghostCode : ghostBrowserUrl;
+  const creditVal = launchMode === 'app' ? creditCode : creditBrowserUrl;
+  const quickInputVal = launchMode === 'app' ? quickInputCode : quickInputBrowserUrl;
+
+  const handleCopy = (val, label) => {
+    const isApp = launchMode === 'app';
+    const msg = isApp ? `[コピー完了] ${label} 用コードをコピーしました` : `[コピー完了] ${label} 用URLをコピーしました`;
+    
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url)
-        .then(() => {
-          onToast(`[コピー完了] ${label} 用URLをコピーしました`);
-        })
-        .catch(() => {
-          fallbackCopy(url, label);
-        });
+      navigator.clipboard.writeText(val)
+        .then(() => onToast(msg))
+        .catch(() => fallbackCopy(val, msg));
     } else {
-      fallbackCopy(url, label);
+      fallbackCopy(val, msg);
     }
   };
 
-  const fallbackCopy = (text, label) => {
+  const fallbackCopy = (text, successMsg) => {
     try {
       const textArea = document.createElement("textarea");
       textArea.value = text;
@@ -60,9 +59,9 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      onToast(`[コピー完了] ${label} 用URLをコピーしました`);
+      onToast(successMsg);
     } catch (e) {
-      onToast(`[コピー失敗] 手動でURLを選択してコピーしてください`);
+      onToast(`[コピー失敗] 手動で選択してコピーしてください`);
     }
   };
 
@@ -103,47 +102,43 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
         </div>
 
         {/* スクロール領域 */}
-        <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.5', background: '#161b22', padding: '12px', borderRadius: '8px', borderLeft: `3px solid ${themeColor}` }}>
-            iPhoneの「ショートカット」アプリに登録することで、カードやスマートリングをかざした瞬間にアプリが連動起動します。
-          </div>
-
-          {/* 起動先モード選択（ホーム画面PWA vs 通常ブラウザ） */}
+          {/* 起動先モード選択スイッチ */}
           <div style={{ background: '#111620', border: '1px solid #282f3d', borderRadius: '8px', padding: '12px' }}>
             <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>
-              [起動先モード選択]
+              [起動モードの選択]
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
               <button
                 type="button"
-                onClick={() => setUsePwaMode(true)}
+                onClick={() => setLaunchMode('app')}
                 style={{
-                  background: usePwaMode ? `${themeColor}22` : '#080a0f',
-                  border: `1px solid ${usePwaMode ? themeColor : '#333'}`,
-                  color: usePwaMode ? themeColor : '#777',
+                  background: launchMode === 'app' ? `${themeColor}22` : '#080a0f',
+                  border: `1px solid ${launchMode === 'app' ? themeColor : '#333'}`,
+                  color: launchMode === 'app' ? themeColor : '#777',
                   padding: '8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
                 }}
               >
-                ホーム画面アプリ用 (PWA)
+                ホーム画面アプリ (推奨)
               </button>
               <button
                 type="button"
-                onClick={() => setUsePwaMode(false)}
+                onClick={() => setLaunchMode('browser')}
                 style={{
-                  background: !usePwaMode ? `${themeColor}22` : '#080a0f',
-                  border: `1px solid ${!usePwaMode ? themeColor : '#333'}`,
-                  color: !usePwaMode ? themeColor : '#777',
+                  background: launchMode === 'browser' ? `${themeColor}22` : '#080a0f',
+                  border: `1px solid ${launchMode === 'browser' ? themeColor : '#333'}`,
+                  color: launchMode === 'browser' ? themeColor : '#777',
                   padding: '8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
                 }}
               >
-                通常ブラウザ用 (Chrome等)
+                ブラウザ起動 (Chrome等)
               </button>
             </div>
-            <div style={{ fontSize: '10px', color: usePwaMode ? themeColor : '#aaa', lineHeight: '1.4' }}>
-              {usePwaMode
-                ? '【ホーム画面アプリ起動】webapp:// スキームを使用し、Chrome等のブラウザ枠を出さずにホーム画面の全画面アプリを直接開きます。'
-                : '【ブラウザ起動】https:// を使用し、Chrome等の通常のブラウザタブで開きます。'}
+            <div style={{ fontSize: '10px', color: launchMode === 'app' ? themeColor : '#aaa', lineHeight: '1.4' }}>
+              {launchMode === 'app'
+                ? '【ホーム画面アプリ起動】「Appを開く」を使用し、ブラウザ枠なし・他のPWAへの誤爆ゼロでこの家計簿アプリのみを確実に起動します。'
+                : '【通常ブラウザ起動】「URLを開く」を使用し、Chrome等のブラウザタブで開きます。'}
             </div>
           </div>
 
@@ -158,19 +153,20 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
               </span>
             </div>
             <div style={{ fontSize: '11px', color: '#888', marginBottom: '10px' }}>
-              社員証やSuicaなどの物理カードをかざすと、サイバー認証演出とともに隠し口座のロックを解除します。
+              社員証やSuicaなどのカードをかざすと、サイバー認証演出とともに隠し口座のロックを解除します。
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 readOnly
-                value={ghostUnlockUrl}
+                value={ghostVal}
                 style={{
                   flex: 1, background: '#080a0f', border: '1px solid #333', color: '#7ee787',
                   padding: '8px 10px', borderRadius: '6px', fontSize: '11px', fontFamily: 'monospace'
                 }}
               />
               <button
-                onClick={() => handleCopy(ghostUnlockUrl, 'ゴースト解除')}
+                type="button"
+                onClick={() => handleCopy(ghostVal, 'ゴースト解除')}
                 style={{
                   background: themeColor, color: '#000', border: 'none', padding: '0 14px',
                   borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap'
@@ -223,14 +219,15 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 readOnly
-                value={creditResetUrl}
+                value={creditVal}
                 style={{
                   flex: 1, background: '#080a0f', border: '1px solid #333', color: '#ffc107',
                   padding: '8px 10px', borderRadius: '6px', fontSize: '11px', fontFamily: 'monospace'
                 }}
               />
               <button
-                onClick={() => handleCopy(creditResetUrl, `${targetCard} 精算`)}
+                type="button"
+                onClick={() => handleCopy(creditVal, `${targetCard} 精算`)}
                 style={{
                   background: '#ff9900', color: '#000', border: 'none', padding: '0 14px',
                   borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap'
@@ -282,14 +279,15 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 readOnly
-                value={quickInputUrl}
+                value={quickInputVal}
                 style={{
                   flex: 1, background: '#080a0f', border: '1px solid #333', color: '#00bfff',
                   padding: '8px 10px', borderRadius: '6px', fontSize: '11px', fontFamily: 'monospace'
                 }}
               />
               <button
-                onClick={() => handleCopy(quickInputUrl, `${targetAccount} 入力`)}
+                type="button"
+                onClick={() => handleCopy(quickInputVal, `${targetAccount} 入力`)}
                 style={{
                   background: '#00bfff', color: '#000', border: 'none', padding: '0 14px',
                   borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap'
@@ -300,25 +298,36 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
             </div>
           </div>
 
-          {/* iPhoneでの1分設定ガイド */}
+          {/* iPhoneでのショートカット設定手順ガイド */}
           <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
             <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff', marginBottom: '8px' }}>
-              [設定手順] iOS ショートカットへの登録（1分）
+              {launchMode === 'app'
+                ? '[推奨手順] ホーム画面アプリを100%確実に開く設定（1分）'
+                : '[手順] ブラウザでURLを開く設定（1分）'}
             </div>
-            <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '11px', color: '#ccc', lineHeight: '1.8' }}>
-              <li>iPhone標準の<strong>「ショートカット」</strong>アプリを開く</li>
-              <li>画面下の<strong>「オートメーション」</strong>タブ ＞ 右上の<strong>「＋」</strong>をタップ</li>
-              <li>一覧から<strong>「NFC」</strong>を選択</li>
-              <li>「スキャン」を押し、登録したいカードまたはリングをiPhone上部背面にタッチして名前をつける</li>
-              <li><strong>「すぐに実行」</strong>を選択（実行前通知はOFFがおすすめ）</li>
-              <li>「次へ」＞ アクションで<strong>「URLを開く」</strong>を追加し、上記でコピーしたURLを貼り付けて「完了」！</li>
-              <li>「次へ」＞ アクションで<strong>「URLを開く」</strong>を追加し、上記でコピーしたURL（<code>webapp://...</code>）を貼り付けて「完了」！</li>
-            </ol>
-            <div style={{ marginTop: '10px', padding: '8px 10px', background: '#0a0d14', borderRadius: '6px', fontSize: '10px', color: '#888', border: '1px dashed #444', lineHeight: '1.5' }}>
-              <div style={{ color: themeColor, fontWeight: 'bold', marginBottom: '2px' }}>[POINT: Chromeではなくホーム画面アプリを開くには？]</div>
-              URLの先頭を <code>webapp://</code> にすることで、iOSがブラウザではなくホーム画面の全画面PWAアプリを直接起動します。<br/>
-              ※パラメータ連携が不要で単にアプリを開きたい場合は、アクション検索で<strong>「Appを開く」</strong>を選び、ホーム画面に追加した本アプリ名を指定することもできます。
-            </div>
+            
+            {launchMode === 'app' ? (
+              <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '11px', color: '#ccc', lineHeight: '1.8' }}>
+                <li>ショートカットアプリの「オートメーション」＞「＋」＞「NFC」でカード/リングを登録</li>
+                <li>「すぐに実行」を選択して「次へ」</li>
+                <li><strong>アクション①</strong>: 検索で「<strong>テキスト</strong>」を追加し、上記でコピーしたコード（<code>{ghostCode}</code> 等）を貼り付け</li>
+                <li><strong>アクション②</strong>: 検索で「<strong>クリップボードにコピー</strong>」を追加</li>
+                <li><strong>アクション③</strong>: 検索で「<strong>Appを開く</strong>」を追加し、ホーム画面の「<strong>家計簿</strong>」を選択して「完了」！</li>
+              </ol>
+            ) : (
+              <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '11px', color: '#ccc', lineHeight: '1.8' }}>
+                <li>ショートカットアプリの「オートメーション」＞「＋」＞「NFC」でカード/リングを登録</li>
+                <li>「すぐに実行」を選択して「次へ」</li>
+                <li>アクションで「<strong>URLを開く</strong>」を追加し、上記でコピーしたURLを貼り付けて「完了」！</li>
+              </ol>
+            )}
+
+            {launchMode === 'app' && (
+              <div style={{ marginTop: '10px', padding: '8px 10px', background: '#0a0d14', borderRadius: '6px', fontSize: '10px', color: '#888', border: '1px dashed #00ff66', lineHeight: '1.5' }}>
+                <div style={{ color: themeColor, fontWeight: 'bold', marginBottom: '2px' }}>[なぜこの設定が最強なのか？]</div>
+                iOSが直接「家計簿」アプリを指定して起動するため、他のPWAやブラウザに誤認される事故が100%発生しません。全画面のまま目的のアクションが即座に立ち上がります。
+              </div>
+            )}
           </div>
 
         </div>
@@ -339,4 +348,3 @@ export default function NfcSettingsModal({ isOpen, onClose, onToast, themeColor 
     </div>
   );
 }
-

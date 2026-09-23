@@ -82,30 +82,88 @@ export default function MobileApp() {
   const [nfcAccount, setNfcAccount] = useState(null);
   const [nfcAutoKeypad, setNfcAutoKeypad] = useState(false);
 
-  // 🌟 NFC / URLディープリンク解析（マウント時に検知）
+  // 🌟 NFCアクション共通実行ハンドラー
+  const executeNfcAction = (actionStr) => {
+    if (!actionStr) return false;
+    
+    // ① ゴースト口座アンロック
+    if (actionStr.includes('unlock_ghost')) {
+      setIsStealthActive(false);
+      setShowNfcCyberUnlock(true);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+      setTimeout(() => setShowNfcCyberUnlock(false), 3500);
+      return true;
+    }
+    
+    // ② クレジットカード手動精算
+    if (actionStr.includes('reset_credit')) {
+      const parts = actionStr.split(':');
+      const card = parts.length > 1 ? parts[parts.length - 1].trim() : 'リクルートカード';
+      setCurrentTab('balance');
+      setPendingResetCard(card || 'リクルートカード');
+      return true;
+    }
+    
+    // ③ スマートリング即時決済入力
+    if (actionStr.includes('quick_input')) {
+      const parts = actionStr.split(':');
+      const account = parts.length > 1 ? parts[parts.length - 1].trim() : 'EVERING';
+      setCurrentTab('input');
+      setNfcAccount(account || 'EVERING');
+      setNfcAutoKeypad(true);
+      return true;
+    }
+    
+    return false;
+  };
+
+  // 🌟 クリップボードからNFCコードを検知して自動実行（iOSの「Appを開く」連携用）
+  const checkClipboardForNfc = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && (text.startsWith('nfc:') || text.startsWith('action:'))) {
+          const executed = executeNfcAction(text);
+          if (executed) {
+            // 実行後はクリップボードをクリアして重複起動を防止
+            navigator.clipboard.writeText('');
+          }
+        }
+      }
+    } catch (e) {
+      // 権限なしやバックグラウンド時は安全に無視
+    }
+  };
+
+  // 🌟 マウント時＆画面復帰（フォアグラウンド）時の検知
   useEffect(() => {
+    // 1. URLパラメータの解析
     const params = new URLSearchParams(window.location.search);
     const action = params.get('action');
-
     if (action) {
       if (action === 'unlock_ghost') {
-        setIsStealthActive(false);
-        setShowNfcCyberUnlock(true);
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
-        setTimeout(() => setShowNfcCyberUnlock(false), 3500);
+        executeNfcAction('unlock_ghost');
       } else if (action === 'reset_credit') {
         const card = params.get('card') || 'リクルートカード';
-        setCurrentTab('balance');
-        setPendingResetCard(card);
+        executeNfcAction(`reset_credit:${card}`);
       } else if (action === 'quick_input') {
         const account = params.get('account') || 'EVERING';
-        setCurrentTab('input');
-        setNfcAccount(account);
-        setNfcAutoKeypad(true);
+        executeNfcAction(`quick_input:${account}`);
       }
-      // URLパラメータをクリアしてリロード時の重複実行を防止
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // URLパラメータがない場合はクリップボードをチェック
+      checkClipboardForNfc();
     }
+
+    // 2. ショートカットで「Appを開く」された復帰時の検知
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkClipboardForNfc();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const triggerNfcToast = (msg) => {
