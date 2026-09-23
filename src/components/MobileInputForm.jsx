@@ -30,7 +30,13 @@ const evaluateMath = (expr) => {
   }
 };
 
-export default function MobileInputForm({ dbMode = 'personal', familyId = null, initialAccount = null, autoOpenKeypad = false }) {
+export default function MobileInputForm({ 
+  dbMode = 'personal', 
+  familyId = null, 
+  initialAccount = null, 
+  autoOpenKeypad = false,
+  onKeypadConsumed = null
+}) {
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
   const [calcStr, setCalcStr] = useState('');
@@ -156,9 +162,22 @@ export default function MobileInputForm({ dbMode = 'personal', familyId = null, 
       }
       if (autoOpenKeypad) {
         setIsKeypadOpen(true);
+        if (onKeypadConsumed) onKeypadConsumed();
       }
     }
-  }, [initialAccount, autoOpenKeypad, accounts]);
+  }, [initialAccount, autoOpenKeypad, accounts, onKeypadConsumed]);
+
+  // 🌟 ホーム画面に戻った時（バックグラウンド移行時）は、次回起動のためにテンキーを閉じてリセットする
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        setIsKeypadOpen(false);
+        if (onKeypadConsumed) onKeypadConsumed();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [onKeypadConsumed]);
 
   const now = new Date();
   const defaultDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -534,8 +553,19 @@ export default function MobileInputForm({ dbMode = 'personal', familyId = null, 
     else if (key === 'BS') { setCalcStr(prev => prev.slice(0, -1)); } 
     else if (key === '=') {
       const result = evaluateMath(calcStr);
-      if (result) { setAmount(result); setCalcStr(result); addToHistory(result); setIsKeypadOpen(false); }
+      if (result) { 
+        setAmount(result); 
+        setCalcStr(result); 
+        addToHistory(result); 
+        setIsKeypadOpen(false); 
+        if (onKeypadConsumed) onKeypadConsumed();
+      }
     } else { setCalcStr(prev => prev + key); }
+  };
+
+  const handleCloseKeypad = () => {
+    setIsKeypadOpen(false);
+    if (onKeypadConsumed) onKeypadConsumed();
   };
 
   const addToHistory = (val) => {
@@ -999,9 +1029,9 @@ export default function MobileInputForm({ dbMode = 'personal', familyId = null, 
           <button onClick={() => handleKeypadPress('C')} style={{ ...keyBtnStyle, color: '#ff3366', background: '#11141a', border: '1px solid #252838', height: '55px' }}>C</button>
           <button onClick={() => handleKeypadPress('BS')} style={{ ...keyBtnStyle, color: '#ff9900', background: '#11141a', border: '1px solid #252838', height: '55px' }}>BS</button>
         </div>
-        <button onClick={() => setIsKeypadOpen(false)} style={{ display: 'block', width: '100%', maxWidth: '600px', margin: '15px auto 0', ...memBtnStyle, borderColor: '#ff3366', color: '#ff3366', padding: '12px' }}>閉じる</button>
+        <button onClick={handleCloseKeypad} style={{ display: 'block', width: '100%', maxWidth: '600px', margin: '15px auto 0', ...memBtnStyle, borderColor: '#ff3366', color: '#ff3366', padding: '12px' }}>閉じる</button>
       </div>
-      {isKeypadOpen && <div onClick={() => setIsKeypadOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 9999 }} />}
+      {isKeypadOpen && <div onClick={handleCloseKeypad} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 9999 }} />}
     </div>
   );
 }

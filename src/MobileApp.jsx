@@ -147,14 +147,13 @@ export default function MobileApp() {
           if (executed) {
             // 実行後はクリップボードをクリアして重複起動を防止
             navigator.clipboard.writeText('');
+            setShowNfcTapBanner(false);
             return;
           }
         }
       }
     } catch (e) {
       // 権限なしやバックグラウンド時は安全に無視
-      // iOSの自動読み取りブロック時はバナーを表示してワンタップ実行可能にする
-      setShowNfcTapBanner(true);
     }
   };
 
@@ -196,28 +195,30 @@ export default function MobileApp() {
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
       // URLパラメータがない場合はクリップボードをチェック（PWA起動のタイミングを考慮して少し遅延）
-      setTimeout(checkClipboardForNfc, 400);
-      // URLパラメータがない場合はクリップボードをチェック
       setTimeout(checkClipboardForNfc, 300);
-      // 万が一のためにワンタップバナーを3秒間待機表示
-      setShowNfcTapBanner(true);
-      const timer = setTimeout(() => setShowNfcTapBanner(false), 6000);
-      return () => clearTimeout(timer);
     }
 
     // 2. ショートカットで復帰・フォーカスされた時の検知
     const handleCheck = () => {
       setTimeout(checkClipboardForNfc, 250);
-      setTimeout(checkClipboardForNfc, 200);
-      setShowNfcTapBanner(true);
-      setTimeout(() => setShowNfcTapBanner(false), 6000);
     };
 
-    window.addEventListener('focus', handleCheck);
-    
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') handleCheck();
+    const handleFocus = () => {
+      handleCheck();
     };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        // ホーム画面に戻った時はNFCの一時状態とバナーを完全にリセット
+        setNfcAutoKeypad(false);
+        setNfcAccount(null);
+        setShowNfcTapBanner(false);
+      } else if (document.visibilityState === 'visible') {
+        handleCheck();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
     // 初回タップ時にも念のためチェック
@@ -230,7 +231,7 @@ export default function MobileApp() {
     window.addEventListener('click', handleFirstTouch, { passive: true });
 
     return () => {
-      window.removeEventListener('focus', handleCheck);
+      window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('touchstart', handleFirstTouch);
       window.removeEventListener('click', handleFirstTouch);
@@ -649,11 +650,12 @@ export default function MobileApp() {
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
-            key={`${nfcAccount || ''}-${nfcAutoKeypad}`}
+            key={dbMode}
             dbMode={dbMode} 
             familyId={familyId} 
             initialAccount={nfcAccount} 
             autoOpenKeypad={nfcAutoKeypad} 
+            onKeypadConsumed={() => setNfcAutoKeypad(false)}
           />
         )}
         {currentTab === 'balance' && (
