@@ -81,6 +81,7 @@ export default function MobileApp() {
   const [nfcToast, setNfcToast] = useState('');
   const [nfcAccount, setNfcAccount] = useState(null);
   const [nfcAutoKeypad, setNfcAutoKeypad] = useState(false);
+  const [showNfcTapBanner, setShowNfcTapBanner] = useState(false);
 
   // 🌟 NFCアクション共通実行ハンドラー
   const executeNfcAction = (actionStr) => {
@@ -90,6 +91,7 @@ export default function MobileApp() {
     if (actionStr.includes('unlock_ghost')) {
       setIsStealthActive(false);
       setShowNfcCyberUnlock(true);
+      setShowNfcTapBanner(false);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
       setTimeout(() => setShowNfcCyberUnlock(false), 3500);
       return true;
@@ -101,6 +103,7 @@ export default function MobileApp() {
       const card = parts.length > 1 ? parts[parts.length - 1].trim() : 'リクルートカード';
       setCurrentTab('balance');
       setPendingResetCard(card || 'リクルートカード');
+      setShowNfcTapBanner(false);
       return true;
     }
     
@@ -117,6 +120,7 @@ export default function MobileApp() {
       setCurrentTab('input');
       setNfcAccount(account || 'EVERING');
       setNfcAutoKeypad(true);
+      setShowNfcTapBanner(false);
       return true;
     }
 
@@ -126,6 +130,7 @@ export default function MobileApp() {
       const card = match && match[1] ? decodeURIComponent(match[1]) : 'リクルートカード';
       setCurrentTab('balance');
       setPendingResetCard(card);
+      setShowNfcTapBanner(false);
       return true;
     }
     
@@ -142,12 +147,35 @@ export default function MobileApp() {
           if (executed) {
             // 実行後はクリップボードをクリアして重複起動を防止
             navigator.clipboard.writeText('');
+            return;
           }
         }
       }
     } catch (e) {
       // 権限なしやバックグラウンド時は安全に無視
+      // iOSの自動読み取りブロック時はバナーを表示してワンタップ実行可能にする
+      setShowNfcTapBanner(true);
     }
+  };
+
+  // 🌟 バナータップ時の実行（ユーザーの直接タップなのでiOSの制限を100%パスする）
+  const handleBannerNfcTrigger = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && (text.startsWith('nfc:') || text.startsWith('action:') || text.includes('action='))) {
+          executeNfcAction(text);
+          navigator.clipboard.writeText('');
+          setShowNfcTapBanner(false);
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    // クリップボードが空または読めない場合でもデフォルトでEVERING入力モードを起動
+    executeNfcAction('quick_input:EVERING');
+    setShowNfcTapBanner(false);
   };
 
   // 🌟 マウント時＆画面復帰（フォアグラウンド）時の検知
@@ -169,11 +197,20 @@ export default function MobileApp() {
     } else {
       // URLパラメータがない場合はクリップボードをチェック（PWA起動のタイミングを考慮して少し遅延）
       setTimeout(checkClipboardForNfc, 400);
+      // URLパラメータがない場合はクリップボードをチェック
+      setTimeout(checkClipboardForNfc, 300);
+      // 万が一のためにワンタップバナーを3秒間待機表示
+      setShowNfcTapBanner(true);
+      const timer = setTimeout(() => setShowNfcTapBanner(false), 6000);
+      return () => clearTimeout(timer);
     }
 
     // 2. ショートカットで復帰・フォーカスされた時の検知
     const handleCheck = () => {
       setTimeout(checkClipboardForNfc, 250);
+      setTimeout(checkClipboardForNfc, 200);
+      setShowNfcTapBanner(true);
+      setTimeout(() => setShowNfcTapBanner(false), 6000);
     };
 
     window.addEventListener('focus', handleCheck);
@@ -731,6 +768,24 @@ export default function MobileApp() {
               [ タップで閉じる ]
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 🌟 NFCワンタップ即時起動バナー（iOS制限対策・タップで100%確実にテンキー起動） */}
+      {showNfcTapBanner && currentTab === 'input' && (
+        <div 
+          onClick={handleBannerNfcTrigger}
+          style={{
+            position: 'fixed', top: '70px', left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(5, 20, 10, 0.95)', border: '2px solid #00ff66', color: '#00ff66',
+            padding: '12px 20px', borderRadius: '30px', fontSize: '12px', fontWeight: '900',
+            boxShadow: '0 0 25px rgba(0, 255, 102, 0.6), inset 0 0 10px rgba(0, 255, 102, 0.3)',
+            zIndex: 9999, cursor: 'pointer', textAlign: 'center', whiteSpace: 'nowrap',
+            animation: 'pulse 1.5s infinite ease-in-out', display: 'flex', alignItems: 'center', gap: '8px'
+          }}
+        >
+          <span style={{ fontSize: '14px' }}>[⚡]</span>
+          <span>タップしてEVERING決済を開く</span>
         </div>
       )}
 
