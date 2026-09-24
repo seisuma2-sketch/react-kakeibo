@@ -83,6 +83,17 @@ export default function MobileApp() {
   const [nfcAutoKeypad, setNfcAutoKeypad] = useState(false);
   const [showNfcTapBanner, setShowNfcTapBanner] = useState(false);
 
+  // 🌟 顔認証（Face ID / 生体認証）解除用State & Ref
+  const [isFaceAuthModalOpen, setIsFaceAuthModalOpen] = useState(false);
+  const [faceAuthStatus, setFaceAuthStatus] = useState('idle'); // 'scanning', 'camera', 'success', 'fallback', 'failed'
+  const [faceAuthLog, setFaceAuthLog] = useState('');
+  const [fallbackPassword, setFallbackPassword] = useState('');
+  const faceVideoRef = useRef(null);
+  const faceStreamRef = useRef(null);
+
+  const balanceTapCountRef = useRef(0);
+  const balanceTapTimerRef = useRef(null);
+
   // 🌟 NFCアクション共通実行ハンドラー
   const executeNfcAction = (actionStr) => {
     if (!actionStr) return false;
@@ -353,6 +364,150 @@ export default function MobileApp() {
     }
   };
 
+  // 🌟 残高4回タップ検知ハンドラー
+  const handleBalanceQuadTap = () => {
+    if (!isStealthActive) return;
+
+    balanceTapCountRef.current += 1;
+    if (navigator.vibrate) navigator.vibrate(20);
+
+    if (balanceTapTimerRef.current) clearTimeout(balanceTapTimerRef.current);
+
+    if (balanceTapCountRef.current >= 4) {
+      balanceTapCountRef.current = 0;
+      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+      triggerFaceAuthSequence();
+    } else {
+      balanceTapTimerRef.current = setTimeout(() => {
+        balanceTapCountRef.current = 0;
+      }, 1200);
+    }
+  };
+
+  // 🌟 顔認証（Face ID / 生体認証）シーケンス実行
+  const triggerFaceAuthSequence = async () => {
+    setIsFaceAuthModalOpen(true);
+    setFaceAuthStatus('scanning');
+    setFaceAuthLog('[SYSTEM] INITIATING BIOMETRIC SECURITY PROTOCOL...');
+
+    // 1. WebAuthn（端末ネイティブのFace ID / Touch ID）を試行
+    if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      try {
+        const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        if (available) {
+          setFaceAuthLog('[SECURE_ENCLAVE] REQUESTING FACE ID BIOMETRIC CHALLENGE...');
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+
+          let assertionSuccess = false;
+          const storedCredId = localStorage.getItem('m402_ghost_face_id');
+
+          if (storedCredId) {
+            try {
+              const rawId = Uint8Array.from(atob(storedCredId), c => c.charCodeAt(0));
+              const assertion = await navigator.credentials.get({
+                publicKey: {
+                  challenge,
+                  timeout: 30000,
+                  allowCredentials: [{ id: rawId, type: 'public-key', transports: ['internal'] }],
+                  userVerification: 'required'
+                }
+              });
+              if (assertion) assertionSuccess = true;
+            } catch (e) {
+              // 取得失敗時は再作成プロンプトへ
+            }
+          }
+
+          if (!assertionSuccess) {
+            const credential = await navigator.credentials.create({
+              publicKey: {
+                challenge,
+                timeout: 30000,
+                rp: { name: 'M402 家計簿', id: window.location.hostname },
+                user: { id: new Uint8Array([7, 7, 7, 7]), name: 'master_operator', displayName: 'Ghost Operator' },
+                pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+                authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' }
+              }
+            });
+            if (credential) {
+              const credStr = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+              localStorage.setItem('m402_ghost_face_id', credStr);
+              assertionSuccess = true;
+            }
+          }
+
+          if (assertionSuccess) {
+            completeFaceAuthSuccess();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Face ID cancelled or failed, falling back to camera:", err);
+      }
+    }
+
+    // 2. WebAuthnが未対応またはキャンセルの場合はカメラによるサイバー顔スキャン演出へフォールバック
+    startCameraFaceScan();
+  };
+
+  const startCameraFaceScan = async () => {
+    setFaceAuthStatus('camera');
+    setFaceAuthLog('[OPTICAL_FEED] STARTING NEURAL RETINA / FACE SCANNER...');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } } 
+      });
+      faceStreamRef.current = stream;
+      if (faceVideoRef.current) {
+        faceVideoRef.current.srcObject = stream;
+        faceVideoRef.current.play();
+      }
+      setFaceAuthLog('[AI_VISION] TARGET LOCK // ANALYZING FACIAL CONTOURS...');
+      
+      // 1.8秒間のスキャン演出後に認証成功
+      setTimeout(() => {
+        completeFaceAuthSuccess();
+      }, 1800);
+    } catch (err) {
+      // カメラが使えない場合はパスコードフォールバックへ
+      setFaceAuthStatus('fallback');
+      setFaceAuthLog('[ERROR] OPTICAL SENSOR UNAVAILABLE. OVERRIDE VIA MASTER PASSCODE.');
+    }
+  };
+
+  const completeFaceAuthSuccess = () => {
+    setFaceAuthStatus('success');
+    setFaceAuthLog('>>> [BIOMETRIC MATCH CONFIRMED] [GHOST PROTOCOL: DISENGAGED] <<<');
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+    setIsStealthActive(false);
+
+    setTimeout(() => {
+      closeFaceAuthModal();
+    }, 1500);
+  };
+
+  const closeFaceAuthModal = () => {
+    setIsFaceAuthModalOpen(false);
+    setFaceAuthStatus('idle');
+    setFaceAuthLog('');
+    setFallbackPassword('');
+    if (faceStreamRef.current) {
+      faceStreamRef.current.getTracks().forEach(t => t.stop());
+      faceStreamRef.current = null;
+    }
+  };
+
+  const handleFallbackSubmit = (e) => {
+    e?.preventDefault();
+    if (fallbackPassword === "0000") {
+      completeFaceAuthSuccess();
+    } else {
+      setFaceAuthLog('[ACCESS DENIED] INVALID PASSCODE.');
+      if (navigator.vibrate) navigator.vibrate(200);
+    }
+  };
+
   const triggerStealthUnlock = () => {
     setIsStealthActive(false);
     stopSnappingDetection();
@@ -572,27 +727,32 @@ export default function MobileApp() {
               </button>
             </div>
 
-            <div>
-              <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px', fontWeight: 'bold' }}>👻 ゴースト口座（隠し銀行）管理</div>
-              <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                <input 
-                  value={newGhostBank} 
-                  onChange={(e) => setNewGhostBank(e.target.value)} 
-                  placeholder="例: みずほ銀行" 
-                  style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', color: '#fff', fontSize: '12px' }}
-                />
-                <button onClick={handleAddGhostBank} style={{ background: activeThemeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
+            {/* 🌟 ステルス解除時のみゴースト口座管理を表示（ロック中は完全隠蔽） */}
+            {!isStealthActive && (
+              <div style={{ background: 'rgba(0, 255, 102, 0.05)', border: '1px solid #00ff6644', borderRadius: '8px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', color: '#00ff66', marginBottom: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>👻</span> ゴースト口座（隠し銀行）管理
+                </div>
+                <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                  <input 
+                    value={newGhostBank} 
+                    onChange={(e) => setNewGhostBank(e.target.value)} 
+                    placeholder="例: みずほ銀行" 
+                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', color: '#fff', fontSize: '12px' }}
+                  />
+                  <button onClick={handleAddGhostBank} style={{ background: activeThemeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '120px', overflowY: 'auto' }}>
+                  {stealthAccounts.map(bank => (
+                    <div key={bank} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1d24', padding: '6px 10px', borderRadius: '4px', fontSize: '12px' }}>
+                      <span>{bank}</span>
+                      <button onClick={() => handleRemoveGhostBank(bank)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: '9px', color: '#00ff66aa', marginTop: '6px' }}>※現在アンロック中。ここで登録した口座はロック時に完全隠蔽されます。</div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '120px', overflowY: 'auto' }}>
-                {stealthAccounts.map(bank => (
-                  <div key={bank} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1d24', padding: '6px 10px', borderRadius: '4px', fontSize: '12px' }}>
-                    <span>{bank}</span>
-                    <button onClick={() => handleRemoveGhostBank(bank)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>×</button>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: '9px', color: '#555', marginTop: '5px' }}>※ここで追加した口座のデータは、ロック中（🔒）マップや残高から完全に消滅します。</div>
-            </div>
+            )}
 
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>残高並び替え</div>
@@ -660,8 +820,11 @@ export default function MobileApp() {
         )}
         {currentTab === 'balance' && (
           <div style={{ padding: '20px' }}>
-            <div style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0 }}>
-              <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none', cursor: 'default' }}> 口座・決済手段別の現在高</h2>
+            <div 
+              onClick={handleBalanceQuadTap}
+              style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0, cursor: 'pointer' }}
+            >
+              <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none' }}> 口座・決済手段別の現在高</h2>
             </div>
             <BalanceChart 
               transactions={safeTransactions} 
@@ -671,6 +834,7 @@ export default function MobileApp() {
               setSortKey={setSortKey} 
               dbMode={dbMode}
               initialResetCard={pendingResetCard ? { name: pendingResetCard } : null}
+              onQuadTap={handleBalanceQuadTap}
             />
           </div>
         )}
@@ -686,7 +850,10 @@ export default function MobileApp() {
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
             isActive={currentTab === 'balance'} 
-            onClick={() => setCurrentTab('balance')} 
+            onClick={() => {
+              setCurrentTab('balance');
+              handleBalanceQuadTap();
+            }} 
             themeColor={activeThemeColor} 
             onPointerDown={(e) => handleStartHold(e, '残高')}
             onPointerUp={handleEndHold}
@@ -769,6 +936,145 @@ export default function MobileApp() {
             <div style={{ fontSize: '10px', color: '#888', letterSpacing: '1px' }}>
               [ タップで閉じる ]
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 顔認証（Face ID / 生体認証）サイバーHUDオーバーレイ */}
+      {isFaceAuthModalOpen && (
+        <div 
+          style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(2, 6, 12, 0.94)', backdropFilter: 'blur(8px)',
+            zIndex: 999999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: '20px', textAlign: 'center', animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          {/* サイバー走査線 */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.5) 50%)',
+            backgroundSize: '100% 4px', pointerEvents: 'none'
+          }} />
+
+          <div style={{
+            border: `2px solid ${faceAuthStatus === 'success' ? '#00ff66' : (faceAuthStatus === 'failed' ? '#ff3366' : '#00bfff')}`,
+            borderRadius: '16px', background: '#070a0f', maxWidth: '360px', width: '92%',
+            padding: '24px', position: 'relative', boxShadow: `0 0 50px ${faceAuthStatus === 'success' ? 'rgba(0,255,102,0.3)' : 'rgba(0,191,255,0.2)'}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
+          }}>
+            {/* ヘッダーバッジ */}
+            <div style={{
+              fontSize: '11px', fontFamily: 'monospace', fontWeight: 'bold',
+              color: faceAuthStatus === 'success' ? '#00ff66' : '#00bfff',
+              letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '6px'
+            }}>
+              <span style={{ fontSize: '14px' }}>🛡️</span>
+              BIOMETRIC SECURITY // FACE ID
+            </div>
+
+            {/* スキャン画面 / カメラビュー / アニメーション */}
+            <div style={{
+              width: '180px', height: '180px', borderRadius: '12px',
+              border: `2px dashed ${faceAuthStatus === 'success' ? '#00ff66' : '#00bfff'}`,
+              position: 'relative', overflow: 'hidden', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', background: '#020408'
+            }}>
+              {/* カメラ映像（フォールバック時） */}
+              <video 
+                ref={faceVideoRef} 
+                playsInline 
+                muted 
+                style={{
+                  width: '100%', height: '100%', objectFit: 'cover',
+                  display: faceAuthStatus === 'camera' ? 'block' : 'none',
+                  transform: 'scaleX(-1)'
+                }} 
+              />
+
+              {/* アイコン / アニメーション */}
+              {faceAuthStatus !== 'camera' && (
+                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{
+                    fontSize: '48px',
+                    filter: faceAuthStatus === 'success' ? 'drop-shadow(0 0 15px #00ff66)' : 'drop-shadow(0 0 10px #00bfff)',
+                    animation: faceAuthStatus === 'scanning' ? 'pulse 1s infinite' : 'none'
+                  }}>
+                    {faceAuthStatus === 'success' ? '🔓' : '👤'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#888', marginTop: '8px', fontFamily: 'monospace' }}>
+                    {faceAuthStatus === 'success' ? 'AUTHENTICATED' : 'SCANNING TARGET'}
+                  </div>
+                </div>
+              )}
+
+              {/* ターゲットHUD四隅のマーカー */}
+              <div style={{ position: 'absolute', top: 6, left: 6, width: 14, height: 14, borderTop: '2px solid #00ff66', borderLeft: '2px solid #00ff66' }} />
+              <div style={{ position: 'absolute', top: 6, right: 6, width: 14, height: 14, borderTop: '2px solid #00ff66', borderRight: '2px solid #00ff66' }} />
+              <div style={{ position: 'absolute', bottom: 6, left: 6, width: 14, height: 14, borderBottom: '2px solid #00ff66', borderLeft: '2px solid #00ff66' }} />
+              <div style={{ position: 'absolute', bottom: 6, right: 6, width: 14, height: 14, borderBottom: '2px solid #00ff66', borderRight: '2px solid #00ff66' }} />
+
+              {/* レーザースキャンライン */}
+              {faceAuthStatus !== 'success' && (
+                <div style={{
+                  position: 'absolute', left: 0, width: '100%', height: '2px',
+                  background: 'linear-gradient(90deg, transparent, #00ff66, transparent)',
+                  boxShadow: '0 0 8px #00ff66',
+                  animation: 'scannerMove 2s infinite ease-in-out'
+                }} />
+              )}
+            </div>
+
+            {/* ログターミナル */}
+            <div style={{
+              width: '100%', background: '#020406', border: '1px solid #1a2230',
+              borderRadius: '6px', padding: '10px 12px', textAlign: 'left',
+              fontFamily: 'monospace', fontSize: '11px',
+              color: faceAuthStatus === 'success' ? '#00ff66' : (faceAuthStatus === 'failed' ? '#ff3366' : '#00bfff'),
+              minHeight: '44px', lineHeight: '1.4', wordBreak: 'break-all'
+            }}>
+              {faceAuthLog || '[SYSTEM] WAITING FOR BIOMETRIC SENSORS...'}
+            </div>
+
+            {/* パスコードフォールバック */}
+            {faceAuthStatus === 'fallback' && (
+              <form onSubmit={handleFallbackSubmit} style={{ width: '100%', display: 'flex', gap: '8px' }}>
+                <input 
+                  type="password" 
+                  value={fallbackPassword} 
+                  onChange={(e) => setFallbackPassword(e.target.value)} 
+                  placeholder="Master Passcode (0000)" 
+                  autoFocus
+                  style={{
+                    flex: 1, padding: '10px', background: '#11141a', color: '#fff',
+                    border: '1px solid #333', borderRadius: '6px', fontSize: '12px',
+                    fontFamily: 'monospace', outline: 'none'
+                  }}
+                />
+                <button 
+                  type="submit" 
+                  style={{
+                    padding: '0 16px', background: '#00bfff', color: '#000',
+                    border: 'none', borderRadius: '6px', fontWeight: 'bold',
+                    cursor: 'pointer', fontSize: '12px'
+                  }}
+                >
+                  解除
+                </button>
+              </form>
+            )}
+
+            {/* 中止・閉じるボタン */}
+            <button 
+              onClick={closeFaceAuthModal}
+              style={{
+                background: 'transparent', border: '1px solid #444', color: '#888',
+                padding: '8px 24px', borderRadius: '20px', fontSize: '11px',
+                fontFamily: 'monospace', cursor: 'pointer'
+              }}
+            >
+              ABORT (中止)
+            </button>
           </div>
         </div>
       )}

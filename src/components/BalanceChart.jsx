@@ -20,7 +20,7 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
   return { startDate, endDate };
 };
 
-export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, dbMode = 'personal', initialResetCard = null }) {
+export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, onQuadTap = null, dbMode = 'personal', initialResetCard = null }) {
   const chartRef = useRef(null);
   
   // モード別の保存先キー
@@ -1374,10 +1374,13 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       </div>
 
       <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', flex: 1 }}>
-        {/* 🌟 隠しコマンド（ダブルタップ）の仕掛けをここに設置 */}
+        {/* 🌟 隠しコマンド（4回タップで顔認証 / ダブルタップ）の仕掛けをここに設置 */}
         <div 
-          onClick={handleHeaderDoubleTap}
-          title="DOUBLE TAP TO OVERRIDE"
+          onClick={() => {
+            if (onQuadTap) onQuadTap();
+            handleHeaderDoubleTap();
+          }}
+          title="TAP 4 TIMES TO OVERRIDE"
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px', cursor: 'pointer' }}
         >
           <h2 style={{ fontSize: '16px', margin: 0, color: '#fff', fontFamily: 'monospace', pointerEvents: 'none' }}>接続済みデータカートリッジ(現在高)</h2>
