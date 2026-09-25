@@ -996,7 +996,7 @@ export default function MobileInputForm({
   const livePreview = calcStr ? evaluateMath(calcStr) : amount;
 
   return (
-    <div style={{ background: '#0a0c10', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '30px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
+    <div style={{ background: '#0a0c10', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '80px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
       {openDropdown && (
         <div onClick={() => setOpenDropdown(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 90 }} />
