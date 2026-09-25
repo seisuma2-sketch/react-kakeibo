@@ -699,22 +699,8 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        {/* 🌟 デュアルコア・切り替えスイッチ（スマホ版ヘッダー右側） */}
-        <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '3px', border: `1px solid ${activeThemeColor}`, boxShadow: `0 0 10px ${activeThemeColor}33` }}>
-          <button 
-            onClick={() => setDbMode('personal')}
-            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? activeThemeColor : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
-          >
-            👤 個人
-            [個人]
-          </button>
-          <button 
-            onClick={() => setDbMode('sync')}
-            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
-          >
-            [共有]
-          </button>
-        </div>
+        {/* ヘッダー右側スペーサー */}
+        <div style={{ width: '24px' }} />
       </div>
 
       {/* 🚀 サイドメニュー */}

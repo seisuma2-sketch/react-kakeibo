@@ -502,22 +502,6 @@ function App() {
             <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {tabTitles[currentTab] || '開発中...'}
             </h2>
-
-            {/* 🌟 デュアルコア・切り替えスイッチ */}
-            <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '4px', border: `1px solid ${themeColor}`, boxShadow: `0 0 15px ${themeColor}33`, marginLeft: '10px' }}>
-              <button 
-                onClick={() => setDbMode('personal')}
-                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? '#00bfff' : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
-              >
-                👤 個人
-              </button>
-              <button 
-                onClick={() => setDbMode('sync')}
-                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
-              >
-                🔗 共有
-              </button>
-            </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
