@@ -7,13 +7,13 @@ export default function SummaryPanel({ currentMonth, monthlyIncome, monthlyExpen
         <div style={cardStyle}>
           <div style={labelStyle}>{currentMonth}月の総収入</div>
           <div style={{ color: '#00ff66', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-            {isStealthMode ? '¥***' : `¥${monthlyIncome.toLocaleString()}`}
+            {`¥${monthlyIncome.toLocaleString()}`}
           </div>
         </div>
         <div style={cardStyle}>
           <div style={labelStyle}>{currentMonth}月の総支出</div>
           <div style={{ color: '#ff3366', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-            {isStealthMode ? '¥***' : `¥${monthlyExpense.toLocaleString()}`}
+            {`¥${monthlyExpense.toLocaleString()}`}
           </div>
         </div>
       </div>
@@ -22,10 +22,10 @@ export default function SummaryPanel({ currentMonth, monthlyIncome, monthlyExpen
       <div style={{ ...cardStyle, flex: 1, border: `1px solid ${isSurplus ? '#00ff66' : '#ff3366'}`, boxShadow: isSurplus ? '0 0 15px rgba(0,255,102,0.1)' : '0 0 15px rgba(255,51,102,0.1)' }}>
         <div style={labelStyle}>今月の収支バランス</div>
         <div style={{ color: isSurplus ? '#00ff66' : '#ff3366', fontSize: isMobile ? '24px' : '32px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-          {isStealthMode ? '¥***' : `${isSurplus ? '+' : ''}¥${netIncome.toLocaleString()}`}
+          {`${isSurplus ? '+' : ''}¥${netIncome.toLocaleString()}`}
         </div>
         <div style={{ fontSize: '11px', marginTop: '8px', color: isSurplus ? '#00ff66' : '#ff3366' }}>
-          {isSurplus ? '🔥 黒字安全圏をキープ中！' : '🚨 警告：赤字転落！'}
+          {isSurplus ? '黒字安全圏をキープ中' : '警告：赤字転落'}
         </div>
       </div>
       

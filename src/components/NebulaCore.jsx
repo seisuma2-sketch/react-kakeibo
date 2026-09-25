@@ -65,14 +65,6 @@ export default function NebulaCore({ netIncome, isStealthMode }) {
   // 🌟 解説パネルの開閉を管理する状態（State）
   const [showInfo, setShowInfo] = useState(false);
   
-  if (isStealthMode) {
-    return (
-      <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px dashed #252838', height: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ color: '#555', fontSize: '14px', letterSpacing: '2px' }}>[ CORE OFFLINE ]</div>
-      </div>
-    );
-  }
-
   const isDeficit = netIncome < 0;
 
   return (

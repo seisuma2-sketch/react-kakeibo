@@ -75,8 +75,11 @@ function App() {
 
   const [stealthConfig, setStealthConfig] = useState(() => {
     const saved = localStorage.getItem('stealthConfig');
-    return saved ? JSON.parse(saved) : {
-      active: false, hideSummary: true, hideCartridges: true, hideHistory: true, ghostAccounts: [],
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {
+      active: true, hideSummary: false, hideCartridges: true, hideHistory: false, ghostAccounts: [],
     };
   });
   
@@ -519,6 +522,33 @@ function App() {
             {!isMobile && (
               <button onClick={() => switchMode('os')} style={{ background: `linear-gradient(45deg, ${themeColor}22, transparent)`, border: `1px solid ${themeColor}`, color: themeColor, padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: `0 0 10px ${themeColor}33`, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
                 <span>🖥️</span> コックピットOSへ
+              </button>
+            )}
+            {!isMobile && (
+              <button 
+                onClick={() => {
+                  if (!stealthConfig.active) {
+                    setStealthConfig(prev => ({ ...prev, active: true }));
+                  } else {
+                    setIsAuthModalOpen(true);
+                  }
+                }}
+                style={{
+                  background: stealthConfig.active ? 'rgba(255,51,102,0.12)' : 'rgba(0,255,102,0.12)',
+                  border: `1px solid ${stealthConfig.active ? '#ff3366' : '#00ff66'}`,
+                  color: stealthConfig.active ? '#ff3366' : '#00ff66',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: `0 0 10px ${stealthConfig.active ? 'rgba(255,51,102,0.2)' : 'rgba(0,255,102,0.2)'}`
+                }}
+                title={stealthConfig.active ? "クリックでゴーストプロトコル解除（認証）" : "クリックでゴーストプロトコル起動"}
+              >
+                {stealthConfig.active ? "[ GHOST: ACTIVE ]" : "[ GHOST: INACTIVE ]"}
               </button>
             )}
             <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? themeColor : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? themeColor : '#ff3366') : '#ff9900' }}>
