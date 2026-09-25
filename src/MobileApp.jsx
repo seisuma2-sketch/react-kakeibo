@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; 
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
@@ -13,6 +13,7 @@ import AuthScreen from './components/AuthScreen';
 import DailyBriefingOverlay from './components/DailyBriefingOverlay';
 import NfcSettingsModal from './components/NfcSettingsModal';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
+import { getStealthDisguisedTransactions } from './utils/stealthHelper';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -642,29 +643,9 @@ export default function MobileApp() {
     }
   };
 
-  const cleanAccountName = (str) => {
-    if (!str) return '';
-    let s = String(str).trim();
-    if (s.startsWith('/')) {
-      const idx = s.indexOf(' ');
-      if (idx !== -1) s = s.slice(idx + 1).trim();
-    }
-    return s.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
-  };
-
-  const safeTransactions = transactions.map(tx => {
-    if (!isStealthActive) return tx;
-    const ghostList = (stealthAccounts || []).map(cleanAccountName);
-    const fromAcc = cleanAccountName(tx.paymentMethod);
-    const toAcc = cleanAccountName(tx.category);
-
-    const isFromGhost = ghostList.includes(fromAcc);
-    const isToGhost = tx.type === 'transfer' && ghostList.includes(toAcc);
-
-    // 🌟 隠しているときは、隠し口座が関係する取引（移動・振替含む）を全体で何もなかったかのように完全に不可視化
-    if (isFromGhost || isToGhost) return null;
-    return tx;
-  }).filter(Boolean);
+  const safeTransactions = useMemo(() => {
+    return getStealthDisguisedTransactions(transactions, stealthAccounts, isStealthActive);
+  }, [transactions, stealthAccounts, isStealthActive]);
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 

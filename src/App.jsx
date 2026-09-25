@@ -20,6 +20,7 @@ import NewsFeed from './components/NewsFeed';
 import TopNewsWidget from './components/TopNewsWidget';
 import DesktopCockpitOS from './components/DesktopCockpitOS';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
+import { getStealthDisguisedTransactions } from './utils/stealthHelper';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -325,29 +326,9 @@ function App() {
     setNewGhostBank(''); 
   };
 
-  const cleanAccountName = (str) => {
-    if (!str) return '';
-    let s = String(str).trim();
-    if (s.startsWith('/')) {
-      const idx = s.indexOf(' ');
-      if (idx !== -1) s = s.slice(idx + 1).trim();
-    }
-    return s.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
-  };
-
-  const displayTransactions = transactions.map(tx => {
-    if (!stealthConfig.active) return tx; 
-    const ghostList = (stealthConfig.ghostAccounts || []).map(cleanAccountName);
-    const fromAcc = cleanAccountName(tx.paymentMethod);
-    const toAcc = cleanAccountName(tx.category);
-
-    const isFromGhost = ghostList.includes(fromAcc);
-    const isToGhost = tx.type === 'transfer' && ghostList.includes(toAcc);
-
-    // 🌟 隠しているときは、隠し口座が関係する取引（移動・振替含む）を全体で何もなかったかのように完全に不可視化
-    if (isFromGhost || isToGhost) return null;
-    return tx;
-  }).filter(Boolean); 
+  const displayTransactions = useMemo(() => {
+    return getStealthDisguisedTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
+  }, [transactions, stealthConfig.ghostAccounts, stealthConfig.active]); 
 
   const uniqueAccountsFromTx = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
   const defaultAvailableAccounts = ['現金', '三井住友銀行', '三菱UFJ銀行', 'みずほ銀行', 'ゆうちょ銀行', 'PayPay', 'EVERING', 'リクルートカード'];
