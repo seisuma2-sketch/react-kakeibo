@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap, Marker, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents, Marker, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -42,8 +42,8 @@ const guessLocationFromText = (text) => {
   return null;
 };
 
-// 🌟 桃鉄風の「駅（マス）」アイコン生成
-const getGameIcon = (cluster) => {
+// 🌟 桃鉄風の「駅（マス）」アイコン生成（ズーム倍率に応じたスタイル切り替え）
+const getGameIcon = (cluster, zoomLevel = 6) => {
   // 出費があるかどうかでマスの色を決定
   const isExpense = cluster.txList.some(tx => tx.type === 'expense');
   const isHighAmount = cluster.totalAmount >= 30000;
@@ -53,13 +53,20 @@ const getGameIcon = (cluster) => {
   let textColor = isHighAmount ? '#000' : '#fff';
   let shadow = '0 4px 6px rgba(0,0,0,0.4)';
 
-  const size = Math.min(48, 28 + cluster.count * 2); 
+  let labelText = cluster.count > 1 ? cluster.count : '駅';
+  let size = Math.min(48, 28 + cluster.count * 2);
+
+  // 詳細ズーム(個別ピン)で単発の場合はピン型アイコン
+  if (zoomLevel >= 15 && cluster.count === 1) {
+    labelText = '📍';
+    size = 32;
+  }
 
   return L.divIcon({
     className: 'clear-custom-icon',
     html: `
-      <div style="width: ${size}px; height: ${size}px; background: ${bg}; color: ${textColor}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${size > 35 ? '16px' : '14px'}; border: 4px solid #ffffff; box-shadow: ${shadow}; text-shadow: ${isHighAmount ? 'none' : '0 1px 2px rgba(0,0,0,0.5)'};">
-        ${cluster.count > 1 ? cluster.count : '駅'}
+      <div style="width: ${size}px; height: ${size}px; background: ${bg}; color: ${textColor}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: ${size > 35 ? '16px' : (labelText === '📍' ? '16px' : '13px')}; border: 3px solid #ffffff; box-shadow: ${shadow}; text-shadow: ${isHighAmount ? 'none' : '0 1px 2px rgba(0,0,0,0.5)'};">
+        ${labelText}
       </div>
     `,
     iconSize: [size, size],
@@ -67,15 +74,33 @@ const getGameIcon = (cluster) => {
   });
 };
 
-function MapController({ geoJsonData, viewLevel, selectedPref }) {
+function MapController({ geoJsonData, viewLevel, selectedPref, onZoomChange, flyToTarget, onFlyCompleted }) {
   const map = useMap();
+
+  useMapEvents({
+    zoomend: () => {
+      if (onZoomChange) onZoomChange(map.getZoom());
+    }
+  });
+
   useEffect(() => {
     const observer = new ResizeObserver(() => requestAnimationFrame(() => map.invalidateSize()));
     observer.observe(map.getContainer());
-    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t1 = setTimeout(() => {
+      map.invalidateSize();
+      if (onZoomChange) onZoomChange(map.getZoom());
+    }, 100);
     const t2 = setTimeout(() => map.invalidateSize(), 500);
     return () => { observer.disconnect(); clearTimeout(t1); clearTimeout(t2); };
-  }, [map]);
+  }, [map, onZoomChange]);
+
+  // プログラムによる位置・ズーム移動（ピンクリックや現在地ボタン）
+  useEffect(() => {
+    if (flyToTarget) {
+      map.flyTo(flyToTarget.center, flyToTarget.zoom, { duration: 1.2 });
+      if (onFlyCompleted) onFlyCompleted();
+    }
+  }, [flyToTarget, map, onFlyCompleted]);
 
   useEffect(() => {
     if (viewLevel === 'NATIONAL' && geoJsonData) {
@@ -88,6 +113,7 @@ function MapController({ geoJsonData, viewLevel, selectedPref }) {
       }
     }
   }, [geoJsonData, viewLevel, selectedPref, map]);
+
   return null;
 }
 
@@ -122,6 +148,12 @@ export default function MoneyFlowMap({ transactions = [] }) {
   const [filterPeriod, setFilterPeriod] = useState('ALL');
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [timelineIndex, setTimelineIndex] = useState(100); 
+
+  // 🌟 ズームレベル追従 & 現在地追従State
+  const [currentZoom, setCurrentZoom] = useState(6);
+  const [flyToTarget, setFlyToTarget] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [isLocating, setIsLocating] = useState(false);
 
   const availableCategories = useMemo(() => {
     const cats = new Set(internalTx.map(t => t.category).filter(Boolean));
@@ -174,19 +206,107 @@ export default function MoneyFlowMap({ transactions = [] }) {
     return filteredTransactions.filter(tx => tx.time <= targetTime);
   }, [filteredTransactions, timelineIndex]);
 
+  // 🌟 ズーム倍率（拡大縮小）に応じた動的クラスタリング
+  // 広域(zoom < 10): 都道府県まとめ
+  // 中域(zoom 10〜14): 市区町村まとめ
+  // 詳細(zoom >= 15): 正確な個別地点ピン
   const pinClusters = useMemo(() => {
+    if (timeFilteredData.length === 0) return [];
+
     const clusters = {};
+
     timeFilteredData.forEach(tx => {
-      const key = `${tx.lat},${tx.lng}`;
-      if (!clusters[key]) {
-        clusters[key] = { lat: tx.lat, lng: tx.lng, count: 0, totalAmount: 0, txList: [], name: tx.city || 'エリア詳細' };
+      let clusterKey = '';
+      let clusterName = '';
+
+      if (currentZoom < 10) {
+        // ① 広域: 都道府県単位
+        const pref = tx.prefecture || guessPrefecture(tx.lat, tx.lng) || '全国';
+        clusterKey = `pref_${pref}`;
+        clusterName = `${pref}`;
+      } else if (currentZoom < 15) {
+        // ② 中域: 市区町村単位
+        const pref = tx.prefecture || '';
+        const city = tx.city || '';
+        const ward = tx.ward || '';
+        if (city || ward) {
+          clusterKey = `city_${pref}_${city}_${ward}`;
+          clusterName = `${city}${ward}`;
+        } else {
+          const gridLat = tx.lat.toFixed(2);
+          const gridLng = tx.lng.toFixed(2);
+          clusterKey = `grid_${gridLat}_${gridLng}`;
+          clusterName = `${pref || 'エリア'}`;
+        }
+      } else {
+        // ③ 詳細 (>= 15): 完全な個別地点
+        const exactLat = tx.lat.toFixed(5);
+        const exactLng = tx.lng.toFixed(5);
+        clusterKey = `exact_${exactLat}_${exactLng}`;
+        const cleanCat = tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ') + 1) : tx.category;
+        clusterName = tx.memo || cleanCat || tx.city || '購入地点';
       }
-      clusters[key].count += 1;
-      clusters[key].totalAmount += Number(tx.amount) || 0;
-      clusters[key].txList.push(tx);
+
+      if (!clusters[clusterKey]) {
+        clusters[clusterKey] = {
+          key: clusterKey,
+          name: clusterName,
+          level: currentZoom < 10 ? 'pref' : (currentZoom < 15 ? 'city' : 'exact'),
+          count: 0,
+          totalAmount: 0,
+          txList: [],
+          latSum: 0,
+          lngSum: 0,
+          lat: tx.lat,
+          lng: tx.lng
+        };
+      }
+
+      clusters[clusterKey].count += 1;
+      clusters[clusterKey].totalAmount += Number(tx.amount) || 0;
+      clusters[clusterKey].txList.push(tx);
+      clusters[clusterKey].latSum += tx.lat;
+      clusters[clusterKey].lngSum += tx.lng;
     });
-    return Object.values(clusters);
-  }, [timeFilteredData]);
+
+    return Object.values(clusters).map(c => ({
+      ...c,
+      lat: c.level === 'exact' ? c.lat : c.latSum / c.count,
+      lng: c.level === 'exact' ? c.lng : c.lngSum / c.count
+    }));
+  }, [timeFilteredData, currentZoom]);
+
+  // 🌟 ピン（駅）タップ時のハンドラー（広域・中域ならズームイン、詳細ならパネル表示）
+  const handleClusterClick = (cluster) => {
+    if (cluster.level === 'pref') {
+      setFlyToTarget({ center: [cluster.lat, cluster.lng], zoom: 11 });
+    } else if (cluster.level === 'city') {
+      setFlyToTarget({ center: [cluster.lat, cluster.lng], zoom: 16 });
+    }
+    setSelectedCity({ name: cluster.name, stat: cluster });
+  };
+
+  // 🌟 現在地にジャンプするハンドラー
+  const handleJumpToCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("端末のGPS機能が利用できません");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocating(false);
+        const { latitude, longitude } = pos.coords;
+        setCurrentLocation({ lat: latitude, lng: longitude });
+        setFlyToTarget({ center: [latitude, longitude], zoom: 16 });
+      },
+      (err) => {
+        setIsLocating(false);
+        alert("現在地を取得できませんでした: " + (err.message || 'GPS信号エラー'));
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
   const nationalDomination = useMemo(() => {
     const data = {};
@@ -242,7 +362,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
     <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: '600px', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: '"M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif' }}>
       
       {/* 🌟 白くて丸い、ポップなフィルターバー */}
-      <div className="game-scroll-area" style={{ position: 'absolute', top: '15px', left: '15px', right: '15px', zIndex: 1000, display: 'flex', gap: '10px', padding: '10px', overflowX: 'auto', paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
+      <div className="game-scroll-area" style={{ position: 'absolute', top: '15px', left: '15px', right: '70px', zIndex: 1000, display: 'flex', gap: '10px', padding: '10px', overflowX: 'auto', paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
         <button onClick={() => setFilterPeriod('ALL')} className={`game-pill ${filterPeriod === 'ALL' ? 'active' : ''}`}>ぜんぶ</button>
         <button onClick={() => setFilterPeriod('MONTH')} className={`game-pill ${filterPeriod === 'MONTH' ? 'active' : ''}`}>今月</button>
         <div style={{ width: '2px', background: '#e2e8f0', margin: '0 5px', borderRadius: '2px' }} />
@@ -251,6 +371,38 @@ export default function MoneyFlowMap({ transactions = [] }) {
             {cat.startsWith('/') ? cat.slice(cat.indexOf(' ') + 1) : cat}
           </button>
         ))}
+      </div>
+
+      {/* 🌟 右上の現在地ジャンプボタン */}
+      <button 
+        onClick={handleJumpToCurrentLocation}
+        title="現在地にジャンプ"
+        style={{
+          position: 'absolute',
+          top: '25px',
+          right: '15px',
+          zIndex: 1001,
+          width: '44px',
+          height: '44px',
+          borderRadius: '50%',
+          background: '#ffffff',
+          border: '2px solid #cbd5e1',
+          boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          fontSize: '20px',
+          transition: 'all 0.2s',
+          outline: 'none'
+        }}
+      >
+        {isLocating ? '⏳' : '🎯'}
+      </button>
+
+      {/* 🌟 現在のズーム階層ガイドバッジ */}
+      <div style={{ position: 'absolute', top: '75px', left: '25px', zIndex: 999, background: 'rgba(255,255,255,0.92)', border: '1px solid #cbd5e1', borderRadius: '20px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: '#475569', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', pointerEvents: 'none' }}>
+        {currentZoom < 10 ? '🗾 全国（都道府県まとめ）' : (currentZoom < 15 ? '🏘️ 市区町村まとめ' : '📍 詳細地点（ピンポイント）')}
       </div>
 
       <div style={{ flex: 1, position: 'relative', width: '100%', minHeight: '100%' }}>
@@ -262,7 +414,14 @@ export default function MoneyFlowMap({ transactions = [] }) {
           {/* 🌟 ノーマルで明るい標準マップ（フィルターなしで鮮やかに！） */}
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" noWrap={true} />
           
-          <MapController geoJsonData={nationalGeoJson} viewLevel={viewLevel} selectedPref={selectedPref} />
+          <MapController 
+            geoJsonData={nationalGeoJson} 
+            viewLevel={viewLevel} 
+            selectedPref={selectedPref} 
+            onZoomChange={setCurrentZoom}
+            flyToTarget={flyToTarget}
+            onFlyCompleted={() => setFlyToTarget(null)}
+          />
 
           {viewLevel === 'NATIONAL' && nationalGeoJson && (
             <GeoJSON data={nationalGeoJson} style={styleNational} onEachFeature={(feature, layer) => {
@@ -270,16 +429,38 @@ export default function MoneyFlowMap({ transactions = [] }) {
             }} />
           )}
 
-          {/* 🌟 桃鉄風の駅アイコンを配置 */}
+          {/* 🌟 現在地ピン（青いパルスエフェクト付き） */}
+          {currentLocation && (
+            <Marker 
+              position={[currentLocation.lat, currentLocation.lng]}
+              icon={L.divIcon({
+                className: 'clear-custom-icon',
+                html: `
+                  <div style="position: relative; width: 24px; height: 24px;">
+                    <div style="position: absolute; top: 1px; left: 1px; width: 22px; height: 22px; border-radius: 50%; background: #00bfff; border: 3px solid #ffffff; box-shadow: 0 0 10px #00bfff;"></div>
+                    <div style="position: absolute; top: -6px; left: -6px; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 191, 255, 0.4); animation: pulseCurrentLoc 1.8s infinite ease-out;"></div>
+                  </div>
+                `,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+              })}
+            >
+              <Tooltip direction="top" offset={[0, -15]} opacity={1} className="game-tooltip">
+                🎯 あなたの現在地
+              </Tooltip>
+            </Marker>
+          )}
+
+          {/* 🌟 桃鉄風の駅アイコンを配置（ズーム連動で都道府県→市区町村→詳細ピンへ自動変化） */}
           {(viewLevel === 'PIN' || viewLevel === 'NATIONAL') && pinClusters.map((cluster, idx) => (
             <Marker 
-              key={`cluster-${idx}`} 
+              key={`cluster-${cluster.key || idx}`} 
               position={[cluster.lat, cluster.lng]} 
-              icon={getGameIcon(cluster)}
-              eventHandlers={{ click: () => setSelectedCity({ name: cluster.name, stat: cluster }) }}
+              icon={getGameIcon(cluster, currentZoom)}
+              eventHandlers={{ click: () => handleClusterClick(cluster) }}
             >
               <Tooltip direction="top" offset={[0, -20]} opacity={1} className="game-tooltip">
-                {cluster.name} {cluster.totalAmount >= 30000 ? '⭐' : ''}
+                {cluster.name} {cluster.totalAmount >= 30000 ? '⭐' : ''} {cluster.count > 1 ? `(${cluster.count}件)` : ''}
               </Tooltip>
             </Marker>
           ))}
@@ -291,8 +472,8 @@ export default function MoneyFlowMap({ transactions = [] }) {
                 <Marker 
                   key={`city-${idx}`} 
                   position={[cluster.lat, cluster.lng]} 
-                  icon={getGameIcon(cluster)}
-                  eventHandlers={{ click: () => setSelectedCity({ name: cluster.name, stat: cluster }) }}
+                  icon={getGameIcon(cluster, currentZoom)}
+                  eventHandlers={{ click: () => handleClusterClick(cluster) }}
                 >
                   <Tooltip direction="top" offset={[0, -20]} opacity={1} className="game-tooltip">
                     {cluster.name} {cluster.totalAmount >= 30000 ? '⭐' : ''}
@@ -306,27 +487,51 @@ export default function MoneyFlowMap({ transactions = [] }) {
 
       {/* 🌟 ボードゲーム風の白くて見やすい詳細パネル */}
       {selectedCity && (
-        <div className="game-panel" style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '380px', zIndex: 1000, padding: '20px', animation: 'slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px', borderBottom: '2px dashed #cbd5e1', paddingBottom: '10px' }}>
+        <div className="game-panel" style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', width: '92%', maxWidth: '390px', zIndex: 1000, padding: '18px', animation: 'slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', borderBottom: '2px dashed #cbd5e1', paddingBottom: '8px' }}>
             <div>
-              <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>📍 {selectedPref || 'エリア情報'}</div>
-              <div style={{ fontSize: '20px', fontWeight: '900', color: '#334155', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>{selectedCity.name} 駅</div>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+                📍 {selectedCity.stat.txList[0]?.prefecture || selectedPref || 'エリア情報'}
+                {selectedCity.stat.txList[0]?.city ? ` > ${selectedCity.stat.txList[0].city}` : ''}
+              </div>
+              <div style={{ fontSize: '18px', fontWeight: '900', color: '#334155', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                {selectedCity.name} {selectedCity.stat.level !== 'exact' ? '駅' : ''}
+              </div>
             </div>
-            <button onClick={() => setSelectedCity(null)} style={{ background: '#f1f5f9', border: 'none', color: '#64748b', fontSize: '20px', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
+            <button onClick={() => setSelectedCity(null)} style={{ background: '#f1f5f9', border: 'none', color: '#64748b', fontSize: '18px', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', border: '2px solid #e2e8f0', padding: '12px', borderRadius: '12px' }}>
-              <span style={{ color: '#475569', fontSize: '14px', fontWeight: 'bold' }}>💰 累計金額</span>
-              <span style={{ color: '#ef4444', fontSize: '20px', fontWeight: '900' }}>¥{selectedCity.stat.totalAmount.toLocaleString()}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', border: '2px solid #e2e8f0', padding: '10px 14px', borderRadius: '12px' }}>
+              <span style={{ color: '#475569', fontSize: '13px', fontWeight: 'bold' }}>💰 累計支出</span>
+              <span style={{ color: '#ef4444', fontSize: '19px', fontWeight: '900' }}>¥{selectedCity.stat.totalAmount.toLocaleString()}</span>
             </div>
-            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '5px', fontWeight: 'bold' }}>📝 取引きろく ({selectedCity.stat.count}件)</div>
-            <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '5px' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', fontWeight: 'bold' }}>📝 取引明細 ({selectedCity.stat.count}件)</div>
+            <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
               {selectedCity.stat.txList.map(tx => (
-                <div key={tx.id} style={{ background: '#ffffff', border: '2px solid #e2e8f0', borderLeft: `6px solid ${tx.type==='expense' ? '#ef4444' : '#3b82f6'}`, padding: '10px 12px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '8px' }}>
-                  <div style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%', fontWeight: 'bold' }}>
-                    {tx.date?.toDate ? `${tx.date.toDate().getMonth()+1}/${tx.date.toDate().getDate()}` : ''} · {tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ')+1) : tx.category}
+                <div key={tx.id} style={{ background: '#ffffff', border: '2px solid #e2e8f0', borderLeft: `5px solid ${tx.type==='expense' ? '#ef4444' : '#3b82f6'}`, padding: '8px 10px', fontSize: '12px', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                    <span style={{ color: '#334155', fontWeight: 'bold' }}>
+                      {tx.date?.toDate ? `${tx.date.toDate().getMonth()+1}/${tx.date.toDate().getDate()}` : ''} · {tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ')+1) : tx.category}
+                    </span>
+                    <span style={{ color: '#ef4444', fontWeight: '900', fontSize: '14px' }}>¥{Number(tx.amount).toLocaleString()}</span>
                   </div>
-                  <div style={{ color: '#334155', fontWeight: '900' }}>¥{Number(tx.amount).toLocaleString()}</div>
+                  {tx.memo && (
+                    <div style={{ color: '#475569', fontSize: '11px', marginBottom: '2px' }}>
+                      💬 {tx.memo}
+                    </div>
+                  )}
+                  {tx.fullAddress && (
+                    <div style={{ color: '#64748b', fontSize: '10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      📍 {tx.fullAddress}
+                    </div>
+                  )}
+                  {tx.paymentMethod && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span style={{ fontSize: '9px', background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                        💳 {tx.paymentMethod.includes(' ') ? tx.paymentMethod.split(' ')[1] : tx.paymentMethod}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -335,7 +540,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
       )}
 
       {viewLevel === 'PREF_DETAIL' && !selectedCity && (
-        <button onClick={() => { setViewLevel('NATIONAL'); setSelectedPref(null); setSelectedCity(null); }} className="game-panel" style={{ position: 'absolute', top: '75px', left: '15px', zIndex: 1000, color: '#3b82f6', padding: '12px 20px', borderRadius: '30px', fontSize: '14px', fontWeight: '900', cursor: 'pointer', border: '2px solid #3b82f6', background: '#fff' }}>
+        <button onClick={() => { setViewLevel('NATIONAL'); setSelectedPref(null); setSelectedCity(null); }} className="game-panel" style={{ position: 'absolute', top: '110px', left: '15px', zIndex: 1000, color: '#3b82f6', padding: '10px 16px', borderRadius: '30px', fontSize: '13px', fontWeight: '900', cursor: 'pointer', border: '2px solid #3b82f6', background: '#fff' }}>
           ◀ 全国マップに戻る
         </button>
       )}
@@ -419,6 +624,11 @@ export default function MoneyFlowMap({ transactions = [] }) {
         @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
+        @keyframes pulseCurrentLoc {
+          0% { transform: scale(0.6); opacity: 1; }
+          100% { transform: scale(2.0); opacity: 0; }
+        }
+
         /* 純正UIの一掃 */
         .leaflet-control-container { display: none !important; }
         .leaflet-popup-content-wrapper { display: none !important; }
