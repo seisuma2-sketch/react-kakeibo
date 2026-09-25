@@ -79,6 +79,7 @@ export default function MobileInputForm({
   // 🌟 AI OCRレシートスキャナー用State
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [geminiModel, setGeminiModel] = useState(() => localStorage.getItem('gemini_model') || 'gemini-1.5-flash');
   const [ocrProgress, setOcrProgress] = useState(0);
 
   // 🌟 固定費・サブスク用State（自動計上＆更新リマインダー対応）
@@ -617,11 +618,13 @@ export default function MobileInputForm({
       const savedGeminiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const visionKey = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
 
-      // ① Gemini 1.5 Flash による高精度マルチモーダル解析（APIキー保持時）
+      // ① Gemini マルチモーダル解析（ユーザー選択モデル: 1.5 Flash / 1.5 Pro / 2.0 Flash）
       if (savedGeminiKey && savedGeminiKey !== 'undefined') {
         try {
+          const currentModel = localStorage.getItem('gemini_model') || geminiModel || 'gemini-1.5-flash';
+          const modelName = currentModel === 'gemini-1.5-pro' ? 'Gemini 1.5 Pro (超精密)' : (currentModel === 'gemini-2.0-flash' ? 'Gemini 2.0 Flash (次世代)' : 'Gemini 1.5 Flash (爆速)');
           setOcrProgress(30);
-          setArLog('[AI] Gemini 1.5 Flash 高度解析エンジンに接続中...');
+          setArLog(`[AI] ${modelName} 解析エンジンに接続中...`);
           const mimeType = file.type || 'image/jpeg';
           const base64Content = base64Data.split(',')[1];
 
@@ -633,7 +636,7 @@ export default function MobileInputForm({
   "memo": "買ったものの要約"
 }`;
 
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedGeminiKey}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${savedGeminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1057,8 +1060,28 @@ export default function MobileInputForm({
             </div>
 
             <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.6' }}>
-              Google AI Studio（無料）のGemini APIキーを入力すると、<strong style={{ color: '#00ff66' }}>Gemini 1.5 Flash</strong>による超高精度なレシート品目・金額・店舗自動解析が有効になります。<br/>
+              Google AI Studio（無料）のGemini APIキーを入力すると、Geminiによる超高精度なレシート品目・金額・店舗自動解析が有効になります。<br/>
               ※未入力の場合は完全ローカルの日本語OCRエンジンで動作します。
+            </div>
+
+            {/* 🌟 使用AIモデルの選択 */}
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '6px' }}>使用するAIモデル</label>
+              <select
+                value={geminiModel}
+                onChange={e => {
+                  setGeminiModel(e.target.value);
+                  localStorage.setItem('gemini_model', e.target.value);
+                }}
+                style={{ width: '100%', padding: '10px', background: '#05070a', border: '1.5px solid #00bfff', borderRadius: '8px', color: '#00ff66', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}
+              >
+                <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash (推奨・爆速1〜2秒 / 完全無料)</option>
+                <option value="gemini-1.5-pro">🧠 Gemini 1.5 Pro (超高精度推論・約5〜10秒 / 完全無料)</option>
+                <option value="gemini-2.0-flash">🚀 Gemini 2.0 Flash (次世代超高速 / 完全無料)</option>
+              </select>
+              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
+                ※Google AI Studioの無料枠でどのモデルも完全無料（0円）で利用可能です。
+              </div>
             </div>
 
             <div>
