@@ -335,6 +335,45 @@ export default function MoneyFlowMap({ transactions = [] }) {
     return Object.values(data);
   }, [timeFilteredData, selectedPref]);
 
+  // 🌟 エリア別消費ランキング Top 5 の算出
+  const topAreaRankings = useMemo(() => {
+    const areaMap = {};
+    timeFilteredData.forEach(tx => {
+      if (tx.type && tx.type !== 'expense') return;
+      const amt = Number(tx.amount) || 0;
+      if (amt <= 0) return;
+
+      const pref = tx.prefecture || guessPrefecture(tx.lat, tx.lng) || '';
+      const city = tx.city ? `${tx.city}${tx.ward || ''}` : '';
+      const areaName = city ? `${pref ? pref + ' ' : ''}${city}` : (pref || 'その他');
+
+      if (!areaMap[areaName]) {
+        areaMap[areaName] = {
+          name: areaName,
+          totalAmount: 0,
+          count: 0,
+          latSum: 0,
+          lngSum: 0,
+          txList: []
+        };
+      }
+      areaMap[areaName].totalAmount += amt;
+      areaMap[areaName].count += 1;
+      areaMap[areaName].latSum += tx.lat;
+      areaMap[areaName].lngSum += tx.lng;
+      areaMap[areaName].txList.push(tx);
+    });
+
+    return Object.values(areaMap)
+      .map(item => ({
+        ...item,
+        lat: item.latSum / item.count,
+        lng: item.lngSum / item.count
+      }))
+      .sort((a, b) => b.totalAmount - a.totalAmount)
+      .slice(0, 5);
+  }, [timeFilteredData]);
+
   useEffect(() => {
     if (viewLevel !== 'PIN' && !nationalGeoJson) {
       fetch('https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson')
@@ -400,8 +439,57 @@ export default function MoneyFlowMap({ transactions = [] }) {
         {isLocating ? '⏳' : '🎯'}
       </button>
 
+      {/* 🌟 エリア別消費ランキング Top 5（タップでフライ移動） */}
+      {topAreaRankings.length > 0 && (
+        <div className="game-scroll-area" style={{ position: 'absolute', top: '72px', left: '15px', right: '15px', zIndex: 999, display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '4px 0' }}>
+          <div style={{ background: 'rgba(255, 255, 255, 0.95)', border: '1.5px solid #cbd5e1', borderRadius: '20px', padding: '5px 12px', fontSize: '11px', fontWeight: '900', color: '#0f172a', whiteSpace: 'nowrap', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', flexShrink: 0 }}>
+            🏆 エリア消費 Top5:
+          </div>
+          {topAreaRankings.map((area, index) => {
+            const medals = ['🥇', '🥈', '🥉', '4位', '5位'];
+            return (
+              <button
+                key={area.name}
+                type="button"
+                onClick={() => {
+                  setFlyToTarget({ center: [area.lat, area.lng], zoom: 15 });
+                  setSelectedCity({
+                    name: area.name,
+                    stat: {
+                      ...area,
+                      level: 'city'
+                    }
+                  });
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.95)',
+                  border: index === 0 ? '2px solid #eab308' : '1.5px solid #cbd5e1',
+                  borderRadius: '20px',
+                  padding: '5px 12px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  color: '#1e293b',
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexShrink: 0,
+                  transition: 'all 0.15s'
+                }}
+              >
+                <span>{medals[index]}</span>
+                <span style={{ fontWeight: '900' }}>{area.name}</span>
+                <span style={{ color: '#ef4444', fontWeight: '900' }}>¥{area.totalAmount.toLocaleString()}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* 🌟 現在のズーム階層ガイドバッジ */}
-      <div style={{ position: 'absolute', top: '75px', left: '25px', zIndex: 999, background: 'rgba(255,255,255,0.92)', border: '1px solid #cbd5e1', borderRadius: '20px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: '#475569', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: topAreaRankings.length > 0 ? '116px' : '75px', left: '15px', zIndex: 998, background: 'rgba(255,255,255,0.92)', border: '1px solid #cbd5e1', borderRadius: '20px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: '#475569', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', pointerEvents: 'none' }}>
         {currentZoom < 10 ? '🗾 全国（都道府県まとめ）' : (currentZoom < 15 ? '🏘️ 市区町村まとめ' : '📍 詳細地点（ピンポイント）')}
       </div>
 

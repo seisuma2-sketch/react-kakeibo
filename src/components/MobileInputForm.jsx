@@ -79,6 +79,7 @@ export default function MobileInputForm({
   const [nearbySpots, setNearbySpots] = useState([]);
   const [currentCoords, setCurrentCoords] = useState(null);
   const [isEveringNfcActive, setIsEveringNfcActive] = useState(false);
+  const [spotSuggestedAmounts, setSpotSuggestedAmounts] = useState([]);
   
   const [isArModalOpen, setIsArModalOpen] = useState(false);
   const [arImageSrc, setArImageSrc] = useState(null);
@@ -310,8 +311,7 @@ export default function MobileInputForm({
 
         if (!transactions || transactions.length === 0) return;
 
-        const candidates = [];
-        const seenKeys = new Set();
+        const spotMap = new Map();
 
         transactions.forEach(tx => {
           let txLat = tx.lat ? parseFloat(tx.lat) : null;
@@ -326,15 +326,15 @@ export default function MobileInputForm({
 
           if (txLat && txLng && !isNaN(txLat) && !isNaN(txLng)) {
             const dist = getDistanceM(latitude, longitude, txLat, txLng);
-            // 半径400m以内を候補とする
-            if (dist <= 400) {
+            // 半径500m以内を候補とする
+            if (dist <= 500) {
               const cleanCat = tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ') + 1) : tx.category;
               const spotName = tx.memo || cleanCat || '付近のスポット';
               const uniqueKey = `${spotName}_${tx.category}`;
+              const txAmt = Number(tx.amount) || 0;
 
-              if (!seenKeys.has(uniqueKey)) {
-                seenKeys.add(uniqueKey);
-                candidates.push({
+              if (!spotMap.has(uniqueKey)) {
+                spotMap.set(uniqueKey, {
                   name: spotName,
                   category: tx.category,
                   memo: tx.memo || '',
@@ -345,11 +345,33 @@ export default function MobileInputForm({
                   fullAddress: tx.fullAddress || '',
                   prefecture: tx.prefecture || '',
                   city: tx.city || '',
-                  ward: tx.ward || ''
+                  ward: tx.ward || '',
+                  amounts: txAmt > 0 ? [txAmt] : []
                 });
+              } else {
+                const existing = spotMap.get(uniqueKey);
+                if (dist < existing.distance) existing.distance = dist;
+                if (txAmt > 0) existing.amounts.push(txAmt);
               }
             }
           }
+        });
+
+        const candidates = Array.from(spotMap.values()).map(spot => {
+          const amounts = spot.amounts;
+          let lastAmount = amounts.length > 0 ? amounts[0] : null;
+          let avgAmount = amounts.length > 0 ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length) : null;
+          
+          const suggestedAmounts = [];
+          if (lastAmount) suggestedAmounts.push({ label: '直近', value: lastAmount });
+          if (avgAmount && avgAmount !== lastAmount) suggestedAmounts.push({ label: '平均', value: avgAmount });
+
+          return {
+            ...spot,
+            lastAmount,
+            avgAmount,
+            suggestedAmounts
+          };
         });
 
         candidates.sort((a, b) => a.distance - b.distance);
@@ -382,6 +404,18 @@ export default function MobileInputForm({
         ward: spot.ward || '',
         fullAddress: spot.fullAddress || ''
       });
+    }
+
+    // 🌟 過去履歴連動：金額サジェストの展開と直近金額の自動反映
+    if (spot.suggestedAmounts && spot.suggestedAmounts.length > 0) {
+      setSpotSuggestedAmounts(spot.suggestedAmounts);
+      const defaultVal = spot.suggestedAmounts[0].value;
+      if (defaultVal) {
+        setCalcStr(String(defaultVal));
+        setAmount(String(defaultVal));
+      }
+    } else {
+      setSpotSuggestedAmounts([]);
     }
 
     showAlert(`[${spot.name}] を自動セットしました (${spot.distance}m)`, "success");
@@ -1592,6 +1626,37 @@ export default function MobileInputForm({
             </div>
           )}
 
+          {/* 🌟 過去履歴連動：金額0秒サジェストチップ */}
+          {spotSuggestedAmounts.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11px', color: '#00bfff', fontWeight: 'bold' }}>よく使う金額:</span>
+              {spotSuggestedAmounts.map((sAmt, sIdx) => (
+                <button
+                  key={`form-sug-${sIdx}`}
+                  type="button"
+                  onClick={() => {
+                    if (navigator.vibrate) navigator.vibrate(20);
+                    setCalcStr(String(sAmt.value));
+                    setAmount(String(sAmt.value));
+                  }}
+                  style={{
+                    background: 'rgba(0, 191, 255, 0.15)',
+                    border: '1px solid #00bfff',
+                    borderRadius: '16px',
+                    color: '#fff',
+                    padding: '4px 12px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span style={{ color: '#00bfff', marginRight: '4px' }}>{sAmt.label}</span>
+                  ¥{Number(sAmt.value).toLocaleString()}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div>
             <div style={labelStyle}>金額 (数式入力可)</div>
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -1799,6 +1864,37 @@ export default function MobileInputForm({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 🌟 過去履歴連動：テンキー内・よく使う金額サジェスト */}
+        {spotSuggestedAmounts.length > 0 && (
+          <div style={{ maxWidth: '600px', margin: '0 auto 10px auto', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', color: '#00bfff', fontWeight: 'bold' }}>履歴金額:</span>
+            {spotSuggestedAmounts.map((sAmt, sIdx) => (
+              <button
+                key={`pad-sug-${sIdx}`}
+                type="button"
+                onClick={() => {
+                  if (navigator.vibrate) navigator.vibrate(20);
+                  setCalcStr(String(sAmt.value));
+                  setAmount(String(sAmt.value));
+                }}
+                style={{
+                  background: 'rgba(0, 191, 255, 0.15)',
+                  border: '1px solid #00bfff',
+                  borderRadius: '16px',
+                  color: '#fff',
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                <span style={{ color: '#00bfff', marginRight: '4px' }}>{sAmt.label}</span>
+                ¥{Number(sAmt.value).toLocaleString()}
+              </button>
+            ))}
           </div>
         )}
 
