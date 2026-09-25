@@ -56,6 +56,19 @@ export default function MobileApp() {
     return saved !== null ? saved === 'true' : true;
   });
   useEffect(() => localStorage.setItem('stealthActiveMobile', isStealthActive), [isStealthActive]);
+
+  const updateStealthActive = async (newVal) => {
+    setIsStealthActive(newVal);
+    localStorage.setItem('stealthActiveMobile', newVal);
+    if (user) {
+      try {
+        await setDoc(doc(db, "user_settings", user.uid), { isStealthActive: newVal }, { merge: true });
+      } catch (err) {
+        console.error("ステルス設定の同期に失敗:", err);
+      }
+    }
+  };
+
   const [stealthAccounts, setStealthAccounts] = useState([]); 
   const [newGhostBank, setNewGhostBank] = useState('');
 
@@ -103,7 +116,7 @@ export default function MobileApp() {
     
     // ① ゴースト口座アンロック
     if (actionStr.includes('unlock_ghost')) {
-      setIsStealthActive(false);
+      updateStealthActive(false);
       setShowNfcCyberUnlock(true);
       setShowNfcTapBanner(false);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
@@ -290,6 +303,10 @@ export default function MobileApp() {
           setDoc(doc(db, "user_settings", user.uid), { familyId: currentFamilyId }, { merge: true });
         }
         setStealthAccounts(data.stealthAccounts || []);
+        if (data.isStealthActive !== undefined) {
+          setIsStealthActive(data.isStealthActive);
+          localStorage.setItem('stealthActiveMobile', data.isStealthActive);
+        }
 
         // 🌟 クラウドの口座・クレカ設定をローカルへ同期
         const updated = applyCloudSettingsToLocal(data);
@@ -371,31 +388,47 @@ export default function MobileApp() {
 
   const toggleStealth = () => {
     if (!isStealthActive) {
-      setIsStealthActive(true); alert("🔒 ゴーストプロトコルを再起動しました");
+      updateStealthActive(true);
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     } else {
       const pw = prompt("パスコードを入力してください");
-      if (pw === "0000") { setIsStealthActive(false); alert("🔓 ゴーストプロトコルを解除しました"); } 
-      else if (pw !== null) { alert("❌ パスコードが違います"); }
+      if (pw === "0000" || pw === "cyber") {
+        updateStealthActive(false);
+      } else if (pw !== null) {
+        alert("パスコードが違います");
+      }
     }
   };
 
-  // 🌟 残高4回タップ検知ハンドラー
+  // 🌟 誰にもバレない隠しタップハンドラー
+  // 隠している時：4回タップで解除認証（Face ID）
+  // 隠していない時：3回タップで即座に隠す（ステルス有効化＆パソコン連動）
   const handleBalanceQuadTap = () => {
-    if (!isStealthActive) return;
-
     balanceTapCountRef.current += 1;
     if (navigator.vibrate) navigator.vibrate(20);
 
     if (balanceTapTimerRef.current) clearTimeout(balanceTapTimerRef.current);
 
-    if (balanceTapCountRef.current >= 4) {
-      balanceTapCountRef.current = 0;
-      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
-      triggerFaceAuthSequence();
-    } else {
-      balanceTapTimerRef.current = setTimeout(() => {
+    if (isStealthActive) {
+      if (balanceTapCountRef.current >= 4) {
         balanceTapCountRef.current = 0;
-      }, 1200);
+        if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+        triggerFaceAuthSequence();
+      } else {
+        balanceTapTimerRef.current = setTimeout(() => {
+          balanceTapCountRef.current = 0;
+        }, 1200);
+      }
+    } else {
+      if (balanceTapCountRef.current >= 3) {
+        balanceTapCountRef.current = 0;
+        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+        updateStealthActive(true);
+      } else {
+        balanceTapTimerRef.current = setTimeout(() => {
+          balanceTapCountRef.current = 0;
+        }, 1000);
+      }
     }
   };
 
@@ -495,7 +528,7 @@ export default function MobileApp() {
     setFaceAuthStatus('success');
     setFaceAuthLog('>>> [BIOMETRIC MATCH CONFIRMED] [GHOST PROTOCOL: DISENGAGED] <<<');
     if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
-    setIsStealthActive(false);
+    updateStealthActive(false);
 
     setTimeout(() => {
       closeFaceAuthModal();
@@ -515,7 +548,7 @@ export default function MobileApp() {
 
   const handleFallbackSubmit = (e) => {
     e?.preventDefault();
-    if (fallbackPassword === "0000") {
+    if (fallbackPassword === "0000" || fallbackPassword === "cyber") {
       completeFaceAuthSuccess();
     } else {
       setFaceAuthLog('[ACCESS DENIED] INVALID PASSCODE.');
@@ -524,7 +557,7 @@ export default function MobileApp() {
   };
 
   const triggerStealthUnlock = () => {
-    setIsStealthActive(false);
+    updateStealthActive(false);
     stopSnappingDetection();
     if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
     alert("🔓 SYSTEM ACCESS GRANTED (SNAP_DETECTION_CONFIRMED)");
@@ -676,17 +709,10 @@ export default function MobileApp() {
         </div>
         
         <div 
-          onClick={() => {
-            if (!isStealthActive) {
-              setIsStealthActive(true); 
-              if (navigator.vibrate) navigator.vibrate(200); 
-              alert("🔒 ゴーストプロトコルを再起動しました");
-            }
-          }}
+          onClick={handleBalanceQuadTap}
           style={{ 
             fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '14px', 
-            cursor: !isStealthActive ? 'pointer' : 'default',
-            animation: !isStealthActive ? 'pulse 1.5s infinite ease-in-out' : 'none'
+            cursor: 'default', userSelect: 'none'
           }}
         >
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>

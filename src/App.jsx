@@ -86,6 +86,17 @@ function App() {
   useEffect(() => {
     localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
   }, [stealthConfig]);
+
+  const updateStealthActive = async (newVal) => {
+    setStealthConfig(prev => ({ ...prev, active: newVal }));
+    if (user) {
+      try {
+        await setDoc(doc(db, "user_settings", user.uid), { isStealthActive: newVal }, { merge: true });
+      } catch (err) {
+        console.error("PC版ステルス設定同期エラー:", err);
+      }
+    }
+  };
   
   const CORRECT_PASSWORD = 'cyber';
 
@@ -152,7 +163,7 @@ function App() {
     if (stealthPassword === CORRECT_PASSWORD || stealthPassword === '0000') {
       setIsAuthModalOpen(false);
       setStealthPassword('');
-      setStealthConfig(prev => ({ ...prev, active: false }));
+      updateStealthActive(false);
       setIsConfigModalOpen(true);
     } else {
       alert('認証エラー：パスコードが違います。');
@@ -243,7 +254,11 @@ function App() {
     const unsubSettings = onSnapshot(doc(db, "user_settings", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStealthConfig(prev => ({ ...prev, ghostAccounts: data.stealthAccounts || [] }));
+        setStealthConfig(prev => ({ 
+          ...prev, 
+          ghostAccounts: data.stealthAccounts || [],
+          active: data.isStealthActive !== undefined ? data.isStealthActive : prev.active
+        }));
         if (data.userName !== undefined) setUserName(data.userName);
         else setIsProfileModalOpen(true);
         if (data.cycleStartDay) {
@@ -501,7 +516,7 @@ function App() {
             <h2 
               onDoubleClick={() => {
                 if (!stealthConfig.active) {
-                  setStealthConfig(prev => ({ ...prev, active: true }));
+                  updateStealthActive(true);
                 } else {
                   setIsAuthModalOpen(true);
                 }
@@ -772,7 +787,7 @@ function App() {
             <h3 style={{ color: themeColor, marginTop: 0 }}>🕶️ ステルス制御</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0' }}>
               <span style={{ color: stealthConfig.active ? themeColor : '#aaa' }}>稼働状況</span>
-              <button onClick={() => setStealthConfig(prev => ({ ...prev, active: !prev.active }))} style={toggleBtnStyle(stealthConfig.active, themeColor)}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
+              <button onClick={() => updateStealthActive(!stealthConfig.active)} style={toggleBtnStyle(stealthConfig.active, themeColor)}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
             </div>
             
             <ConfigRow label="サマリー・コア" configKey="hideSummary" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />
