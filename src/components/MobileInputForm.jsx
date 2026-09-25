@@ -59,7 +59,7 @@ export default function MobileInputForm({
   const [arImageSrc, setArImageSrc] = useState(null);
   const [arStatus, setArStatus] = useState('idle'); 
   const [arLog, setArLog] = useState('[SYSTEM] OPTICAL SENSOR ONLINE... READY.');
-  const [arTargetData, setArTargetData] = useState({ amount: '', memo: '' });
+  const [arTargetData, setArTargetData] = useState({ amount: '', memo: '', category: '' });
 
   const [customAlert, setCustomAlert] = useState({ isOpen: false, message: '', type: 'success' });
   const [customPrompt, setCustomPrompt] = useState({ isOpen: false, title: '', target: '', text: '' });
@@ -76,14 +76,22 @@ export default function MobileInputForm({
   const [savedCards, setSavedCards] = useState({});
   const [editTargetCard, setEditTargetCard] = useState('');
 
-  // 🌟 固定費・サブスク用State
+  // 🌟 AI OCRレシートスキャナー用State
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [ocrProgress, setOcrProgress] = useState(0);
+
+  // 🌟 固定費・サブスク用State（自動計上＆更新リマインダー対応）
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [recurringList, setRecurringList] = useState([]);
   const [newRecName, setNewRecName] = useState('');
   const [newRecAmount, setNewRecAmount] = useState('');
   const [newRecCategory, setNewRecCategory] = useState('');
   const [newRecPaymentMethod, setNewRecPaymentMethod] = useState('');
+  const [newRecBillingDay, setNewRecBillingDay] = useState('27');
+  const [newRecAutoPost, setNewRecAutoPost] = useState(true);
   const [isRegisteringRecurring, setIsRegisteringRecurring] = useState(false);
+  const [upcomingReminders, setUpcomingReminders] = useState([]);
 
   // 🌟 自作確認モーダル用State (Chrome標準confirm不使用)
   const [customConfirm, setCustomConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
@@ -405,6 +413,72 @@ export default function MobileInputForm({
     });
   };
 
+  // 🌟 固定費・サブスクの自動計上チェック ＆ リマインダー算出
+  useEffect(() => {
+    if (!recurringList || recurringList.length === 0 || !auth.currentUser) return;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+
+    // 1. リマインダーの算出（今日から3日以内に引き落とし日を迎えるもの）
+    const reminders = [];
+    recurringList.forEach(item => {
+      const bDay = Number(item.billingDay) || 1;
+      const diff = bDay - currentDay;
+      if (diff === 0) {
+        reminders.push({ ...item, text: `今日: ${item.name} (¥${Number(item.amount).toLocaleString()}) の引き落とし日です！` });
+      } else if (diff === 1) {
+        reminders.push({ ...item, text: `明日: ${item.name} (¥${Number(item.amount).toLocaleString()}) の引き落とし日です！` });
+      } else if (diff > 1 && diff <= 3) {
+        reminders.push({ ...item, text: `あと${diff}日: ${item.name} (¥${Number(item.amount).toLocaleString()}) の引き落とし予定` });
+      }
+    });
+    setUpcomingReminders(reminders);
+
+    // 2. 毎月の自動計上処理（autoPostがONで、今日が引き落とし日以降、かつ今月まだ自動計上されていないもの）
+    const autoPostKey = `m402_autopost_${auth.currentUser.uid}_${currentYear}_${currentMonth}`;
+    const postedIds = JSON.parse(localStorage.getItem(autoPostKey) || '[]');
+
+    const toPost = recurringList.filter(item => {
+      const isAuto = item.autoPost !== false; // デフォルトtrue
+      const bDay = Number(item.billingDay) || 1;
+      const reachedDay = currentDay >= bDay;
+      const alreadyPosted = postedIds.includes(item.id);
+      return isAuto && reachedDay && !alreadyPosted;
+    });
+
+    if (toPost.length > 0) {
+      const executeAutoPost = async () => {
+        try {
+          const newlyPostedIds = [...postedIds];
+          for (const item of toPost) {
+            const txData = {
+              userId: auth.currentUser.uid,
+              type: 'expense',
+              amount: Number(item.amount) || 0,
+              category: item.category,
+              paymentMethod: item.paymentMethod,
+              memo: `[固定費自動計上] ${item.name}`,
+              date: Timestamp.now(),
+              createdAt: Timestamp.now(),
+              mode: dbMode === 'sync' ? 'sync' : 'personal'
+            };
+            if (dbMode === 'sync' && familyId) txData.familyId = familyId;
+            await addDoc(collection(db, "transactions"), txData);
+            newlyPostedIds.push(item.id);
+          }
+          localStorage.setItem(autoPostKey, JSON.stringify(newlyPostedIds));
+          showAlert(`📅 今月の固定費 [${toPost.map(t => t.name).join(', ')}] を自動計上しました！`, 'success');
+        } catch (err) {
+          console.error("Auto recurring post error:", err);
+        }
+      };
+      executeAutoPost();
+    }
+  }, [recurringList, dbMode, familyId]);
+
   // 🌟 固定費・サブスクの操作ハンドラー
   const handleAddRecurring = () => {
     if (!newRecName.trim() || !newRecAmount) {
@@ -417,14 +491,16 @@ export default function MobileInputForm({
       name: newRecName.trim(),
       amount: Number(newRecAmount) || 0,
       category: newRecCategory || expenseCategories[0] || 'その他',
-      paymentMethod: newRecPaymentMethod || accounts[0] || '現金'
+      paymentMethod: newRecPaymentMethod || accounts[0] || '現金',
+      billingDay: Number(newRecBillingDay) || 27,
+      autoPost: newRecAutoPost
     };
     const updated = [...recurringList, newItem];
     setRecurringList(updated);
     localStorage.setItem(recKey, JSON.stringify(updated));
     setNewRecName('');
     setNewRecAmount('');
-    showAlert(`固定費 [${newItem.name}] を追加しました`, "success");
+    showAlert(`固定費 [${newItem.name}] (毎月${newItem.billingDay}日・自動計上:${newItem.autoPost ? 'ON' : 'OFF'}) を追加しました`, "success");
   };
 
   const handleDeleteRecurring = (id) => {
@@ -528,7 +604,8 @@ export default function MobileInputForm({
     const file = e.target.files[0];
     if (!file) return;
     setArStatus('scanning');
-    setArLog('[SYSTEM] INITIATING TARGETING SCAN...');
+    setOcrProgress(10);
+    setArLog('[AI OCR] レシート画像を読み込み中...');
     setIsArModalOpen(true);
 
     const reader = new FileReader();
@@ -536,66 +613,185 @@ export default function MobileInputForm({
     reader.onload = async () => {
       const base64Data = reader.result;
       setArImageSrc(base64Data);
-      
-      const base64Image = base64Data.split(',')[1];
-      const API_KEY = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
 
-      if (!API_KEY || API_KEY === 'undefined') {
-        setTimeout(() => {
-          setArStatus('error');
-          setArLog('[WARN] VISION API KEY NOT FOUND. SWITCHING TO MANUAL TARGETING MODE.');
-          if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        }, 1500);
-        return;
+      const savedGeminiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
+      const visionKey = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
+
+      // ① Gemini 1.5 Flash による高精度マルチモーダル解析（APIキー保持時）
+      if (savedGeminiKey && savedGeminiKey !== 'undefined') {
+        try {
+          setOcrProgress(30);
+          setArLog('[AI] Gemini 1.5 Flash 高度解析エンジンに接続中...');
+          const mimeType = file.type || 'image/jpeg';
+          const base64Content = base64Data.split(',')[1];
+
+          const prompt = `このレシート画像から店舗名、合計支払金額、最も妥当な家計簿カテゴリ（食費、日用品、交通費、交際費、趣味、衣服・美容、その他のいずれか）、品目メモを抽出し、以下のJSON形式のみで出力してください。バッククォートやコードブロックなどの装飾は一切入れないでください。
+{
+  "storeName": "店舗名",
+  "totalAmount": 1280,
+  "category": "食費",
+  "memo": "買ったものの要約"
+}`;
+
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedGeminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: prompt },
+                  { inline_data: { mime_type: mimeType, data: base64Content } }
+                ]
+              }]
+            })
+          });
+
+          if (res.ok) {
+            setOcrProgress(80);
+            const resultData = await res.json();
+            const textResponse = resultData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            const cleaned = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+
+            if (parsed.totalAmount) {
+              setOcrProgress(100);
+              const storeStr = parsed.storeName || 'レシート店舗';
+              const memoStr = parsed.memo ? `${storeStr} (${parsed.memo})` : storeStr;
+              setArTargetData({
+                amount: String(parsed.totalAmount).replace(/[^0-9]/g, ''),
+                memo: memoStr,
+                category: parsed.category || '食費'
+              });
+              setArStatus('locked');
+              setArLog(`[AI SUCCESS] 解析完了: ${storeStr} ¥${Number(parsed.totalAmount).toLocaleString()}`);
+              if (navigator.vibrate) navigator.vibrate([50, 50, 200]);
+              return;
+            }
+          }
+        } catch (geminiErr) {
+          console.warn('Gemini OCR failed, falling back to local OCR:', geminiErr);
+          setArLog('[AI] Gemini解析スキップ → ローカルOCRに自動切替...');
+        }
       }
 
-      try {
-        setArLog('[OCR] DECRYPTING OPTICAL DATA VIA NEBULA SATELLITE...');
-        const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`;
-        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ image: { content: base64Image }, features: [{ type: 'TEXT_DETECTION' }] }] }) });
-        const data = await response.json();
-        
-        if (data.error) throw new Error(data.error.message);
-
-        const text = data.responses[0]?.textAnnotations[0]?.description;
-        if (!text) {
-          setArStatus('error');
-          setArLog('[ERROR] NO READABLE CHARACTERS DETECTED IN TARGET AREA.');
-          return;
-        }
-
-        const lines = text.split('\n');
-        let foundMemo = lines[0]?.trim() || 'スキャン店舗';
-        let foundAmount = "";
-
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const match = lines[i].match(/(?:合計|合\s*計|小計|お買上額|支払|¥|￥)\s*[:：]?\s*[¥￥]?\s*([0-9,]+)/);
-          if (match) { foundAmount = match[1].replace(/,/g, ''); break; }
-        }
-        if (!foundAmount) {
-          const allNumbers = text.match(/[0-9,]+/g);
-          if (allNumbers) {
-            const maxNum = Math.max(...allNumbers.map(n => parseInt(n.replace(/,/g, ''), 10) || 0));
-            if (maxNum > 0 && maxNum < 1000000) foundAmount = maxNum.toString();
+      // ② Google Vision APIキーがある場合（レガシー互換）
+      if (visionKey && visionKey !== 'undefined') {
+        try {
+          setOcrProgress(40);
+          setArLog('[AI] Google Vision OCR で解析中...');
+          const base64Image = base64Data.split(',')[1];
+          const url = `https://vision.googleapis.com/v1/images:annotate?key=${visionKey}`;
+          const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ image: { content: base64Image }, features: [{ type: 'TEXT_DETECTION' }] }] }) });
+          const data = await response.json();
+          const text = data.responses?.[0]?.textAnnotations?.[0]?.description;
+          if (text) {
+            processExtractedText(text);
+            return;
           }
+        } catch (e) {
+          console.warn('Vision API failed:', e);
+        }
+      }
+
+      // ③ 完全ローカルクライアントサイドOCR (Tesseract.js)
+      try {
+        setOcrProgress(30);
+        setArLog('[LOCAL OCR] オフライン日本語認識エンジンを起動中...');
+        const { createWorker } = await import('tesseract.js');
+        const worker = await createWorker('jpn+eng');
+        
+        setOcrProgress(60);
+        setArLog('[LOCAL OCR] レシート文字スキャン中...');
+        const ret = await worker.recognize(base64Data);
+        await worker.terminate();
+
+        const text = ret.data.text;
+        if (!text || text.trim().length === 0) {
+          throw new Error('文字が検出されませんでした');
         }
 
-        if (foundAmount) {
-          setArTargetData({ amount: foundAmount, memo: foundMemo });
-          setArStatus('locked');
-          setArLog(`[LOCKED] TARGET CAPTURED: ¥${Number(foundAmount).toLocaleString()} // READY TO TRANSFER.`);
-          if (navigator.vibrate) navigator.vibrate([50, 50, 200]);
-        } else {
-          setArStatus('error');
-          setArLog('[WARN] AMOUNT NOT DETECTED. PLEASE ENTER MANUAL TARGET.');
-          if (navigator.vibrate) navigator.vibrate([80, 80]);
-        }
+        setOcrProgress(90);
+        processExtractedText(text);
       } catch (err) {
+        console.error(err);
         setArStatus('error');
-        setArLog('[ERROR] CONNECTION INTERRUPTED. MANUAL OVERRIDE REQUIRED.');
+        setArLog('[WARN] 自動認識できませんでした。手動で金額を入力してください。');
+        if (navigator.vibrate) navigator.vibrate([80, 80]);
       }
     };
     e.target.value = '';
+  };
+
+  // 🌟 テキストから金額・店舗名・カテゴリを判定するパーサー
+  const processExtractedText = (text) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let foundMemo = 'レシート店舗';
+    let foundAmount = '';
+    let foundCategory = '食費';
+
+    // 店舗名推測（上部5行の中で意味のある単語）
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      const line = lines[i];
+      if (!line.match(/領収|レシート|No|TEL|電話|登録番号|インボイス|担当|20\d\d/i) && line.length >= 2) {
+        foundMemo = line.replace(/[*#=＝\-]/g, '').trim();
+        break;
+      }
+    }
+
+    // 金額推測（合計・税込・支払などの行を逆順探索）
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const match = lines[i].match(/(?:合\s*計|小\s*計|お買上|総\s*額|支払|税込|TAX|計)\s*[:：]?\s*[¥￥\\]?\s*([0-9,]+)/i);
+      if (match) {
+        const val = match[1].replace(/,/g, '');
+        if (Number(val) > 0 && Number(val) < 5000000) {
+          foundAmount = val;
+          break;
+        }
+      }
+    }
+
+    if (!foundAmount) {
+      // ¥マーク付きの数字を探す
+      const yenMatches = text.match(/[¥￥\\]\s*([0-9,]+)/g);
+      if (yenMatches) {
+        const nums = yenMatches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10)).filter(n => n > 0 && n < 5000000);
+        if (nums.length > 0) foundAmount = Math.max(...nums).toString();
+      }
+    }
+
+    if (!foundAmount) {
+      // 全数値から最大数値を抽出（レシートの合計額は通常、各行の小計より大きい）
+      const allNumbers = text.match(/[0-9,]+/g);
+      if (allNumbers) {
+        const validNums = allNumbers.map(n => parseInt(n.replace(/,/g, ''), 10) || 0).filter(n => n >= 50 && n < 2000000);
+        if (validNums.length > 0) foundAmount = Math.max(...validNums).toString();
+      }
+    }
+
+    // カテゴリ推測
+    const lowerText = text.toLowerCase();
+    if (lowerText.match(/セブン|ローソン|ファミマ|ファミリーマート|イオン|スーパー|飲食|カフェ|ランチ|ディナー|弁当|食品|パン|マクドナルド|スターバックス/)) {
+      foundCategory = '食費';
+    } else if (lowerText.match(/マツモトキヨシ|スギ薬局|ドラッグ|ウエルシア|ダイソー|セリア|キャンドゥ|日用|洗剤|ティッシュ/)) {
+      foundCategory = '日用品';
+    } else if (lowerText.match(/jr|メトロ|地下鉄|タクシー|交通|運賃|定期|ガソリン|eneos/)) {
+      foundCategory = '交通費';
+    } else if (lowerText.match(/ユニクロ|gu|zara|洋服|コスメ|美容|カット|ヘア/)) {
+      foundCategory = '衣服・美容';
+    }
+
+    setOcrProgress(100);
+    if (foundAmount) {
+      setArTargetData({ amount: foundAmount, memo: foundMemo, category: foundCategory });
+      setArStatus('locked');
+      setArLog(`[LOCKED] 認識成功: ¥${Number(foundAmount).toLocaleString()} (${foundMemo})`);
+      if (navigator.vibrate) navigator.vibrate([50, 50, 200]);
+    } else {
+      setArStatus('error');
+      setArTargetData({ amount: '', memo: foundMemo, category: foundCategory });
+      setArLog('[WARN] 合計金額を自動検出できませんでした。手動で入力してください。');
+      if (navigator.vibrate) navigator.vibrate([80, 80]);
+    }
   };
 
   const handleApplyArTarget = () => {
@@ -604,8 +800,13 @@ export default function MobileInputForm({
       setCalcStr(arTargetData.amount);
     }
     if (arTargetData.memo) setMemo(arTargetData.memo);
+    if (arTargetData.category) {
+      const cleanTarget = arTargetData.category;
+      const matched = expenseCategories.find(c => getCleanName(c) === cleanTarget || c.includes(cleanTarget));
+      if (matched) setCategory(matched);
+    }
     setIsArModalOpen(false);
-    showAlert("⚡ TARGET DATA TRANSFERRED!", "success");
+    showAlert("⚡ レシートデータを反映しました！", "success");
   };
 
   const handleSubmit = async () => {
@@ -700,21 +901,199 @@ export default function MobileInputForm({
       )}
 
       {isArModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', zIndex: 999999, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease-out' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: 'linear-gradient(to bottom, rgba(0,255,102,0.2), transparent)', borderBottom: '1px solid #00ff6644', zIndex: 10 }}>
-            <div style={{ color: '#00ff66', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', textShadow: '0 0 8px #00ff66' }}>
-              <span style={{ fontSize: '18px' }}>👁️</span> TERMINATOR VISION // OPTICAL SCANNER
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)', zIndex: 999999, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease-out' }}>
+          {/* ヘッダー */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: 'linear-gradient(to bottom, rgba(0,255,102,0.15), transparent)', borderBottom: '1px solid rgba(0,255,102,0.25)', zIndex: 10 }}>
+            <div style={{ color: '#00ff66', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px', textShadow: '0 0 10px rgba(0,255,102,0.6)' }}>
+              <span style={{ fontSize: '20px' }}>🧾</span> AIレシート一発スキャナー
             </div>
-            <button onClick={() => setIsArModalOpen(false)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 12px', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer', boxShadow: '0 0 10px rgba(255,51,102,0.3)' }}>ABORT (中止)</button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button 
+                onClick={() => setShowAiSettings(true)}
+                title="AI設定"
+                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid #00bfff', color: '#00bfff', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                ⚙️ AI設定
+              </button>
+              <button 
+                onClick={() => setIsArModalOpen(false)} 
+                style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '5px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', boxShadow: '0 0 10px rgba(255,51,102,0.3)' }}
+              >
+                ✕ 閉じる
+              </button>
+            </div>
           </div>
-          <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#05070a', overflow: 'hidden' }}>
-            {arImageSrc ? <img src={arImageSrc} alt="Target" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: arStatus === 'scanning' ? 'contrast(1.5) brightness(0.7)' : 'contrast(1.1)', transition: 'all 0.3s' }} /> : <div style={{ color: '#555', fontFamily: 'monospace' }}>NO OPTICAL FEED</div>}
+
+          {/* 画像プレビューエリア */}
+          <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#05070a', overflow: 'hidden', padding: '10px' }}>
+            {arImageSrc ? (
+              <img 
+                src={arImageSrc} 
+                alt="Receipt" 
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', filter: arStatus === 'scanning' ? 'contrast(1.4) brightness(0.8)' : 'contrast(1.05)', transition: 'all 0.3s' }} 
+              />
+            ) : (
+              <div style={{ color: '#555', fontFamily: 'monospace' }}>画像が読み込まれていません</div>
+            )}
+
+            {/* スキャン中プログレスバー */}
+            {arStatus === 'scanning' && (
+              <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px', background: 'rgba(5,7,10,0.85)', padding: '12px 16px', borderRadius: '12px', border: '1px solid #00ff66', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#00ff66', fontFamily: 'monospace' }}>
+                  <span>{arLog}</span>
+                  <span>{ocrProgress}%</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: '#222', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${ocrProgress}%`, height: '100%', background: '#00ff66', transition: 'width 0.3s' }} />
+                </div>
+              </div>
+            )}
           </div>
-          <div style={{ padding: '20px', background: '#0a0c10', borderTop: '1px solid #00ff6644', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 10 }}>
-            <div style={{ background: '#050608', borderLeft: '3px solid #00ff66', padding: '8px 12px', fontFamily: 'monospace', fontSize: '11px', color: arStatus === 'error' ? '#ff3366' : '#00ff66' }}>{arLog}</div>
+
+          {/* スキャン結果プレビュー＆編集パネル */}
+          <div style={{ padding: '18px 20px', background: '#0a0c10', borderTop: '1px solid rgba(0,255,102,0.25)', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 10, maxHeight: '55vh', overflowY: 'auto' }}>
+            
+            {/* ログメッセージ */}
+            <div style={{ background: '#050608', borderLeft: `3px solid ${arStatus === 'error' ? '#ff3366' : '#00ff66'}`, padding: '8px 12px', fontFamily: 'monospace', fontSize: '11px', color: arStatus === 'error' ? '#ff3366' : '#00ff66' }}>
+              {arLog}
+            </div>
+
+            {/* 認識成功時の編集フィールド */}
+            {arTargetData.amount && (
+              <div style={{ background: '#11141a', border: '1px solid #252838', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: '#888', fontWeight: 'bold' }}>💰 読み取った金額</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ color: '#00ff66', fontSize: '18px', fontWeight: 'bold' }}>¥</span>
+                    <input 
+                      type="number"
+                      value={arTargetData.amount}
+                      onChange={e => setArTargetData(prev => ({ ...prev, amount: e.target.value }))}
+                      style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #00ff66', color: '#00ff66', fontSize: '22px', fontWeight: 'bold', fontFamily: 'monospace', width: '120px', textAlign: 'right', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: '#888', fontWeight: 'bold' }}>🏪 店舗 / 品目</span>
+                  <input 
+                    type="text"
+                    value={arTargetData.memo}
+                    onChange={e => setArTargetData(prev => ({ ...prev, memo: e.target.value }))}
+                    style={{ background: '#05070a', border: '1px solid #333', borderRadius: '6px', color: '#fff', fontSize: '12px', padding: '6px 10px', width: '60%', outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: '#888', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>🏷️ 推定カテゴリ</span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {['食費', '日用品', '交通費', '交際費', '趣味', 'その他'].map(cat => {
+                      const isSel = arTargetData.category === cat || (arTargetData.category && arTargetData.category.includes(cat));
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setArTargetData(prev => ({ ...prev, category: cat }))}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '16px',
+                            border: isSel ? '1.5px solid #00ff66' : '1px solid #333',
+                            background: isSel ? 'rgba(0,255,102,0.15)' : 'transparent',
+                            color: isSel ? '#00ff66' : '#aaa',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* アクションボタン */}
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => fileInputRef.current.click()} style={{ flex: 1, padding: '14px', background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', cursor: 'pointer' }}>🔄 RE-SCAN</button>
-              <button onClick={handleApplyArTarget} disabled={!arTargetData.amount} style={{ flex: 1.5, padding: '14px', background: arTargetData.amount ? '#00ff66' : '#333', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '15px', cursor: arTargetData.amount ? 'pointer' : 'not-allowed' }}>⚡ EXECUTE</button>
+              <button 
+                onClick={() => fileInputRef.current.click()} 
+                style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+              >
+                🔄 再撮影 / 再選択
+              </button>
+              <button 
+                onClick={handleApplyArTarget} 
+                disabled={!arTargetData.amount} 
+                style={{
+                  flex: 1.6,
+                  padding: '12px',
+                  background: arTargetData.amount ? 'linear-gradient(135deg, #00ff66, #00cc52)' : '#222',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  cursor: arTargetData.amount ? 'pointer' : 'not-allowed',
+                  boxShadow: arTargetData.amount ? '0 0 16px rgba(0,255,102,0.4)' : 'none'
+                }}
+              >
+                ⚡ 記帳フォームに反映
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 Gemini AI設定モーダル */}
+      {showAiSettings && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 1000000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px' }}>
+          <div style={{ background: '#0d1117', border: '1px solid #00bfff', borderRadius: '16px', width: '100%', maxWidth: '380px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 0 40px rgba(0,191,255,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+              <div style={{ color: '#00bfff', fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🤖</span> Gemini AI OCR 設定
+              </div>
+              <button onClick={() => setShowAiSettings(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.6' }}>
+              Google AI Studio（無料）のGemini APIキーを入力すると、<strong style={{ color: '#00ff66' }}>Gemini 1.5 Flash</strong>による超高精度なレシート品目・金額・店舗自動解析が有効になります。<br/>
+              ※未入力の場合は完全ローカルの日本語OCRエンジンで動作します。
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '6px' }}>Gemini API Key</label>
+              <input 
+                type="password"
+                placeholder="AIzaSy..."
+                value={geminiApiKeyInput}
+                onChange={e => setGeminiApiKeyInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', background: '#05070a', border: '1px solid #333', borderRadius: '8px', color: '#fff', fontSize: '13px', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                onClick={() => {
+                  localStorage.removeItem('gemini_api_key');
+                  setGeminiApiKeyInput('');
+                  setShowAiSettings(false);
+                  showAlert("Gemini APIキーを削除しました（ローカルOCRを使用）", "info");
+                }}
+                style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px solid #444', color: '#888', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                クリア
+              </button>
+              <button 
+                onClick={() => {
+                  localStorage.setItem('gemini_api_key', geminiApiKeyInput.trim());
+                  setShowAiSettings(false);
+                  showAlert("Gemini APIキーを保存しました！", "success");
+                }}
+                style={{ flex: 1.5, padding: '10px', background: '#00bfff', border: 'none', color: '#000', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                保存する
+              </button>
             </div>
           </div>
         </div>
@@ -760,14 +1139,30 @@ export default function MobileInputForm({
       {/* 🌟 固定費・サブスク管理自作モーダル */}
       {showRecurringModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
-          <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '92%', maxWidth: '420px', padding: '25px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 0 40px rgba(0,191,255,0.3)', maxHeight: '90vh' }}>
+          <div style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '14px', width: '92%', maxWidth: '430px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 0 40px rgba(0,191,255,0.3)', maxHeight: '92vh', overflowY: 'auto' }}>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', fontFamily: 'monospace' }}>
-                [固定費] サブスク・定期支出マネージャー
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>📅</span> [固定費] 毎月自動計上＆更新マネージャー
               </h3>
               <button onClick={() => setShowRecurringModal(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
+
+            {/* 🔔 直近の引き落とし・更新リマインダー */}
+            {upcomingReminders.length > 0 && (
+              <div style={{ background: 'rgba(245, 158, 11, 0.12)', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '10px 14px' }}>
+                <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🔔</span> 引き落とし・更新リマインダー ({upcomingReminders.length}件)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                  {upcomingReminders.map(r => (
+                    <div key={r.id} style={{ fontSize: '12px', color: '#fef3c7', fontWeight: 'bold' }}>
+                      • {r.text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 一括登録バー */}
             {recurringList.length > 0 && (
@@ -799,34 +1194,36 @@ export default function MobileInputForm({
             )}
 
             {/* 固定費一覧 */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px' }}>
               {recurringList.length === 0 ? (
                 <div style={{ textAlign: 'center', color: '#666', padding: '20px 0', fontSize: '12px' }}>
                   登録されている固定費はありません
                 </div>
               ) : (
                 recurringList.map(item => (
-                  <div key={item.id} style={{ background: '#11141a', padding: '10px 12px', borderRadius: '6px', border: '1px solid #252838', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={item.id} style={{ background: '#11141a', padding: '10px 12px', borderRadius: '8px', border: '1px solid #252838', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ flex: 1, minWidth: 0, marginRight: '10px' }}>
                       <div style={{ color: '#fff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                      <div style={{ color: '#888', fontSize: '10px', marginTop: '2px' }}>
-                        {getCleanName(item.paymentMethod)} / {getCleanName(item.category)}
+                      <div style={{ color: '#888', fontSize: '10px', marginTop: '2px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span>毎月{item.billingDay || 27}日</span>
+                        <span>{item.autoPost !== false ? '⚡自動計上:ON' : '手動'}</span>
+                        <span>{getCleanName(item.paymentMethod)}</span>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ff9900', fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: '#ff9900', fontSize: '13px', fontWeight: 'bold', fontFamily: 'monospace' }}>
                         ¥{Number(item.amount).toLocaleString()}
                       </span>
                       <button
                         onClick={() => handleSingleRegisterRecurring(item)}
                         disabled={isRegisteringRecurring}
-                        style={{ background: '#00bfff', color: '#000', border: 'none', borderRadius: '4px', padding: '5px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                        style={{ background: '#00bfff', color: '#000', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
-                        登録
+                        記録
                       </button>
                       <button
                         onClick={() => handleDeleteRecurring(item.id)}
-                        style={{ background: 'transparent', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', padding: '4px 8px', fontSize: '10px', cursor: 'pointer' }}
+                        style={{ background: 'transparent', color: '#ff3366', border: '1px solid #ff3366', borderRadius: '4px', padding: '3px 6px', fontSize: '10px', cursor: 'pointer' }}
                       >
                         削除
                       </button>
@@ -837,12 +1234,13 @@ export default function MobileInputForm({
             </div>
 
             {/* 新規固定費の追加フォーム */}
-            <div style={{ background: '#11141a', padding: '12px', borderRadius: '8px', border: '1px dashed #00bfff', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ background: '#11141a', padding: '14px', borderRadius: '10px', border: '1px dashed #00bfff', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ fontSize: '11px', color: '#00bfff', fontWeight: 'bold' }}>[+] 新規固定費・サブスクの追加</div>
+              
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="text"
-                  placeholder="項目名 (例: Netflix)"
+                  placeholder="項目名 (例: Netflix, 家賃)"
                   value={newRecName}
                   onChange={e => setNewRecName(e.target.value)}
                   style={{ ...inputStyle, flex: 2, padding: '8px' }}
@@ -855,6 +1253,7 @@ export default function MobileInputForm({
                   style={{ ...inputStyle, flex: 1.5, padding: '8px', color: '#ff9900', fontFamily: 'monospace' }}
                 />
               </div>
+
               <div style={{ display: 'flex', gap: '8px' }}>
                 <select
                   value={newRecCategory}
@@ -874,13 +1273,39 @@ export default function MobileInputForm({
                     <option key={acc} value={acc}>{getCleanName(acc)}</option>
                   ))}
                 </select>
-                <button
-                  onClick={handleAddRecurring}
-                  style={{ background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', padding: '0 14px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-                >
-                  追加
-                </button>
               </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0c10', padding: '8px 10px', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#888' }}>引き落とし日:</span>
+                  <select 
+                    value={newRecBillingDay} 
+                    onChange={e => setNewRecBillingDay(e.target.value)}
+                    style={{ background: '#11141a', border: '1px solid #333', color: '#00ff66', borderRadius: '4px', padding: '4px 6px', fontSize: '11px', outline: 'none' }}
+                  >
+                    {[...Array(31)].map((_, i) => (
+                      <option key={i+1} value={String(i+1)}>毎月 {i+1}日</option>
+                    ))}
+                  </select>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#00ff66', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={newRecAutoPost} 
+                    onChange={e => setNewRecAutoPost(e.target.checked)} 
+                    style={{ accentColor: '#00ff66' }}
+                  />
+                  毎月自動計上する
+                </label>
+              </div>
+
+              <button
+                onClick={handleAddRecurring}
+                style={{ background: 'linear-gradient(135deg, #00bfff, #0088cc)', color: '#000', border: 'none', borderRadius: '6px', padding: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+              >
+                ＋ この固定費を追加する
+              </button>
             </div>
 
             <button
@@ -963,6 +1388,7 @@ export default function MobileInputForm({
         <button
           onClick={() => setShowRecurringModal(true)}
           style={{
+            position: 'relative',
             background: 'rgba(0, 191, 255, 0.15)',
             color: '#00bfff',
             border: '1px solid #00bfff',
@@ -971,12 +1397,47 @@ export default function MobileInputForm({
             fontSize: '12px',
             fontWeight: 'bold',
             cursor: 'pointer',
-            boxShadow: '0 0 10px rgba(0,191,255,0.2)'
+            boxShadow: '0 0 10px rgba(0,191,255,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
           }}
         >
-          固定費・サブスク
+          <span>固定費・サブスク</span>
+          {upcomingReminders.length > 0 && (
+            <span style={{ background: '#f59e0b', color: '#000', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900' }}>
+              {upcomingReminders.length}
+            </span>
+          )}
         </button>
       </div>
+
+      {/* 🌟 直近3日以内の固定費・サブスク引き落とし通知バナー */}
+      {upcomingReminders.length > 0 && (
+        <div 
+          onClick={() => setShowRecurringModal(true)}
+          style={{
+            margin: '10px 20px 0',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.25))',
+            border: '1.5px solid #f59e0b',
+            borderRadius: '10px',
+            padding: '8px 14px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 2px 10px rgba(245, 158, 11, 0.15)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>🔔</span>
+            <span style={{ fontSize: '12px', color: '#fef3c7', fontWeight: 'bold' }}>
+              {upcomingReminders[0].text}
+            </span>
+          </div>
+          <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 'bold' }}>管理 ▶</span>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: '#11141a', width: '100%', maxWidth: '500px', borderRadius: '12px', border: '1px solid #252838', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
