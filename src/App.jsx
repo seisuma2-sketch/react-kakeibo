@@ -86,17 +86,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
   }, [stealthConfig]);
-
-  const updateStealthActive = async (newVal) => {
-    setStealthConfig(prev => ({ ...prev, active: newVal }));
-    if (user) {
-      try {
-        await setDoc(doc(db, "user_settings", user.uid), { isStealthActive: newVal }, { merge: true });
-      } catch (err) {
-        console.error("PC版ステルス設定同期エラー:", err);
-      }
-    }
-  };
   
   const CORRECT_PASSWORD = 'cyber';
 
@@ -160,14 +149,10 @@ function App() {
   };
 
   const handleAuth = () => {
-    if (stealthPassword === CORRECT_PASSWORD || stealthPassword === '0000') {
-      setIsAuthModalOpen(false);
-      setStealthPassword('');
-      updateStealthActive(false);
-      setIsConfigModalOpen(true);
+    if (stealthPassword === CORRECT_PASSWORD) {
+      setIsAuthModalOpen(false); setStealthPassword(''); setIsConfigModalOpen(true);
     } else {
-      alert('認証エラー：パスコードが違います。');
-      setStealthPassword('');
+      alert('❌ ACCESS DENIED'); setStealthPassword('');
     }
   };
 
@@ -254,11 +239,7 @@ function App() {
     const unsubSettings = onSnapshot(doc(db, "user_settings", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStealthConfig(prev => ({ 
-          ...prev, 
-          ghostAccounts: data.stealthAccounts || [],
-          active: data.isStealthActive !== undefined ? data.isStealthActive : prev.active
-        }));
+        setStealthConfig(prev => ({ ...prev, ghostAccounts: data.stealthAccounts || [] }));
         if (data.userName !== undefined) setUserName(data.userName);
         else setIsProfileModalOpen(true);
         if (data.cycleStartDay) {
@@ -513,17 +494,7 @@ function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #252838', paddingBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-            <h2 
-              onDoubleClick={() => {
-                if (!stealthConfig.active) {
-                  updateStealthActive(true);
-                } else {
-                  setIsAuthModalOpen(true);
-                }
-              }}
-              title=""
-              style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'default', userSelect: 'none' }}
-            >
+            <h2 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {tabTitles[currentTab] || '開発中...'}
             </h2>
 
@@ -551,6 +522,33 @@ function App() {
             {!isMobile && (
               <button onClick={() => switchMode('os')} style={{ background: `linear-gradient(45deg, ${themeColor}22, transparent)`, border: `1px solid ${themeColor}`, color: themeColor, padding: '5px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: `0 0 10px ${themeColor}33`, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
                 <span>🖥️</span> コックピットOSへ
+              </button>
+            )}
+            {!isMobile && (
+              <button 
+                onClick={() => {
+                  if (!stealthConfig.active) {
+                    setStealthConfig(prev => ({ ...prev, active: true }));
+                  } else {
+                    setIsAuthModalOpen(true);
+                  }
+                }}
+                style={{
+                  background: stealthConfig.active ? 'rgba(255,51,102,0.12)' : 'rgba(0,255,102,0.12)',
+                  border: `1px solid ${stealthConfig.active ? '#ff3366' : '#00ff66'}`,
+                  color: stealthConfig.active ? '#ff3366' : '#00ff66',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: `0 0 10px ${stealthConfig.active ? 'rgba(255,51,102,0.2)' : 'rgba(0,255,102,0.2)'}`
+                }}
+                title={stealthConfig.active ? "クリックでゴーストプロトコル解除（認証）" : "クリックでゴーストプロトコル起動"}
+              >
+                {stealthConfig.active ? "[ GHOST: ACTIVE ]" : "[ GHOST: INACTIVE ]"}
               </button>
             )}
             <div style={{ fontSize: '12px', fontWeight: 'bold', border: `1px solid ${isOnline ? (user ? themeColor : '#ff3366') : '#ff9900'}`, padding: '4px 8px', borderRadius: '4px', color: isOnline ? (user ? themeColor : '#ff3366') : '#ff9900' }}>
@@ -770,12 +768,9 @@ function App() {
       {isAuthModalOpen && (
         <div style={overlayStyle}>
           <div style={modalStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ color: themeColor, margin: 0, fontSize: '16px' }}>セキュリティ認証</h3>
-              <button onClick={() => { setIsAuthModalOpen(false); setStealthPassword(''); }} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '18px' }}>×</button>
-            </div>
-            <p style={{ color: '#aaa', fontSize: '13px', margin: '0 0 10px 0' }}>管理用パスコードを入力してください</p>
-            <input type="password" autoFocus value={stealthPassword} onChange={(e) => setStealthPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAuth()} style={inputStyle} placeholder="••••" />
+            <h3 style={{ color: '#ff3366', marginTop: 0 }}>⚠️ SYSTEM OVERRIDE</h3>
+            <p style={{ color: '#aaa', fontSize: '14px' }}>認証パスコード</p>
+            <input type="password" autoFocus value={stealthPassword} onChange={(e) => setStealthPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAuth()} style={inputStyle} />
           </div>
         </div>
       )}
@@ -787,7 +782,7 @@ function App() {
             <h3 style={{ color: themeColor, marginTop: 0 }}>🕶️ ステルス制御</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0' }}>
               <span style={{ color: stealthConfig.active ? themeColor : '#aaa' }}>稼働状況</span>
-              <button onClick={() => updateStealthActive(!stealthConfig.active)} style={toggleBtnStyle(stealthConfig.active, themeColor)}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
+              <button onClick={() => setStealthConfig(prev => ({ ...prev, active: !prev.active }))} style={toggleBtnStyle(stealthConfig.active, themeColor)}>{stealthConfig.active ? 'ON' : 'OFF'}</button>
             </div>
             
             <ConfigRow label="サマリー・コア" configKey="hideSummary" stealthConfig={stealthConfig} setStealthConfig={setStealthConfig} />

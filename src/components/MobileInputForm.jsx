@@ -1728,8 +1728,43 @@ export default function MobileInputForm({
         </div>
       </div>
 
-      <div style={{ position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)', transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 10000, padding: '15px 10px 30px 10px' }}>
+      <div style={{ 
+        position: 'fixed', 
+        bottom: isKeypadOpen ? 0 : '-100%', 
+        left: 0, 
+        width: '100%', 
+        maxHeight: '90dvh',
+        overflowY: 'auto',
+        background: '#0a0c10', 
+        borderTop: '2px solid #00ff66', 
+        boxShadow: '0 -10px 30px rgba(0,255,102,0.1)', 
+        transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', 
+        zIndex: 10000, 
+        padding: '12px 10px calc(env(safe-area-inset-bottom, 20px) + 25px) 10px',
+        boxSizing: 'border-box'
+      }}>
         
+        {/* 🌟 キーパッド最上部コントロールバー（絶対に見切れない「閉じる」ボタン） */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '600px', margin: '0 auto 8px auto' }}>
+          <span style={{ fontSize: '12px', color: '#00ff66', fontWeight: 'bold' }}>金額入力 (電卓)</span>
+          <button 
+            type="button" 
+            onClick={handleCloseKeypad} 
+            style={{ 
+              background: 'rgba(255, 51, 102, 0.15)', 
+              border: '1px solid #ff3366', 
+              color: '#ff3366', 
+              borderRadius: '6px', 
+              padding: '6px 14px', 
+              fontSize: '13px', 
+              fontWeight: 'bold', 
+              cursor: 'pointer' 
+            }}
+          >
+            ✕ 閉じる
+          </button>
+        </div>
+
         {/* 🌟 NFCでEVERING読み込み時のみ表示：テンキー内・付近のスポット（絵文字・アイコンなし） */}
         {isEveringNfcActive && nearbySpots.length > 0 && (
           <div style={{ maxWidth: '600px', margin: '0 auto 10px auto' }}>
@@ -1767,19 +1802,20 @@ export default function MobileInputForm({
           </div>
         )}
 
-        <div style={{ background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '10px 15px', marginBottom: '15px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)' }}>
-          <div style={{ fontSize: '14px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>{calcStr || '0'}</div>
-          <div style={{ color: '#fff', fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace' }}><span style={{ color: '#555', marginRight: '5px' }}>¥</span>{livePreview ? Number(livePreview).toLocaleString() : '0'}</div>
+        <div style={{ background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '8px 12px', marginBottom: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)' }}>
+          <div style={{ fontSize: '13px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>{calcStr || '0'}</div>
+          <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold', fontFamily: 'monospace' }}><span style={{ color: '#555', marginRight: '5px' }}>¥</span>{livePreview ? Number(livePreview).toLocaleString() : '0'}</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', maxWidth: '600px', margin: '0 auto' }}>
           {['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '-', '0', '00', '+', '='].map((key) => {
             const isOp = ['÷', '×', '-', '+'].includes(key); const isEq = key === '='; const val = key === '÷' ? '/' : key === '×' ? '*' : key;
-            return <button key={key} onClick={() => handleKeypadPress(val)} style={{ ...keyBtnStyle, background: isEq ? '#00ff66' : isOp ? '#1a1d24' : '#11141a', color: isEq ? '#000' : isOp ? '#00bfff' : '#fff', border: `1px solid ${isEq ? '#00ff66' : '#252838'}`, gridRow: isEq ? 'span 2' : 'auto', height: isEq ? '100%' : '55px' }}>{key}</button>;
+            return <button key={key} onClick={() => handleKeypadPress(val)} style={{ ...keyBtnStyle, background: isEq ? '#00ff66' : isOp ? '#1a1d24' : '#11141a', color: isEq ? '#000' : isOp ? '#00bfff' : '#fff', border: `1px solid ${isEq ? '#00ff66' : '#252838'}`, gridRow: isEq ? 'span 2' : 'auto', height: isEq ? '100%' : '48px' }}>{key}</button>;
           })}
-          <button onClick={() => handleKeypadPress('C')} style={{ ...keyBtnStyle, color: '#ff3366', background: '#11141a', border: '1px solid #252838', height: '55px' }}>C</button>
-          <button onClick={() => handleKeypadPress('BS')} style={{ ...keyBtnStyle, color: '#ff9900', background: '#11141a', border: '1px solid #252838', height: '55px' }}>BS</button>
+          <button onClick={() => handleKeypadPress('C')} style={{ ...keyBtnStyle, color: '#ff3366', background: '#11141a', border: '1px solid #252838', height: '48px' }}>C</button>
+          <button onClick={() => handleKeypadPress('BS')} style={{ ...keyBtnStyle, color: '#ff9900', background: '#11141a', border: '1px solid #252838', height: '48px' }}>BS</button>
+          <button type="button" onClick={handleCloseKeypad} style={{ ...keyBtnStyle, color: '#ff3366', background: 'rgba(255, 51, 102, 0.15)', border: '1px solid #ff3366', height: '48px', fontSize: '13px', fontWeight: 'bold' }}>閉じる</button>
         </div>
-        <button onClick={handleCloseKeypad} style={{ display: 'block', width: '100%', maxWidth: '600px', margin: '15px auto 0', ...memBtnStyle, borderColor: '#ff3366', color: '#ff3366', padding: '12px' }}>閉じる</button>
+        <button onClick={handleCloseKeypad} style={{ display: 'block', width: '100%', maxWidth: '600px', margin: '10px auto 0', ...memBtnStyle, borderColor: '#ff3366', color: '#ff3366', padding: '10px' }}>閉じる</button>
       </div>
       {isKeypadOpen && <div onClick={handleCloseKeypad} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 9999 }} />}
     </div>
