@@ -191,7 +191,13 @@ function App() {
         };
         
         if (!updatedAccounts.includes(acc.name) && !updatedAccounts.some(existing => existing.includes(acc.name))) {
-          updatedAccounts.push(`/icon-other.png ${acc.name}`);
+          const defaultIconMap = {
+            '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
+            'みずほ銀行': '/mizuho.jpg', 'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png',
+            'EVERING': '/icon-evering.png', 'リクルートカード': '/icon-recruit.svg'
+          };
+          const icon = defaultIconMap[acc.name] || '/icon-other.png';
+          updatedAccounts.push(`${icon} ${acc.name}`);
         }
 
         return addDoc(collection(db, "transactions"), txData);
@@ -333,7 +339,8 @@ function App() {
   }).filter(Boolean); 
 
   const uniqueAccountsFromTx = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
-  const allAccountsToDisplay = [...new Set([...uniqueAccountsFromTx, ...stealthConfig.ghostAccounts])];
+  const defaultAvailableAccounts = ['現金', '三井住友銀行', '三菱UFJ銀行', 'みずほ銀行', 'ゆうちょ銀行', 'PayPay', 'EVERING', 'リクルートカード'];
+  const allAccountsToDisplay = [...new Set([...uniqueAccountsFromTx, ...defaultAvailableAccounts, ...stealthConfig.ghostAccounts])];
 
   const cyclePeriod = useMemo(() => {
     const now = new Date();

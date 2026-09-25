@@ -13,6 +13,8 @@ function renderIconOrText(item, imgSize = '20px') {
       const name = item.slice(spaceIndex + 1);
       if (name === 'リクルートカード' || name.includes('リクルート')) {
         iconPath = '/icon-recruit.svg';
+      } else if (name === 'みずほ銀行' || name.includes('みずほ')) {
+        iconPath = '/mizuho.jpg';
       }
       return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
@@ -26,6 +28,14 @@ function renderIconOrText(item, imgSize = '20px') {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
         <img src="/icon-recruit.svg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <span>{item}</span>
+      </div>
+    );
+  }
+  if (item === 'みずほ銀行' || (typeof item === 'string' && item.includes('みずほ銀行'))) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        <img src="/mizuho.jpg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
         <span>{item}</span>
       </div>
     );
@@ -65,12 +75,10 @@ export default function MobileInputForm({
   const [openDropdown, setOpenDropdown] = useState(null); 
   const [scanLocation, setScanLocation] = useState(null);
   
-  // 🌟 NFCでEVERINGが検知された時のみ近隣スポットを抽出・サジェストするState
-  const [isEveringNfcActive, setIsEveringNfcActive] = useState(() => {
-    return initialAccount ? initialAccount.includes('EVERING') : false;
-  });
+  // 🌟 現在地連動・近隣スポット0秒サジェスト用State
   const [nearbySpots, setNearbySpots] = useState([]);
   const [currentCoords, setCurrentCoords] = useState(null);
+  const [isEveringNfcActive, setIsEveringNfcActive] = useState(false);
   
   const [isArModalOpen, setIsArModalOpen] = useState(false);
   const [arImageSrc, setArImageSrc] = useState(null);
@@ -121,7 +129,7 @@ export default function MobileInputForm({
   // 🌟 個人モード用の初期リスト
   const defaultExpense = ['/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', '/icon-drink.png 交際費', '/icon-hobby.png 趣味', '/icon-ai.png 自動取得(AI)', '/icon-other.png その他'];
   const defaultIncome = ['/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'];
-  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-recruit.svg リクルートカード'];
+  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/mizuho.jpg みずほ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-recruit.svg リクルートカード'];
 
   // 🌟 共有モード用の初期リスト（個人とは完全に別データになります！）
   const defaultExpenseSync = ['/icon-food.png 共通食費', '/icon-daily.png 共通日用品', '/icon-other.png 家族のその他'];
@@ -160,6 +168,8 @@ export default function MobileInputForm({
     const savedAcc = localStorage.getItem(accKey);
     let newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
     let accModified = false;
+
+    // リクルートカードのアイコン修正
     newAccs = newAccs.map(acc => {
       if (acc.includes('リクルートカード') && (!acc.includes('/icon-recruit.svg') || acc.includes('/icon-other.png') || acc.includes('S__32391170'))) {
         accModified = true;
@@ -167,6 +177,29 @@ export default function MobileInputForm({
       }
       return acc;
     });
+
+    // みずほ銀行の追加＆アイコン最新化
+    if (!isSync) {
+      const hasMizuho = newAccs.some(acc => acc.includes('みずほ銀行'));
+      if (!hasMizuho) {
+        const mufgIdx = newAccs.findIndex(acc => acc.includes('三菱UFJ銀行'));
+        if (mufgIdx !== -1) {
+          newAccs.splice(mufgIdx + 1, 0, '/mizuho.jpg みずほ銀行');
+        } else {
+          newAccs.push('/mizuho.jpg みずほ銀行');
+        }
+        accModified = true;
+      } else {
+        newAccs = newAccs.map(acc => {
+          if (acc.includes('みずほ銀行') && !acc.includes('/mizuho.jpg')) {
+            accModified = true;
+            return '/mizuho.jpg みずほ銀行';
+          }
+          return acc;
+        });
+      }
+    }
+
     if (accModified) {
       localStorage.setItem(accKey, JSON.stringify(newAccs));
       saveSettingBoth(auth.currentUser?.uid, accField, accKey, newAccs);
@@ -183,12 +216,34 @@ export default function MobileInputForm({
     setAccounts(newAccs);
 
     // リストが切り替わったら、選択状態も新しいリストの一番上に合わせる（initialAccountがある場合は優先）
-    setCategory(type === 'expense' ? newExpCats[0] : newIncCats[0]);
-    if (initialAccount) {
-      const matched = newAccs.find(acc => acc.includes(initialAccount));
-      setPaymentMethod(matched || initialAccount);
-    } else {
-      setPaymentMethod(newAccs[0] || '');
+    if (type === 'expense') {
+      setCategory(newExpCats[0] || '');
+      if (initialAccount) {
+        const matched = newAccs.find(acc => acc.includes(initialAccount));
+        setPaymentMethod(matched || initialAccount);
+      } else {
+        setPaymentMethod(newAccs[0] || '');
+      }
+    } else if (type === 'income') {
+      setCategory(newIncCats[0] || '');
+      if (initialAccount) {
+        const matched = newAccs.find(acc => acc.includes(initialAccount));
+        setPaymentMethod(matched || initialAccount);
+      } else {
+        setPaymentMethod(newAccs[0] || '');
+      }
+    } else if (type === 'transfer') {
+      // 🌟 振替時は、出金元と入金先が口座になり給与・報酬が出ないようにする
+      const fromAcc = initialAccount 
+        ? (newAccs.find(acc => acc.includes(initialAccount)) || newAccs[0] || '')
+        : (newAccs[0] || '');
+      const toAcc = newAccs.find(acc => acc !== fromAcc && (acc.includes('銀行') || !acc.includes('カード'))) 
+        || newAccs.find(acc => acc !== fromAcc) 
+        || newAccs[1] 
+        || newAccs[0] 
+        || '';
+      setPaymentMethod(fromAcc);
+      setCategory(toAcc);
     }
     setNewRecCategory(newExpCats[0] || '');
     setNewRecPaymentMethod(newAccs[0] || '');
@@ -893,9 +948,18 @@ export default function MobileInputForm({
 
   const handleTypeChange = (newType) => {
     setType(newType);
-    if (newType === 'expense') setCategory(expenseCategories[0]);
-    if (newType === 'income') setCategory(incomeCategories[0]);
-    if (newType === 'transfer') { setPaymentMethod(accounts[0]); setCategory(accounts[1] || accounts[0]); }
+    if (newType === 'expense') setCategory(expenseCategories[0] || '');
+    if (newType === 'income') setCategory(incomeCategories[0] || '');
+    if (newType === 'transfer') {
+      const fromAcc = paymentMethod || accounts[0] || '';
+      const toAcc = accounts.find(acc => acc !== fromAcc && (acc.includes('銀行') || !acc.includes('カード'))) 
+        || accounts.find(acc => acc !== fromAcc) 
+        || accounts[1] 
+        || accounts[0] 
+        || '';
+      setPaymentMethod(fromAcc);
+      setCategory(toAcc);
+    }
     setOpenDropdown(null); 
   };
 

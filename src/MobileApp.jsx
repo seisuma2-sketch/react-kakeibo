@@ -853,7 +853,7 @@ export default function MobileApp() {
             onPointerLeave={handleEndHold}
           />
           <BottomTab 
-            icon="📅" label="暦" 
+            icon="/karenda-.jpg" label="暦" 
             isActive={currentTab === 'calendar'} 
             onClick={() => setCurrentTab('calendar')} 
             themeColor={activeThemeColor} 

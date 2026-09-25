@@ -145,6 +145,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const iconMap = {
     '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
+    'みずほ銀行': '/mizuho.jpg',
     'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
     '食費': '/icon-food.png', 'リクルートカード': '/icon-recruit.svg', 'PayPayカード': '/icon-other.png'
   };
@@ -165,6 +166,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
     if (name === 'リクルートカード' || name.includes('リクルート')) {
       icon = '/icon-recruit.svg';
+    } else if (name === 'みずほ銀行' || name.includes('みずほ')) {
+      icon = '/mizuho.jpg';
     } else if (iconMap[name]) {
       icon = iconMap[name];
     } else if (icon && (icon === '/icon-other.png' || icon.includes('S__32391170'))) {
@@ -461,8 +464,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       if (!exists) {
         const iconMapLocal = {
           '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
-          'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
-          'リクルートカード': '/icon-recruit.svg'
+          'みずほ銀行': '/mizuho.jpg', 'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png',
+          'EVERING': '/icon-evering.png', 'リクルートカード': '/icon-recruit.svg'
         };
         const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
         currentAccs.push(`${icon} ${cleanNewName}`);
