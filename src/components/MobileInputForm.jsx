@@ -36,7 +36,8 @@ export default function MobileInputForm({
   familyId = null, 
   initialAccount = null, 
   autoOpenKeypad = false,
-  onKeypadConsumed = null
+  onKeypadConsumed = null,
+  transactions = []
 }) {
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -49,6 +50,10 @@ export default function MobileInputForm({
 
   const [openDropdown, setOpenDropdown] = useState(null); 
   const [scanLocation, setScanLocation] = useState(null);
+  
+  // 🌟 現在地連動・近隣スポット0秒サジェスト用State
+  const [nearbySpots, setNearbySpots] = useState([]);
+  const [currentCoords, setCurrentCoords] = useState(null);
   
   const [isArModalOpen, setIsArModalOpen] = useState(false);
   const [arImageSrc, setArImageSrc] = useState(null);
@@ -179,6 +184,108 @@ export default function MobileInputForm({
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [onKeypadConsumed]);
+
+  // 🌟 2地点間の距離(メートル)を計算する球面三角法
+  const getDistanceM = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3;
+    const rad = (d) => (d * Math.PI) / 180;
+    const dLat = rad(lat2 - lat1);
+    const dLon = rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(rad(lat1)) * Math.cos(rad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+  };
+
+  // 🌟 現在地を取得し、過去の決済履歴から近隣スポット（半径400m以内）を自動サジェスト
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setCurrentCoords({ lat: latitude, lng: longitude });
+
+        if (!transactions || transactions.length === 0) return;
+
+        const candidates = [];
+        const seenKeys = new Set();
+
+        transactions.forEach(tx => {
+          let txLat = tx.lat ? parseFloat(tx.lat) : null;
+          let txLng = tx.lng ? parseFloat(tx.lng) : null;
+
+          if (!txLat || !txLng) {
+            if (tx.location && typeof tx.location === 'string') {
+              const m = tx.location.match(/GEO-NODE \[([-\d.]+),\s*([-\d.]+)\]/);
+              if (m) { txLat = parseFloat(m[1]); txLng = parseFloat(m[2]); }
+            }
+          }
+
+          if (txLat && txLng && !isNaN(txLat) && !isNaN(txLng)) {
+            const dist = getDistanceM(latitude, longitude, txLat, txLng);
+            // 半径400m以内を候補とする
+            if (dist <= 400) {
+              const cleanCat = tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ') + 1) : tx.category;
+              const spotName = tx.memo || cleanCat || '付近のスポット';
+              const uniqueKey = `${spotName}_${tx.category}`;
+
+              if (!seenKeys.has(uniqueKey)) {
+                seenKeys.add(uniqueKey);
+                candidates.push({
+                  name: spotName,
+                  category: tx.category,
+                  memo: tx.memo || '',
+                  paymentMethod: tx.paymentMethod || '',
+                  distance: dist,
+                  lat: txLat,
+                  lng: txLng,
+                  fullAddress: tx.fullAddress || '',
+                  prefecture: tx.prefecture || '',
+                  city: tx.city || '',
+                  ward: tx.ward || ''
+                });
+              }
+            }
+          }
+        });
+
+        candidates.sort((a, b) => a.distance - b.distance);
+        setNearbySpots(candidates.slice(0, 6));
+      },
+      (err) => {
+        // GPSオフ等はサイレントにスキップ
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  }, [transactions, initialAccount]);
+
+  // 🌟 近隣サジェスト候補をタップした際の自動0秒セット
+  const handleSelectNearbySpot = (spot) => {
+    if (navigator.vibrate) navigator.vibrate(30);
+
+    if (spot.category) {
+      setCategory(spot.category);
+    }
+    if (spot.memo) {
+      setMemo(spot.memo);
+    }
+    if (spot.lat && spot.lng) {
+      setScanLocation({
+        raw: `GEO-NODE [${spot.lat}, ${spot.lng}]`,
+        lat: spot.lat,
+        lng: spot.lng,
+        prefecture: spot.prefecture || '',
+        city: spot.city || '',
+        ward: spot.ward || '',
+        fullAddress: spot.fullAddress || ''
+      });
+    }
+
+    showAlert(`🎯 [${spot.name}] を自動セットしました (${spot.distance}m)`, "success");
+  };
 
   const now = new Date();
   const defaultDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -885,6 +992,44 @@ export default function MobileInputForm({
             <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
           </div>
 
+          {/* 🌟 現在地連動・近隣スポット0秒サジェスト（EVERING・最速入力用） */}
+          {nearbySpots.length > 0 && (
+            <div style={{ background: '#0a0c10', border: '1px solid rgba(0, 255, 102, 0.3)', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 0 15px rgba(0,255,102,0.06)' }}>
+              <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '8px' }}>
+                <span>⚡</span> 付近のスポット (現在地連動・0秒セット)
+              </div>
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
+                {nearbySpots.map((spot, idx) => (
+                  <button
+                    key={`nearby-${idx}`}
+                    type="button"
+                    onClick={() => handleSelectNearbySpot(spot)}
+                    style={{
+                      background: 'rgba(0, 255, 102, 0.08)',
+                      border: '1px solid #00ff66',
+                      borderRadius: '20px',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 6px rgba(0,255,102,0.15)',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>📍</span>
+                    <span>{spot.name}</span>
+                    <span style={{ fontSize: '10px', color: '#00ff66' }}>{spot.distance}m</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <div style={labelStyle}>金額 (数式入力可)</div>
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -1022,6 +1167,45 @@ export default function MobileInputForm({
       </div>
 
       <div style={{ position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)', transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 10000, padding: '15px 10px 30px 10px' }}>
+        
+        {/* 🌟 テンキー内・現在地連動サジェスト（EVERINGタッチ時の最速入力用） */}
+        {nearbySpots.length > 0 && (
+          <div style={{ maxWidth: '600px', margin: '0 auto 10px auto' }}>
+            <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
+              <span>⚡</span> 付近のスポット (タップで0秒セット):
+            </div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {nearbySpots.map((spot, idx) => (
+                <button
+                  key={`pad-nearby-${idx}`}
+                  type="button"
+                  onClick={() => handleSelectNearbySpot(spot)}
+                  style={{
+                    background: 'rgba(0, 255, 102, 0.15)',
+                    border: '1px solid #00ff66',
+                    borderRadius: '20px',
+                    color: '#fff',
+                    padding: '6px 14px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(0,255,102,0.2)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <span>📍</span>
+                  <span>{spot.name}</span>
+                  <span style={{ fontSize: '10px', color: '#00ff66' }}>{spot.distance}m</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ background: '#050608', border: '1px solid #00ff66', borderRadius: '8px', padding: '10px 15px', marginBottom: '15px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', boxShadow: 'inset 0 0 10px rgba(0,255,102,0.1)' }}>
           <div style={{ fontSize: '14px', color: '#00ff66', fontFamily: 'monospace', height: '16px', letterSpacing: '1px' }}>{calcStr || '0'}</div>
           <div style={{ color: '#fff', fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace' }}><span style={{ color: '#555', marginRight: '5px' }}>¥</span>{livePreview ? Number(livePreview).toLocaleString() : '0'}</div>

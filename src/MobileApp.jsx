@@ -803,6 +803,7 @@ export default function MobileApp() {
             initialAccount={nfcAccount} 
             autoOpenKeypad={nfcAutoKeypad} 
             onKeypadConsumed={() => setNfcAutoKeypad(false)}
+            transactions={safeTransactions}
           />
         )}
         {currentTab === 'balance' && (
