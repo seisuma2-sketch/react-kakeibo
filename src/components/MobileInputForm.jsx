@@ -51,7 +51,10 @@ export default function MobileInputForm({
   const [openDropdown, setOpenDropdown] = useState(null); 
   const [scanLocation, setScanLocation] = useState(null);
   
-  // 🌟 現在地連動・近隣スポット0秒サジェスト用State
+  // 🌟 NFCでEVERINGが検知された時のみ近隣スポットを抽出・サジェストするState
+  const [isEveringNfcActive, setIsEveringNfcActive] = useState(() => {
+    return initialAccount ? initialAccount.includes('EVERING') : false;
+  });
   const [nearbySpots, setNearbySpots] = useState([]);
   const [currentCoords, setCurrentCoords] = useState(null);
   
@@ -79,7 +82,6 @@ export default function MobileInputForm({
   // 🌟 AI OCRレシートスキャナー用State
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(() => localStorage.getItem('gemini_api_key') || '');
-  const [geminiModel, setGeminiModel] = useState(() => localStorage.getItem('gemini_model') || 'gemini-1.5-flash');
   const [ocrProgress, setOcrProgress] = useState(0);
 
   // 🌟 固定費・サブスク用State（自動計上＆更新リマインダー対応）
@@ -169,6 +171,9 @@ export default function MobileInputForm({
   useEffect(() => {
     if (initialAccount) {
       setType('expense');
+      const isEvering = initialAccount.includes('EVERING');
+      setIsEveringNfcActive(isEvering);
+
       if (accounts.length > 0) {
         const matched = accounts.find(acc => acc.includes(initialAccount));
         setPaymentMethod(matched || initialAccount);
@@ -208,8 +213,12 @@ export default function MobileInputForm({
     return Math.round(R * c);
   };
 
-  // 🌟 現在地を取得し、過去の決済履歴から近隣スポット（半径400m以内）を自動サジェスト
+  // 🌟 NFCでEVERINGが検知された時のみ、現在地を取得して近隣スポット（半径400m以内）を自動サジェスト
   useEffect(() => {
+    if (!isEveringNfcActive) {
+      setNearbySpots([]);
+      return;
+    }
     if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
@@ -293,7 +302,7 @@ export default function MobileInputForm({
       });
     }
 
-    showAlert(`🎯 [${spot.name}] を自動セットしました (${spot.distance}m)`, "success");
+    showAlert(`[${spot.name}] を自動セットしました (${spot.distance}m)`, "success");
   };
 
   const now = new Date();
@@ -618,13 +627,11 @@ export default function MobileInputForm({
       const savedGeminiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY;
       const visionKey = import.meta.env.VITE_GOOGLE_VISION_API_KEY;
 
-      // ① Gemini マルチモーダル解析（ユーザー選択モデル: 1.5 Flash / 1.5 Pro / 2.0 Flash）
+      // ① Gemini 1.5 Flash による高精度マルチモーダル解析（APIキー保持時）
       if (savedGeminiKey && savedGeminiKey !== 'undefined') {
         try {
-          const currentModel = localStorage.getItem('gemini_model') || geminiModel || 'gemini-1.5-flash';
-          const modelName = currentModel === 'gemini-1.5-pro' ? 'Gemini 1.5 Pro (超精密)' : (currentModel === 'gemini-2.0-flash' ? 'Gemini 2.0 Flash (次世代)' : 'Gemini 1.5 Flash (爆速)');
           setOcrProgress(30);
-          setArLog(`[AI] ${modelName} 解析エンジンに接続中...`);
+          setArLog('[AI] Gemini 1.5 Flash 高度解析エンジンに接続中...');
           const mimeType = file.type || 'image/jpeg';
           const base64Content = base64Data.split(',')[1];
 
@@ -636,7 +643,7 @@ export default function MobileInputForm({
   "memo": "買ったものの要約"
 }`;
 
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${savedGeminiKey}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedGeminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -846,6 +853,7 @@ export default function MobileInputForm({
       await addDoc(collection(db, "transactions"), txData);
       addToHistory(finalAmount);
       setAmount(''); setCalcStr(''); setMemo(''); setScanLocation(null);
+      setIsEveringNfcActive(false);
       
       const successMsg = dbMode === 'sync' ? "🔗 共有金庫に記録しました！" : "👤 個人記録完了！";
       showAlert(successMsg, "success");
@@ -1060,28 +1068,8 @@ export default function MobileInputForm({
             </div>
 
             <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.6' }}>
-              Google AI Studio（無料）のGemini APIキーを入力すると、Geminiによる超高精度なレシート品目・金額・店舗自動解析が有効になります。<br/>
+              Google AI Studio（無料）のGemini APIキーを入力すると、<strong style={{ color: '#00ff66' }}>Gemini 1.5 Flash</strong>による超高精度なレシート品目・金額・店舗自動解析が有効になります。<br/>
               ※未入力の場合は完全ローカルの日本語OCRエンジンで動作します。
-            </div>
-
-            {/* 🌟 使用AIモデルの選択 */}
-            <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '6px' }}>使用するAIモデル</label>
-              <select
-                value={geminiModel}
-                onChange={e => {
-                  setGeminiModel(e.target.value);
-                  localStorage.setItem('gemini_model', e.target.value);
-                }}
-                style={{ width: '100%', padding: '10px', background: '#05070a', border: '1.5px solid #00bfff', borderRadius: '8px', color: '#00ff66', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}
-              >
-                <option value="gemini-1.5-flash">⚡ Gemini 1.5 Flash (推奨・爆速1〜2秒 / 完全無料)</option>
-                <option value="gemini-1.5-pro">🧠 Gemini 1.5 Pro (超高精度推論・約5〜10秒 / 完全無料)</option>
-                <option value="gemini-2.0-flash">🚀 Gemini 2.0 Flash (次世代超高速 / 完全無料)</option>
-              </select>
-              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
-                ※Google AI Studioの無料枠でどのモデルも完全無料（0円）で利用可能です。
-              </div>
             </div>
 
             <div>
@@ -1476,11 +1464,11 @@ export default function MobileInputForm({
             <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
           </div>
 
-          {/* 🌟 現在地連動・近隣スポット0秒サジェスト（EVERING・最速入力用） */}
-          {nearbySpots.length > 0 && (
-            <div style={{ background: '#0a0c10', border: '1px solid rgba(0, 255, 102, 0.3)', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 0 15px rgba(0,255,102,0.06)' }}>
-              <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '8px' }}>
-                <span>⚡</span> 付近のスポット (現在地連動・0秒セット)
+          {/* 🌟 NFCでEVERING読み込み時のみ表示：付近のスポット（絵文字・アイコンなし） */}
+          {isEveringNfcActive && nearbySpots.length > 0 && (
+            <div style={{ background: '#0a0c10', border: '1px solid rgba(0, 255, 102, 0.3)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', marginBottom: '8px' }}>
+                EVERING 付近のスポット
               </div>
               <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
                 {nearbySpots.map((spot, idx) => (
@@ -1493,21 +1481,20 @@ export default function MobileInputForm({
                       border: '1px solid #00ff66',
                       borderRadius: '20px',
                       color: '#fff',
-                      padding: '6px 12px',
+                      padding: '6px 14px',
                       fontSize: '12px',
                       fontWeight: 'bold',
                       whiteSpace: 'nowrap',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: '4px',
                       boxShadow: '0 2px 6px rgba(0,255,102,0.15)',
                       transition: 'all 0.15s'
                     }}
                   >
-                    <span>📍</span>
                     <span>{spot.name}</span>
-                    <span style={{ fontSize: '10px', color: '#00ff66' }}>{spot.distance}m</span>
+                    <span style={{ fontSize: '10px', color: '#00ff66' }}>({spot.distance}m)</span>
                   </button>
                 ))}
               </div>
@@ -1606,7 +1593,7 @@ export default function MobileInputForm({
                     {openDropdown === 'payment' && (
                       <div style={{ ...customDropdownMenuStyle, borderColor: '#ff9900' }}>
                         {accounts.map(acc => (
-                          <div key={acc} onClick={() => { setPaymentMethod(acc); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
+                          <div key={acc} onClick={() => { setPaymentMethod(acc); if (!acc.includes('EVERING')) setIsEveringNfcActive(false); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                             {renderIconOrText(acc, '20px')}
                           </div>
                         ))}
@@ -1652,11 +1639,11 @@ export default function MobileInputForm({
 
       <div style={{ position: 'fixed', bottom: isKeypadOpen ? 0 : '-100%', left: 0, width: '100%', background: '#0a0c10', borderTop: '2px solid #00ff66', boxShadow: '0 -10px 30px rgba(0,255,102,0.1)', transition: 'bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)', zIndex: 10000, padding: '15px 10px 30px 10px' }}>
         
-        {/* 🌟 テンキー内・現在地連動サジェスト（EVERINGタッチ時の最速入力用） */}
-        {nearbySpots.length > 0 && (
+        {/* 🌟 NFCでEVERING読み込み時のみ表示：テンキー内・付近のスポット（絵文字・アイコンなし） */}
+        {isEveringNfcActive && nearbySpots.length > 0 && (
           <div style={{ maxWidth: '600px', margin: '0 auto 10px auto' }}>
-            <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
-              <span>⚡</span> 付近のスポット (タップで0秒セット):
+            <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', marginBottom: '6px' }}>
+              EVERING 付近のスポット:
             </div>
             <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
               {nearbySpots.map((spot, idx) => (
@@ -1676,14 +1663,13 @@ export default function MobileInputForm({
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '4px',
                     boxShadow: '0 2px 8px rgba(0,255,102,0.2)',
                     transition: 'all 0.15s'
                   }}
                 >
-                  <span>📍</span>
                   <span>{spot.name}</span>
-                  <span style={{ fontSize: '10px', color: '#00ff66' }}>{spot.distance}m</span>
+                  <span style={{ fontSize: '10px', color: '#00ff66' }}>({spot.distance}m)</span>
                 </button>
               ))}
             </div>
