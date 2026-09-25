@@ -10,7 +10,9 @@ const SYNC_KEYS = [
   { field: 'deletedAccounts', localKey: 'deletedAccountsConfig' },
   { field: 'deletedAccounts_sync', localKey: 'deletedAccountsConfig_sync' },
   { field: 'customOrder', localKey: 'customOrderConfig' },
-  { field: 'customOrder_sync', localKey: 'customOrderConfig_sync' }
+  { field: 'customOrder_sync', localKey: 'customOrderConfig_sync' },
+  { field: 'monthlyBudget', localKey: 'm402_monthly_budget' },
+  { field: 'savingsTsumoriLogs', localKey: 'm402_tsumori_logs' }
 ];
 
 /**

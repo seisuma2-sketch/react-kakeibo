@@ -19,6 +19,7 @@ import MoneyFlowMap from './components/MoneyFlowMap';
 import NewsFeed from './components/NewsFeed';
 import TopNewsWidget from './components/TopNewsWidget';
 import DesktopCockpitOS from './components/DesktopCockpitOS';
+import SavingsHub from './components/SavingsHub';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 import { getStealthDisguisedTransactions } from './utils/stealthHelper';
 
@@ -563,6 +564,17 @@ function App() {
           {currentTab === 'home' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
               <SummaryPanel currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
+              
+              {/* 🌟 節約ハブ：デイリー・セーフ・スペンド（日割り枠メーター）＆つもり貯金（我慢カウンター） */}
+              <SavingsHub 
+                transactions={displayTransactions}
+                cyclePeriod={cyclePeriod}
+                user={user}
+                isMobile={isMobile}
+                themeColor={themeColor}
+                isStealthMode={stealthConfig.active && stealthConfig.hideSummary}
+              />
+
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
                   <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} dbMode={dbMode} />
