@@ -661,7 +661,7 @@ export default function MobileApp() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#0a0c10', color: '#fff', fontFamily: 'sans-serif', position: 'relative' }}>
       
       {showBriefing && (
         <DailyBriefingOverlay 
@@ -677,7 +677,7 @@ export default function MobileApp() {
       )}
 
       {/* 🚀 ヘッダーバー */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', paddingTop: 'max(15px, env(safe-area-inset-top, 15px))', background: '#11141a', borderBottom: `1px solid ${activeThemeColor}44`, zIndex: 10, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${activeThemeColor}44`, zIndex: 10 }}>
         <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: activeThemeColor, textShadow: `0 0 10px ${activeThemeColor}` }}>
           ☰
         </div>
@@ -699,8 +699,22 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        {/* ヘッダー右側スペーサー */}
-        <div style={{ width: '24px' }} />
+        {/* 🌟 デュアルコア・切り替えスイッチ（スマホ版ヘッダー右側） */}
+        <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '3px', border: `1px solid ${activeThemeColor}`, boxShadow: `0 0 10px ${activeThemeColor}33` }}>
+          <button 
+            onClick={() => setDbMode('personal')}
+            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? activeThemeColor : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
+          >
+            👤 個人
+            [個人]
+          </button>
+          <button 
+            onClick={() => setDbMode('sync')}
+            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
+          >
+            [共有]
+          </button>
+        </div>
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -779,7 +793,7 @@ export default function MobileApp() {
       )}
 
       {/* メインコンテンツ */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: currentTab === 'feed' ? 'hidden' : 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: currentTab === 'feed' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
@@ -793,7 +807,7 @@ export default function MobileApp() {
           />
         )}
         {currentTab === 'balance' && (
-          <div style={{ padding: '20px 20px 80px 20px' }}>
+          <div style={{ padding: '20px' }}>
             <div 
               onClick={handleBalanceQuadTap}
               style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0, cursor: 'pointer' }}
@@ -824,7 +838,7 @@ export default function MobileApp() {
 
       {/* 🚀 ハイブリッド・タブバーエリア */}
       {uiMode === '2d' ? (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 12px))', alignItems: 'center', position: 'relative', flexShrink: 0 }}>
+        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
@@ -851,7 +865,7 @@ export default function MobileApp() {
           <BottomTab icon="/S__32194592.jpg" label="マップ" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} themeColor={activeThemeColor} />
         </div>
       ) : (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 12px))', zIndex: 100, position: 'relative', flexShrink: 0 }}>
+        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
           <div 
             onPointerDown={handle3DPointerDown}
             onPointerMove={handle3DPointerMove}

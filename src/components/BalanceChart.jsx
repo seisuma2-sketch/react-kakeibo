@@ -147,7 +147,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
     'みずほ銀行': '/mizuho.jpg',
     'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
-    '食費': '/icon-food.png', 'リクルートカード': '/icon-recruit.svg', 'PayPayカード': '/icon-other.png'
+    '食費': '/icon-food.png', 'リクルートカード': '/S__32391170.jpg', 'PayPayカード': '/icon-other.png'
   };
 
   // 口座・カード名から表示用のクリーンな名前とアイコンURLを安全に抽出
@@ -165,51 +165,30 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     }
 
     if (name === 'リクルートカード' || name.includes('リクルート')) {
-      icon = '/icon-recruit.svg';
+      icon = '/S__32391170.jpg';
     } else if (name === 'みずほ銀行' || name.includes('みずほ')) {
       icon = '/mizuho.jpg';
     } else if (iconMap[name]) {
       icon = iconMap[name];
-    } else if (icon && (icon === '/icon-other.png' || icon.includes('S__32391170'))) {
+    } else if (icon && icon === '/icon-other.png') {
       if (iconMap[name]) icon = iconMap[name];
     }
 
     return { icon, name };
   };
 
-  // 口座・決済手段名の正規化（アイコンプレフィックスや表記揺れを統一して二重集計を防止）
-  const normalizeAccountName = (rawName) => {
-    if (!rawName) return '不明';
-    let name = String(rawName).trim();
-    if (name.startsWith('/')) {
-      const spaceIdx = name.indexOf(' ');
-      if (spaceIdx !== -1) {
-        name = name.slice(spaceIdx + 1).trim();
-      }
-    }
-    name = name.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
-    if (name === 'リクルート' || name.includes('リクルート')) {
-      return 'リクルートカード';
-    }
-    return name;
-  };
-
   const systemData = useMemo(() => {
     const now = new Date(); 
     const creditSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
-    const normalizedGhost = ghostAccounts.map(normalizeAccountName);
-    const normalizedDeleted = deletedAccounts.map(normalizeAccountName);
-
     const cardData = {};
-    Object.keys(creditSettings).forEach(rawName => {
-      const name = normalizeAccountName(rawName);
-      if (normalizedGhost.includes(name) || normalizedDeleted.includes(name)) return;
+    Object.keys(creditSettings).forEach(name => {
+      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
       cardData[name] = { 
-        budget: Number(creditSettings[rawName].budget) || 0,
-        resetDay: Number(creditSettings[rawName].resetDay) || 1,
-        paymentDay: Number(creditSettings[rawName].paymentDay) || 27,
-        withdrawalSource: normalizeAccountName(creditSettings[rawName].withdrawalSource || ''),
-        lastResetDate: creditSettings[rawName].lastResetDate || null,
+        budget: Number(creditSettings[name].budget) || 0,
+        resetDay: Number(creditSettings[name].resetDay) || 1,
+        paymentDay: Number(creditSettings[name].paymentDay) || 27,
+        withdrawalSource: creditSettings[name].withdrawalSource || '',
+        lastResetDate: creditSettings[name].lastResetDate || null,
         used: 0, usageCount: 0 
       };
     });
@@ -225,8 +204,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
       const amount = Number(tx.amount) || 0;
-      const method = normalizeAccountName(tx.paymentMethod);
-      const category = normalizeAccountName(tx.category);
+      const method = tx.paymentMethod || '不明';
+      const category = tx.category || '不明';
 
       if (!runningBalances[method]) runningBalances[method] = 0;
       usageCounts[method] = (usageCounts[method] || 0) + 1;
@@ -244,7 +223,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       let currentVisibleTotal = 0;
       for (const [accName, accBalance] of Object.entries(runningBalances)) {
-        if (!normalizedGhost.includes(accName) && !normalizedDeleted.includes(accName)) currentVisibleTotal += accBalance;
+        if (!ghostAccounts.includes(accName) && !deletedAccounts.includes(accName)) currentVisibleTotal += accBalance;
       }
       dLabels.push(dateStr);
       bData.push(currentVisibleTotal);
@@ -253,7 +232,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     transactions.forEach(tx => {
       if (!tx.date || tx.type !== 'expense') return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
-      const method = normalizeAccountName(tx.paymentMethod);
+      const method = tx.paymentMethod || '不明';
 
       if (cardData[method]) {
         cardData[method].usageCount = usageCounts[method] || 0;
@@ -271,7 +250,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
     const bankData = {};
     Object.entries(runningBalances).forEach(([name, bal]) => {
-      if (normalizedGhost.includes(name) || normalizedDeleted.includes(name)) return;
+      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
       if (cardData[name]) return; 
       bankData[name] = { balance: bal, usageCount: usageCounts[name] || 0 };
     });
@@ -486,7 +465,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         const iconMapLocal = {
           '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
           'みずほ銀行': '/mizuho.jpg', 'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png',
-          'EVERING': '/icon-evering.png', 'リクルートカード': '/icon-recruit.svg'
+          'EVERING': '/icon-evering.png', 'リクルートカード': '/S__32391170.jpg'
         };
         const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
         currentAccs.push(`${icon} ${cleanNewName}`);
@@ -553,9 +532,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const getOneMonthHistory = (accName) => {
     const oneMonthAgo = new Date(); oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    const targetName = normalizeAccountName(accName);
     return transactions.filter(tx => {
-      const isMatch = normalizeAccountName(tx.paymentMethod) === targetName || normalizeAccountName(tx.category) === targetName;
+      const isMatch = tx.paymentMethod === accName || tx.category === accName;
       const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
       return isMatch && txDate >= oneMonthAgo;
     }).sort((a, b) => b.date - a.date);

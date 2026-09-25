@@ -20,7 +20,7 @@ function renderIconOrText(item, imgSize = '16px') {
       let iconPath = item.slice(0, spaceIndex);
       const name = item.slice(spaceIndex + 1);
       if (name === 'リクルートカード' || name.includes('リクルート')) {
-        iconPath = '/icon-recruit.svg';
+        iconPath = '/S__32391170.jpg';
       } else if (name === 'みずほ銀行' || name.includes('みずほ')) {
         iconPath = '/mizuho.jpg';
       }
@@ -35,7 +35,7 @@ function renderIconOrText(item, imgSize = '16px') {
   if (item === 'リクルートカード' || (typeof item === 'string' && item.includes('リクルートカード'))) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-        <img src="/icon-recruit.svg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <img src="/S__32391170.jpg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item}</span>
       </div>
     );

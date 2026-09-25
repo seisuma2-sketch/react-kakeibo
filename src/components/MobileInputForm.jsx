@@ -12,7 +12,7 @@ function renderIconOrText(item, imgSize = '20px') {
       let iconPath = item.slice(0, spaceIndex);
       const name = item.slice(spaceIndex + 1);
       if (name === 'リクルートカード' || name.includes('リクルート')) {
-        iconPath = '/icon-recruit.svg';
+        iconPath = '/S__32391170.jpg';
       } else if (name === 'みずほ銀行' || name.includes('みずほ')) {
         iconPath = '/mizuho.jpg';
       }
@@ -27,7 +27,7 @@ function renderIconOrText(item, imgSize = '20px') {
   if (item === 'リクルートカード' || (typeof item === 'string' && item.includes('リクルートカード'))) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-        <img src="/icon-recruit.svg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <img src="/S__32391170.jpg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
         <span>{item}</span>
       </div>
     );
@@ -129,7 +129,7 @@ export default function MobileInputForm({
   // 🌟 個人モード用の初期リスト
   const defaultExpense = ['/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', '/icon-drink.png 交際費', '/icon-hobby.png 趣味', '/icon-ai.png 自動取得(AI)', '/icon-other.png その他'];
   const defaultIncome = ['/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'];
-  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/mizuho.jpg みずほ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-recruit.svg リクルートカード'];
+  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/mizuho.jpg みずほ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/S__32391170.jpg リクルートカード'];
 
   // 🌟 共有モード用の初期リスト（個人とは完全に別データになります！）
   const defaultExpenseSync = ['/icon-food.png 共通食費', '/icon-daily.png 共通日用品', '/icon-other.png 家族のその他'];
@@ -138,8 +138,8 @@ export default function MobileInputForm({
 
   const defaultRecurring = [
     { id: '1', name: '家賃', amount: 70000, category: '/icon-other.png その他', paymentMethod: '/icon-smbc.png 三井住友銀行' },
-    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: '/icon-other.png その他', paymentMethod: '/icon-recruit.svg リクルートカード' },
-    { id: '3', name: 'サブスク', amount: 1490, category: '/icon-hobby.png 趣味', paymentMethod: '/icon-recruit.svg リクルートカード' }
+    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: '/icon-other.png その他', paymentMethod: '/S__32391170.jpg リクルートカード' },
+    { id: '3', name: 'サブスク', amount: 1490, category: '/icon-hobby.png 趣味', paymentMethod: '/S__32391170.jpg リクルートカード' }
   ];
 
   const [expenseCategories, setExpenseCategories] = useState([]);
@@ -169,11 +169,11 @@ export default function MobileInputForm({
     let newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
     let accModified = false;
 
-    // リクルートカードのアイコン修正
+    // リクルートカードのアイコン修正・最新化
     newAccs = newAccs.map(acc => {
-      if (acc.includes('リクルートカード') && (!acc.includes('/icon-recruit.svg') || acc.includes('/icon-other.png') || acc.includes('S__32391170'))) {
+      if (acc.includes('リクルートカード') && !acc.includes('/S__32391170.jpg')) {
         accModified = true;
-        return '/icon-recruit.svg リクルートカード';
+        return '/S__32391170.jpg リクルートカード';
       }
       return acc;
     });
