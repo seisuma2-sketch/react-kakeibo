@@ -325,15 +325,26 @@ function App() {
     setNewGhostBank(''); 
   };
 
+  const cleanAccountName = (str) => {
+    if (!str) return '';
+    let s = String(str).trim();
+    if (s.startsWith('/')) {
+      const idx = s.indexOf(' ');
+      if (idx !== -1) s = s.slice(idx + 1).trim();
+    }
+    return s.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+  };
+
   const displayTransactions = transactions.map(tx => {
     if (!stealthConfig.active) return tx; 
-    const isFromGhost = stealthConfig.ghostAccounts.includes(tx.paymentMethod);
-    const isToGhost = tx.type === 'transfer' && stealthConfig.ghostAccounts.includes(tx.category);
+    const ghostList = (stealthConfig.ghostAccounts || []).map(cleanAccountName);
+    const fromAcc = cleanAccountName(tx.paymentMethod);
+    const toAcc = cleanAccountName(tx.category);
 
-    if (tx.type === 'transfer') {
-      if (isFromGhost && !isToGhost) return { ...tx, type: 'income', paymentMethod: tx.category, category: '不明な入金', memo: '---' };
-      if (!isFromGhost && isToGhost) return { ...tx, type: 'expense', category: '不明な出費', memo: '---' };
-    }
+    const isFromGhost = ghostList.includes(fromAcc);
+    const isToGhost = tx.type === 'transfer' && ghostList.includes(toAcc);
+
+    // 🌟 隠しているときは、隠し口座が関係する取引（移動・振替含む）を全体で何もなかったかのように完全に不可視化
     if (isFromGhost || isToGhost) return null;
     return tx;
   }).filter(Boolean); 
