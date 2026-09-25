@@ -5,14 +5,28 @@ import LocationScanner from './LocationScanner';
 import { saveSettingBoth } from '../utils/cloudSync';
 
 function renderIconOrText(item, imgSize = '20px') {
-  if (item && item.startsWith('/')) {
+  if (!item) return '';
+  if (typeof item === 'string' && item.startsWith('/')) {
     const spaceIndex = item.indexOf(' ');
-    const iconPath = item.slice(0, spaceIndex);
-    const name = item.slice(spaceIndex + 1);
+    if (spaceIndex !== -1) {
+      let iconPath = item.slice(0, spaceIndex);
+      const name = item.slice(spaceIndex + 1);
+      if (name === 'リクルートカード' || name.includes('リクルート')) {
+        iconPath = '/icon-recruit.svg';
+      }
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+          <span>{name}</span>
+        </div>
+      );
+    }
+  }
+  if (item === 'リクルートカード' || (typeof item === 'string' && item.includes('リクルートカード'))) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-        <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
-        <span>{name}</span>
+        <img src="/icon-recruit.svg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <span>{item}</span>
       </div>
     );
   }
@@ -107,7 +121,7 @@ export default function MobileInputForm({
   // 🌟 個人モード用の初期リスト
   const defaultExpense = ['/icon-food.png 食費', '/icon-daily.png 日用品', '/icon-train.png 交通費', '/icon-drink.png 交際費', '/icon-hobby.png 趣味', '/icon-ai.png 自動取得(AI)', '/icon-other.png その他'];
   const defaultIncome = ['/icon-salary.png 給与・報酬', '/icon-money.png お小遣い', '/icon-charge.png チャージ', '/icon-other.png その他'];
-  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-other.png リクルートカード'];
+  const defaultAccounts = ['/icon-cash.png 現金', '/icon-smbc.png 三井住友銀行', '/icon-mufg.png 三菱UFJ銀行', '/icon-yucho.png ゆうちょ銀行', '/icon-paypay.png PayPay', '/icon-evering.png EVERING', '/icon-recruit.svg リクルートカード'];
 
   // 🌟 共有モード用の初期リスト（個人とは完全に別データになります！）
   const defaultExpenseSync = ['/icon-food.png 共通食費', '/icon-daily.png 共通日用品', '/icon-other.png 家族のその他'];
@@ -116,8 +130,8 @@ export default function MobileInputForm({
 
   const defaultRecurring = [
     { id: '1', name: '家賃', amount: 70000, category: '/icon-other.png その他', paymentMethod: '/icon-smbc.png 三井住友銀行' },
-    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: '/icon-other.png その他', paymentMethod: '/icon-other.png リクルートカード' },
-    { id: '3', name: 'サブスク', amount: 1490, category: '/icon-hobby.png 趣味', paymentMethod: '/icon-other.png リクルートカード' }
+    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: '/icon-other.png その他', paymentMethod: '/icon-recruit.svg リクルートカード' },
+    { id: '3', name: 'サブスク', amount: 1490, category: '/icon-hobby.png 趣味', paymentMethod: '/icon-recruit.svg リクルートカード' }
   ];
 
   const [expenseCategories, setExpenseCategories] = useState([]);
@@ -132,6 +146,7 @@ export default function MobileInputForm({
     const expKey = isSync ? 'm402_expense_cats_sync' : 'm402_expense_cats';
     const incKey = isSync ? 'm402_income_cats_sync' : 'm402_income_cats';
     const accKey = isSync ? 'm402_accounts_sync' : 'm402_accounts';
+    const accField = isSync ? 'accounts_sync' : 'accounts';
     const cardKey = isSync ? 'creditCardSettings_sync' : 'creditCardSettings';
     const recKey = isSync ? 'm402_recurring_items_sync' : 'm402_recurring_items';
 
@@ -143,7 +158,19 @@ export default function MobileInputForm({
     const newIncCats = savedInc ? JSON.parse(savedInc) : (isSync ? defaultIncomeSync : defaultIncome);
     
     const savedAcc = localStorage.getItem(accKey);
-    const newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
+    let newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
+    let accModified = false;
+    newAccs = newAccs.map(acc => {
+      if (acc.includes('リクルートカード') && (!acc.includes('/icon-recruit.svg') || acc.includes('/icon-other.png') || acc.includes('S__32391170'))) {
+        accModified = true;
+        return '/icon-recruit.svg リクルートカード';
+      }
+      return acc;
+    });
+    if (accModified) {
+      localStorage.setItem(accKey, JSON.stringify(newAccs));
+      saveSettingBoth(auth.currentUser?.uid, accField, accKey, newAccs);
+    }
 
     const savedCrd = localStorage.getItem(cardKey);
     setSavedCards(savedCrd ? JSON.parse(savedCrd) : {});

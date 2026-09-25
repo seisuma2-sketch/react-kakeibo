@@ -87,7 +87,7 @@ export default function AuthScreen() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', backgroundColor: '#050608', color: '#00ff66', fontFamily: 'monospace', position: 'absolute', top: 0, left: 0, zIndex: 99999 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '100dvh', width: '100vw', backgroundColor: '#050608', color: '#00ff66', fontFamily: 'monospace', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', zIndex: 99999 }}>
       
       {/* 背景のハッカー演出 */}
       <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(0,255,102,0.1) 0%, transparent 70%)', zIndex: 0, animation: 'pulse 3s infinite ease-in-out' }} />
@@ -101,7 +101,7 @@ export default function AuthScreen() {
 
         {errorMsg && (
           <div style={{ background: 'rgba(255,51,102,0.1)', color: '#ff3366', border: '1px solid #ff3366', padding: '10px', borderRadius: '6px', fontSize: '12px', marginBottom: '20px', textAlign: 'center' }}>
-            ⚠️ {errorMsg}
+            [ERROR] {errorMsg}
           </div>
         )}
 
@@ -110,8 +110,9 @@ export default function AuthScreen() {
             <div style={{ fontSize: '10px', color: '#00ff66', marginBottom: '5px' }}>メールアドレス</div>
             <input 
               type="email" required placeholder="user@gmail.com"
-              value={email} onChange={handleEmailInput} // 👈 ここを専用の監視関数に変更！
-              style={{ width: '100%', boxSizing: 'border-box', background: '#11141a', color: '#fff', border: '1px solid #252838', padding: '12px', borderRadius: '6px', outline: 'none', fontSize: '14px' }}
+              value={email} onChange={handleEmailInput}
+              autoCapitalize="none" autoCorrect="off" spellCheck="false" autoComplete="email"
+              style={{ width: '100%', boxSizing: 'border-box', background: '#11141a', color: '#fff', border: '1px solid #252838', padding: '12px', borderRadius: '6px', outline: 'none', fontSize: '16px', touchAction: 'manipulation' }}
             />
           </div>
 
@@ -120,7 +121,8 @@ export default function AuthScreen() {
             <input 
               type="password" required placeholder="••••••••"
               value={password} onChange={(e) => setPassword(e.target.value)}
-              style={{ width: '100%', boxSizing: 'border-box', background: '#11141a', color: '#fff', border: '1px solid #252838', padding: '12px', borderRadius: '6px', outline: 'none', fontSize: '14px', letterSpacing: '3px' }}
+              autoCapitalize="none" autoCorrect="off" spellCheck="false" autoComplete="current-password"
+              style={{ width: '100%', boxSizing: 'border-box', background: '#11141a', color: '#fff', border: '1px solid #252838', padding: '12px', borderRadius: '6px', outline: 'none', fontSize: '16px', letterSpacing: '2px', touchAction: 'manipulation' }}
             />
           </div>
 

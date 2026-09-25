@@ -146,7 +146,32 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const iconMap = {
     '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
     'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
-    '食費': '/icon-food.png', 'リクルートカード': '/S__32391170.jpg', 'PayPayカード': '/icon-other.png'
+    '食費': '/icon-food.png', 'リクルートカード': '/icon-recruit.svg', 'PayPayカード': '/icon-other.png'
+  };
+
+  // 口座・カード名から表示用のクリーンな名前とアイコンURLを安全に抽出
+  const getAccountDisplay = (rawName) => {
+    if (!rawName) return { icon: null, name: '' };
+    let name = rawName;
+    let icon = null;
+
+    if (name.startsWith('/')) {
+      const spaceIdx = name.indexOf(' ');
+      if (spaceIdx !== -1) {
+        icon = name.slice(0, spaceIdx);
+        name = name.slice(spaceIdx + 1);
+      }
+    }
+
+    if (name === 'リクルートカード' || name.includes('リクルート')) {
+      icon = '/icon-recruit.svg';
+    } else if (iconMap[name]) {
+      icon = iconMap[name];
+    } else if (icon && (icon === '/icon-other.png' || icon.includes('S__32391170'))) {
+      if (iconMap[name]) icon = iconMap[name];
+    }
+
+    return { icon, name };
   };
 
   const systemData = useMemo(() => {
@@ -436,7 +461,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       if (!exists) {
         const iconMapLocal = {
           '現金': '/icon-cash.png', '三井住友銀行': '/icon-smbc.png', '三菱UFJ銀行': '/icon-mufg.png',
-          'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png'
+          'ゆうちょ銀行': '/icon-yucho.png', 'PayPay': '/icon-paypay.png', 'EVERING': '/icon-evering.png',
+          'リクルートカード': '/icon-recruit.svg'
         };
         const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
         currentAccs.push(`${icon} ${cleanNewName}`);
@@ -1496,16 +1522,21 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                      style={{ background: isRoutingSource ? '#ff336611' : '#0a0c10', border: `1px solid ${isRoutingSource ? '#ff3366' : (isRoutingTarget ? '#00bfff55' : '#252838')}`, borderRadius: '6px', padding: '15px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '85px', cursor: 'pointer', touchAction: reorderMode ? 'none' : 'pan-y', transform: isDragging ? `translateY(${dragOffset}px) scale(1.05)` : (isSwiped ? 'translateX(-120px)' : 'translateX(0)'), zIndex: isDragging ? 100 : 1, boxShadow: isDragging ? '0 10px 30px rgba(255, 255, 255, 0.2)' : (isRoutingSource ? '0 0 20px rgba(255,51,102,0.3)' : 'none'), transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, background 0.2s', opacity: (routingMode && routingSource && routingSource !== item.name) ? 0.7 : 1 }}>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {iconMap[item.name] ? (
-                        <img src={iconMap[item.name]} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} />
-                      ) : (
-                        <span style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '3px', background: isCard ? 'rgba(255,153,0,0.2)' : 'rgba(0,191,255,0.2)', color: isCard ? '#ff9900' : '#00bfff', fontFamily: 'monospace' }}>
-                          {isCard ? 'CRD' : 'BNK'}
+                    {(() => {
+                      const { icon, name: cleanName } = getAccountDisplay(item.name);
+                      return (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isCard ? '#ff9900' : '#00bfff', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {icon ? (
+                            <img src={icon} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain', pointerEvents: 'none', flexShrink: 0 }} />
+                          ) : (
+                            <span style={{ fontSize: '10px', padding: '2px 4px', borderRadius: '3px', background: isCard ? 'rgba(255,153,0,0.2)' : 'rgba(0,191,255,0.2)', color: isCard ? '#ff9900' : '#00bfff', fontFamily: 'monospace' }}>
+                              {isCard ? 'CRD' : 'BNK'}
+                            </span>
+                          )}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cleanName}</span>
                         </span>
-                      )}
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-                    </span>    
+                      );
+                    })()}
                     <span style={{ color: '#666', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
                       {percent.toFixed(1)}%
                     </span>

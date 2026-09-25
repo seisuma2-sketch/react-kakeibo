@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <!-- カード本体: リクルートカード特有の洗練されたシルバー・メタリック調グラデーション -->
+    <linearGradient id="recruitCardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b4453" />
+      <stop offset="35%" stop-color="#28303d" />
+      <stop offset="70%" stop-color="#1e242e" />
+      <stop offset="100%" stop-color="#141820" />
+    </linearGradient>
+    <!-- ヘアライン光沢 -->
+    <linearGradient id="recruitSheen" x1="0%" y1="0%" x2="100%" y2="20%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.05)" />
+      <stop offset="45%" stop-color="rgba(255,255,255,0.22)" />
+      <stop offset="55%" stop-color="rgba(255,255,255,0.08)" />
+      <stop offset="100%" stop-color="rgba(255,255,255,0)" />
+    </linearGradient>
+    <!-- ICチップのゴールド -->
+    <linearGradient id="recruitChip" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+  </defs>
+
+  <!-- カード外枠（角丸） -->
+  <rect x="2" y="6" width="44" height="36" rx="6" ry="6" fill="url(#recruitCardGrad)" stroke="#4A5568" stroke-width="1.2" />
+  <rect x="2" y="6" width="44" height="36" rx="6" ry="6" fill="url(#recruitSheen)" />
+
+  <!-- リクルートブルーの上品なトップアクセントライン -->
+  <path d="M4 14 C 18 12, 30 12, 44 14" stroke="#00a0e9" stroke-width="1.2" fill="none" opacity="0.9" />
+
+  <!-- ICチップ (左側) -->
+  <rect x="7" y="18" width="9" height="7.5" rx="1.5" fill="url(#recruitChip)" stroke="#92400E" stroke-width="0.5" />
+  <line x1="7" y1="21.75" x2="16" y2="21.75" stroke="#78350F" stroke-width="0.5" />
+  <line x1="11.5" y1="18" x2="11.5" y2="25.5" stroke="#78350F" stroke-width="0.5" />
+
+  <!-- タッチ決済（コンタクトレス）電波マーク -->
+  <path d="M19 19.5 A 3.5 3.5 0 0 1 19 24" fill="none" stroke="#94A3B8" stroke-width="0.8" stroke-linecap="round" />
+  <path d="M21 18 A 6 6 0 0 1 21 25.5" fill="none" stroke="#94A3B8" stroke-width="0.8" stroke-linecap="round" />
+
+  <!-- RECRUIT ロゴ (右上) -->
+  <text x="43" y="14" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="5" font-weight="900" fill="#FFFFFF" letter-spacing="0.4" text-anchor="end">RECRUIT</text>
+  <text x="43" y="18.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="3.5" font-weight="700" fill="#00a0e9" letter-spacing="0.6" text-anchor="end">CARD</text>
+
+  <!-- カード番号ドット風ライン -->
+  <circle cx="8" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="11" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="14" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="17" cy="31" r="0.9" fill="#94A3B8" />
+
+  <circle cx="21" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="24" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="27" cy="31" r="0.9" fill="#94A3B8" />
+  <circle cx="30" cy="31" r="0.9" fill="#94A3B8" />
+
+  <!-- ホログラムアクセント (右下) -->
+  <circle cx="37" cy="32" r="3.2" fill="#E2E8F0" opacity="0.3" />
+  <circle cx="41" cy="32" r="3.2" fill="#CBD5E1" opacity="0.45" />
+</svg>

@@ -3,15 +3,38 @@ import { doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // アイコンとテキストを綺麗に表示するヘルパー
+function cleanText(str) {
+  if (!str || typeof str !== 'string') return '';
+  if (str.startsWith('/')) {
+    const spaceIdx = str.indexOf(' ');
+    if (spaceIdx !== -1) return str.slice(spaceIdx + 1);
+  }
+  return str;
+}
+
 function renderIconOrText(item, imgSize = '16px') {
-  if (item && item.startsWith('/')) {
+  if (!item) return '';
+  if (typeof item === 'string' && item.startsWith('/')) {
     const spaceIndex = item.indexOf(' ');
-    const iconPath = item.slice(0, spaceIndex);
-    const name = item.slice(spaceIndex + 1);
+    if (spaceIndex !== -1) {
+      let iconPath = item.slice(0, spaceIndex);
+      const name = item.slice(spaceIndex + 1);
+      if (name === 'リクルートカード' || name.includes('リクルート')) {
+        iconPath = '/icon-recruit.svg';
+      }
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        </div>
+      );
+    }
+  }
+  if (item === 'リクルートカード' || (typeof item === 'string' && item.includes('リクルートカード'))) {
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-        <img src={iconPath} alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <img src="/icon-recruit.svg" alt="" style={{ width: imgSize, height: imgSize, objectFit: 'contain' }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item}</span>
       </div>
     );
   }
@@ -161,7 +184,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ fontSize: '12px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
-                          {tx.memo || (tx.type === 'transfer' ? `${tx.paymentMethod} ➔ ${tx.category}` : tx.paymentMethod)}
+                          {tx.memo || (tx.type === 'transfer' ? `${cleanText(tx.paymentMethod)} ➔ ${cleanText(tx.category)}` : cleanText(tx.paymentMethod))}
                         </div>
                         <div style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>{dateStr}</div>
                       </div>
@@ -180,7 +203,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                           {tx.memo || (tx.type === 'transfer' ? '資金のルーティング' : '(メモなし)')}
                         </span>
                         <span style={{ fontSize: '12px', color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          - {tx.type === 'transfer' ? `${tx.paymentMethod} ➔ ${tx.category}` : tx.paymentMethod}
+                          - {tx.type === 'transfer' ? `${cleanText(tx.paymentMethod)} ➔ ${cleanText(tx.category)}` : cleanText(tx.paymentMethod)}
                         </span>
                       </div>
 
@@ -222,11 +245,11 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex' }}>
                           <span style={{ color: '#666', width: '90px', flexShrink: 0 }}>SOURCE:</span> 
-                          <span style={{ color: '#ccc' }}>{tx.paymentMethod}</span>
+                          <span style={{ color: '#ccc' }}>{cleanText(tx.paymentMethod)}</span>
                         </div>
                         <div style={{ display: 'flex' }}>
                           <span style={{ color: '#666', width: '90px', flexShrink: 0 }}>TARGET:</span> 
-                          <span style={{ color: '#ccc' }}>{tx.category}</span>
+                          <span style={{ color: '#ccc' }}>{cleanText(tx.category)}</span>
                         </div>
                         <div style={{ display: 'flex' }}>
                           <span style={{ color: '#666', width: '90px', flexShrink: 0 }}>LOCATION:</span> 
