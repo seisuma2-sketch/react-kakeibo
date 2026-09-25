@@ -19,6 +19,7 @@ import MoneyFlowMap from './components/MoneyFlowMap';
 import NewsFeed from './components/NewsFeed';
 import TopNewsWidget from './components/TopNewsWidget';
 import DesktopCockpitOS from './components/DesktopCockpitOS';
+import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -235,8 +236,17 @@ function App() {
           setCycleStartDay(data.cycleStartDay);
           localStorage.setItem('m402_cycle_start_day', data.cycleStartDay);
         }
+
+        // 🌟 クラウドの口座・クレカ設定をローカルへ同期
+        applyCloudSettingsToLocal(data);
+
+        // 🌟 クラウド側にクレカ設定がまだ無く、ローカルにある場合は初回アップロード
+        if (!data.creditCardSettings && localStorage.getItem('creditCardSettings')) {
+          syncLocalSettingsToCloud(user.uid);
+        }
       } else {
         setIsProfileModalOpen(true);
+        syncLocalSettingsToCloud(user.uid);
       }
     });
 

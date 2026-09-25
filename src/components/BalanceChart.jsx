@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as echarts from 'echarts';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { saveSettingBoth } from '../utils/cloudSync';
 
 const getCycleBounds = (resetDay, currentDate = new Date()) => {
   const rd = parseInt(resetDay, 10);
@@ -23,12 +24,16 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
 export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, onQuadTap = null, dbMode = 'personal', initialResetCard = null }) {
   const chartRef = useRef(null);
   
-  // モード別の保存先キー
+  // モード別の保存先キーおよびクラウド同期フィールド
   const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+  const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
   const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
+  const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
   const deletedKey = dbMode === 'sync' ? 'deletedAccountsConfig_sync' : 'deletedAccountsConfig';
+  const deletedField = dbMode === 'sync' ? 'deletedAccounts_sync' : 'deletedAccounts';
   const recycledKey = dbMode === 'sync' ? 'recycledAccountsConfig_sync' : 'recycledAccountsConfig';
   const customOrderKey = dbMode === 'sync' ? 'customOrderConfig_sync' : 'customOrderConfig';
+  const customOrderField = dbMode === 'sync' ? 'customOrder_sync' : 'customOrder';
 
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
   const [tick, setTick] = useState(0); 
@@ -374,7 +379,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     if (!newCustomOrder.includes(itemB)) newCustomOrder.push(itemB);
     const idxA = newCustomOrder.indexOf(itemA); const idxB = newCustomOrder.indexOf(itemB);
     newCustomOrder[idxA] = itemB; newCustomOrder[idxB] = itemA;
-    setCustomOrder(newCustomOrder); localStorage.setItem(customOrderKey, JSON.stringify(newCustomOrder));
+    setCustomOrder(newCustomOrder);
+    saveSettingBoth(auth.currentUser?.uid, customOrderField, customOrderKey, newCustomOrder);
   };
 
   const handleTouchMove = (e, array, itemName) => {
@@ -434,7 +440,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         };
         const icon = iconMapLocal[cleanNewName] || '/icon-other.png';
         currentAccs.push(`${icon} ${cleanNewName}`);
-        localStorage.setItem(accKey, JSON.stringify(currentAccs));
+        saveSettingBoth(auth.currentUser?.uid, accField, accKey, currentAccs);
         setM402Accounts(currentAccs);
       }
 
@@ -459,7 +465,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       if (deletedAccounts.includes(cleanNewName)) {
          const newDeleted = deletedAccounts.filter(a => a !== cleanNewName);
          setDeletedAccounts(newDeleted);
-         localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+         saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, newDeleted);
       }
 
       setNewNodeName('');
@@ -482,12 +488,12 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       onConfirm: () => {
         const updatedAccs = m402Accounts.filter(a => a !== rawAccName);
         setM402Accounts(updatedAccs);
-        localStorage.setItem(accKey, JSON.stringify(updatedAccs));
+        saveSettingBoth(auth.currentUser?.uid, accField, accKey, updatedAccs);
 
         if (!deletedAccounts.includes(cleanName)) {
           const newDeleted = [...deletedAccounts, cleanName];
           setDeletedAccounts(newDeleted);
-          localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+          saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, newDeleted);
         }
         setLocalUpdate(prev => prev + 1);
         showToast(`[${cleanName}] を切断しました`, 'info');
@@ -586,7 +592,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         
         const newDeleted = [...deletedAccounts, itemName];
         setDeletedAccounts(newDeleted);
-        localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+        saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, newDeleted);
         
         const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
         const savedConfig = currentSettings[itemName] || null;
@@ -613,12 +619,12 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const itemName = item.name;
     const newDeleted = deletedAccounts.filter(a => a !== itemName);
     setDeletedAccounts(newDeleted);
-    localStorage.setItem(deletedKey, JSON.stringify(newDeleted));
+    saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, newDeleted);
 
     if (item.config) {
       const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
       currentSettings[itemName] = item.config;
-      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+      saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
     }
 
     const newRecycled = recycledAccounts.filter(r => r.name !== itemName);
@@ -638,7 +644,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       onConfirm: () => {
         setDeletedAccounts([]);
         setRecycledAccounts([]);
-        localStorage.removeItem(deletedKey);
+        saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, []);
         localStorage.removeItem(recycledKey);
         setLocalUpdate(prev => prev + 1);
         showToast('全口座を再表示しました', 'success');
@@ -660,7 +666,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     } else {
       delete currentSettings[editingAcc];
     }
-    localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+    saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
     setEditingAcc(null);
     setLocalUpdate(prev => prev + 1); 
     showToast(`[${editingAcc}] の設定を保存しました`, 'success');
@@ -713,7 +719,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       if (resetSourceBank) {
         currentSettings[cardName].withdrawalSource = resetSourceBank;
       }
-      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+      saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
 
       setResetModalCard(null);
       setLocalUpdate(prev => prev + 1);
@@ -737,7 +743,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
     if (currentSettings[cardName]) {
       delete currentSettings[cardName].lastResetDate;
-      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+      saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
       setLocalUpdate(prev => prev + 1);
       showToast(`[${cardName}] のリセットを取り消しました`, 'info');
     }

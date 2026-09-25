@@ -5,13 +5,14 @@ import { db, auth } from './firebase';
 
 import MobileInputForm from './components/MobileInputForm';
 import BalanceChart from './components/BalanceChart';
-import NewsFeed from './components/NewsFeed';
+import MoneyFlowMap from './components/MoneyFlowMap';
 import MobileTransactionList from './components/MobileTransactionList';
 import MobileCalendar from './components/MobileCalendar';
 import NebulaCore3D from './components/NebulaCore3D';
 import AuthScreen from './components/AuthScreen';
 import DailyBriefingOverlay from './components/DailyBriefingOverlay';
 import NfcSettingsModal from './components/NfcSettingsModal';
+import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -22,6 +23,7 @@ const THEMES = {
 
 export default function MobileApp() {
   const [user, setUser] = useState(null);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   
   // 🌟 追加：デュアルコアシステムの核
   const [dbMode, setDbMode] = useState('personal'); // 'personal' or 'sync'
@@ -287,8 +289,20 @@ export default function MobileApp() {
           setDoc(doc(db, "user_settings", user.uid), { familyId: currentFamilyId }, { merge: true });
         }
         setStealthAccounts(data.stealthAccounts || []);
+
+        // 🌟 クラウドの口座・クレカ設定をローカルへ同期
+        const updated = applyCloudSettingsToLocal(data);
+        if (updated) {
+          setSettingsVersion(v => v + 1);
+        }
+
+        // 🌟 クラウド側にクレカ設定がまだ無く、ローカルにある場合は初回アップロード
+        if (!data.creditCardSettings && localStorage.getItem('creditCardSettings')) {
+          syncLocalSettingsToCloud(user.uid);
+        }
       } else {
         setDoc(doc(db, "user_settings", user.uid), { familyId: currentFamilyId }, { merge: true });
+        syncLocalSettingsToCloud(user.uid);
       }
       
       setFamilyId(currentFamilyId);
@@ -727,33 +741,6 @@ export default function MobileApp() {
               </button>
             </div>
 
-            {/* 🌟 ステルス解除時のみゴースト口座管理を表示（ロック中は完全隠蔽） */}
-            {!isStealthActive && (
-              <div style={{ background: 'rgba(0, 255, 102, 0.05)', border: '1px solid #00ff6644', borderRadius: '8px', padding: '12px' }}>
-                <div style={{ fontSize: '12px', color: '#00ff66', marginBottom: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>👻</span> ゴースト口座（隠し銀行）管理
-                </div>
-                <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                  <input 
-                    value={newGhostBank} 
-                    onChange={(e) => setNewGhostBank(e.target.value)} 
-                    placeholder="例: みずほ銀行" 
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #333', background: '#11141a', color: '#fff', fontSize: '12px' }}
-                  />
-                  <button onClick={handleAddGhostBank} style={{ background: activeThemeColor, color: '#000', border: 'none', padding: '0 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>追加</button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '120px', overflowY: 'auto' }}>
-                  {stealthAccounts.map(bank => (
-                    <div key={bank} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1d24', padding: '6px 10px', borderRadius: '4px', fontSize: '12px' }}>
-                      <span>{bank}</span>
-                      <button onClick={() => handleRemoveGhostBank(bank)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>×</button>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: '9px', color: '#00ff66aa', marginTop: '6px' }}>※現在アンロック中。ここで登録した口座はロック時に完全隠蔽されます。</div>
-              </div>
-            )}
-
             <div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 'bold' }}>残高並び替え</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', marginBottom: '10px' }}>
@@ -806,7 +793,7 @@ export default function MobileApp() {
       )}
 
       {/* メインコンテンツ */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, overflowY: currentTab === 'feed' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
@@ -827,6 +814,7 @@ export default function MobileApp() {
               <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none' }}> 口座・決済手段別の現在高</h2>
             </div>
             <BalanceChart 
+              key={`${dbMode}_${settingsVersion}`}
               transactions={safeTransactions} 
               ghostAccounts={ghostAccountsList} 
               sortKey={sortKey} 
@@ -840,7 +828,11 @@ export default function MobileApp() {
         )}
         {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={activeThemeColor} />}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
-        {currentTab === 'feed' && <NewsFeed feedMode={feedMode} setFeedMode={setFeedMode} transactions={safeTransactions} />}
+        {currentTab === 'feed' && (
+          <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
+            <MoneyFlowMap transactions={safeTransactions} />
+          </div>
+        )}
       </div>
 
       {/* 🚀 ハイブリッド・タブバーエリア */}
@@ -861,7 +853,6 @@ export default function MobileApp() {
           />
           <BottomTab 
             icon="📅" label="暦" 
-            icon="暦" label="暦" 
             isActive={currentTab === 'calendar'} 
             onClick={() => setCurrentTab('calendar')} 
             themeColor={activeThemeColor} 
@@ -870,7 +861,7 @@ export default function MobileApp() {
             onPointerLeave={handleEndHold}
           />
           <BottomTab icon="/S__32194591.jpg" label="履歴" isActive={currentTab === 'history'} onClick={() => setCurrentTab('history')} themeColor={activeThemeColor} />
-          <BottomTab icon="/S__32194592.jpg" label="情報" isActive={currentTab === 'feed'} onClick={handleFeedTabClick} themeColor={activeThemeColor} />
+          <BottomTab icon="/S__32194592.jpg" label="マップ" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} themeColor={activeThemeColor} />
         </div>
       ) : (
         <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
+import { saveSettingBoth } from '../utils/cloudSync';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (item && item.startsWith('/')) {
@@ -215,7 +216,9 @@ export default function MobileInputForm({
 
   const handleSaveAccount = () => {
     const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
+    const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
     const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+    const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
 
     if (accountPanelMode === 'add') {
       if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
@@ -225,7 +228,7 @@ export default function MobileInputForm({
       if (!accounts.includes(newItem)) {
         const newAccounts = [...accounts, newItem];
         setAccounts(newAccounts);
-        localStorage.setItem(accKey, JSON.stringify(newAccounts));
+        saveSettingBoth(auth.currentUser?.uid, accField, accKey, newAccounts);
       }
       setPaymentMethod(newItem);
 
@@ -237,7 +240,7 @@ export default function MobileInputForm({
           paymentDay: Number(newAccPaymentDay) || 27,
           withdrawalSource: newAccWithdrawalSource 
         };
-        localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+        saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
         showAlert(`[${newAccName.trim()}] を登録しました`, "success");
       } else {
         showAlert("口座を追加しました", "success");
@@ -253,7 +256,7 @@ export default function MobileInputForm({
         paymentDay: Number(newAccPaymentDay) || 27,
         withdrawalSource: newAccWithdrawalSource
       };
-      localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+      saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
       showAlert(`[${editTargetCard}] の設定を更新しました`, "success");
     }
     setShowAccountPanel(false);
@@ -268,16 +271,18 @@ export default function MobileInputForm({
       message: `本当に [${editTargetCard}] を削除しますか？\n(※過去の取引履歴は保持されます)`,
       onConfirm: () => {
         const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
+        const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
         const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+        const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
 
         const newAccounts = accounts.filter(acc => getCleanName(acc) !== editTargetCard);
         setAccounts(newAccounts);
-        localStorage.setItem(accKey, JSON.stringify(newAccounts));
+        saveSettingBoth(auth.currentUser?.uid, accField, accKey, newAccounts);
 
         const currentSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
         if (currentSettings[editTargetCard]) {
           delete currentSettings[editTargetCard];
-          localStorage.setItem(cardKey, JSON.stringify(currentSettings));
+          saveSettingBoth(auth.currentUser?.uid, cardField, cardKey, currentSettings);
         }
 
         const deletedCard = editTargetCard;
