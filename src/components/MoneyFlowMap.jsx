@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents, Marker, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, addDoc, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { db, auth } from '../firebase';
 
@@ -74,12 +74,32 @@ const getGameIcon = (cluster, zoomLevel = 6) => {
   });
 };
 
-function MapController({ geoJsonData, viewLevel, selectedPref, onZoomChange, flyToTarget, onFlyCompleted }) {
+function MapController({ 
+  geoJsonData, 
+  viewLevel, 
+  selectedPref, 
+  onZoomChange, 
+  flyToTarget, 
+  onFlyCompleted,
+  onMapClick,
+  pinMode
+}) {
   const map = useMap();
 
   useMapEvents({
     zoomend: () => {
       if (onZoomChange) onZoomChange(map.getZoom());
+    },
+    click: (e) => {
+      if (pinMode && onMapClick) {
+        onMapClick(e.latlng);
+      }
+    },
+    contextmenu: (e) => {
+      // スマホ長押しまたはPC右クリックで記帳トリガー
+      if (onMapClick) {
+        onMapClick(e.latlng);
+      }
     }
   });
 
@@ -154,6 +174,24 @@ export default function MoneyFlowMap({ transactions = [] }) {
   const [flyToTarget, setFlyToTarget] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
+
+  // 🌟 機能3: マップ長押し記帳＆制覇ログ用State
+  const [pinMode, setPinMode] = useState(false);
+  const [isConquestModalOpen, setIsConquestModalOpen] = useState(false);
+  const [isSavingQuick, setIsSavingQuick] = useState(false);
+  const [quickTxModal, setQuickTxModal] = useState({
+    isOpen: false,
+    lat: null,
+    lng: null,
+    address: '',
+    pref: '',
+    city: '',
+    amount: '',
+    category: '食費',
+    paymentMethod: 'EVERING',
+    memo: '',
+    isReverseGeocoding: false
+  });
 
   const availableCategories = useMemo(() => {
     const cats = new Set(internalTx.map(t => t.category).filter(Boolean));
@@ -308,6 +346,169 @@ export default function MoneyFlowMap({ transactions = [] }) {
     );
   };
 
+  // 🌟 マップクリック/長押しでピンポイント逆ジオコーディング＆クイック記帳起動
+  const handleMapLocationSelect = async (latlng) => {
+    const lat = typeof latlng.lat === 'number' ? latlng.lat : latlng[0];
+    const lng = typeof latlng.lng === 'number' ? latlng.lng : latlng[1];
+    setQuickTxModal({
+      isOpen: true,
+      lat,
+      lng,
+      address: '住所を取得中...',
+      pref: '',
+      city: '',
+      amount: '',
+      category: '食費',
+      paymentMethod: 'EVERING',
+      memo: '',
+      isReverseGeocoding: true
+    });
+
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
+      if (res.ok) {
+        const data = await res.json();
+        const addr = data.address || {};
+        const pref = addr.province || addr.state || guessPrefecture(lat, lng) || '';
+        const city = addr.city || addr.town || addr.village || addr.suburb || addr.city_district || '';
+        const road = addr.road || addr.quarter || addr.neighbourhood || '';
+        const full = data.display_name ? data.display_name.split(',')[0] : `${pref} ${city} ${road}`;
+        
+        setQuickTxModal(prev => ({
+          ...prev,
+          address: full || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          pref: pref,
+          city: city,
+          isReverseGeocoding: false
+        }));
+      } else {
+        setQuickTxModal(prev => ({
+          ...prev,
+          address: `地点 [${lat.toFixed(4)}, ${lng.toFixed(4)}]`,
+          pref: guessPrefecture(lat, lng),
+          isReverseGeocoding: false
+        }));
+      }
+    } catch (e) {
+      setQuickTxModal(prev => ({
+        ...prev,
+        address: `地点 [${lat.toFixed(4)}, ${lng.toFixed(4)}]`,
+        pref: guessPrefecture(lat, lng),
+        isReverseGeocoding: false
+      }));
+    }
+  };
+
+  // 🌟 クイック記帳のFirestore保存
+  const handleSaveQuickTransaction = async () => {
+    if (!quickTxModal.amount || isNaN(quickTxModal.amount) || Number(quickTxModal.amount) <= 0) {
+      alert("金額を正しく入力してください");
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      alert("ログインが必要です");
+      return;
+    }
+
+    setIsSavingQuick(true);
+    try {
+      const newTx = {
+        userId: user.uid,
+        amount: Number(quickTxModal.amount),
+        type: 'expense',
+        category: quickTxModal.category,
+        paymentMethod: quickTxModal.paymentMethod,
+        memo: quickTxModal.memo || quickTxModal.address,
+        fullAddress: quickTxModal.address,
+        prefecture: quickTxModal.pref || guessPrefecture(quickTxModal.lat, quickTxModal.lng),
+        city: quickTxModal.city || '',
+        lat: quickTxModal.lat,
+        lng: quickTxModal.lng,
+        date: Timestamp.now(),
+        createdAt: Timestamp.now()
+      };
+
+      await addDoc(collection(db, "transactions"), newTx);
+
+      setQuickTxModal(prev => ({ ...prev, isOpen: false }));
+      setPinMode(false);
+      setIsSavingQuick(false);
+    } catch (err) {
+      console.error(err);
+      setIsSavingQuick(false);
+      alert("保存に失敗しました: " + (err.message || 'エラー'));
+    }
+  };
+
+  // 🌟 桃鉄風：全国47都道府県制覇率 ＆ 独占駅・未踏エリア統計
+  const conquestStats = useMemo(() => {
+    const allPrefectures = Object.keys(PREF_CODES);
+    const visitedPrefMap = {};
+    const stationSpendingMap = {};
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const pastCities = new Set();
+    const currentMonthNewCities = new Set();
+
+    preProcessedTransactions.forEach(tx => {
+      const pref = tx.prefecture;
+      if (pref && PREF_CODES[pref]) {
+        visitedPrefMap[pref] = (visitedPrefMap[pref] || 0) + 1;
+      }
+      const city = tx.city || tx.ward || '';
+      const stationName = tx.memo || city || pref || '地点';
+      const key = `${pref}_${stationName}`;
+      if (!stationSpendingMap[key]) {
+        stationSpendingMap[key] = {
+          name: stationName,
+          pref: pref,
+          amount: 0,
+          count: 0
+        };
+      }
+      stationSpendingMap[key].amount += Number(tx.amount) || 0;
+      stationSpendingMap[key].count += 1;
+
+      const txDate = new Date(tx.time);
+      const isThisMonth = txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear;
+      if (city) {
+        if (isThisMonth) {
+          currentMonthNewCities.add(city);
+        } else {
+          pastCities.add(city);
+        }
+      }
+    });
+
+    const newlyExploredCities = Array.from(currentMonthNewCities).filter(c => !pastCities.has(c));
+    const visitedList = Object.keys(visitedPrefMap);
+    const unvisitedList = allPrefectures.filter(p => !visitedPrefMap[p]);
+    const rate = Math.round((visitedList.length / 47) * 100);
+
+    const topStations = Object.values(stationSpendingMap)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    let title = "駆け出し旅人";
+    if (rate >= 100) title = "🗾 日本完全制覇の覇王！";
+    else if (rate >= 75) title = "🌟 全国特急マスター";
+    else if (rate >= 50) title = "🚅 日本半周トラベラー";
+    else if (rate >= 25) title = "🗺️ 地方開拓エキスパート";
+    else if (rate >= 10) title = "🎒 国内ぶらり散歩人";
+
+    return {
+      visitedCount: visitedList.length,
+      rate,
+      title,
+      visitedList,
+      unvisitedList,
+      newlyExploredCities,
+      topStations
+    };
+  }, [preProcessedTransactions]);
+
   const nationalDomination = useMemo(() => {
     const data = {};
     timeFilteredData.forEach(tx => {
@@ -373,32 +574,108 @@ export default function MoneyFlowMap({ transactions = [] }) {
         ))}
       </div>
 
-      {/* 🌟 右上の現在地ジャンプボタン */}
-      <button 
-        onClick={handleJumpToCurrentLocation}
-        title="現在地にジャンプ"
-        style={{
+      {/* 🌟 右上のクイックアクションボタン群（現在地・制覇ログ・駅作成） */}
+      <div style={{ position: 'absolute', top: '20px', right: '15px', zIndex: 1001, display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+        <button 
+          onClick={handleJumpToCurrentLocation}
+          title="現在地にジャンプ"
+          style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: '#ffffff',
+            border: '2px solid #cbd5e1',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontSize: '18px',
+            transition: 'all 0.2s',
+            outline: 'none'
+          }}
+        >
+          {isLocating ? '⏳' : '🎯'}
+        </button>
+
+        <button 
+          onClick={() => setIsConquestModalOpen(true)}
+          title="全国制覇ログ"
+          style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #fef08a, #f59e0b)',
+            border: '2px solid #ffffff',
+            boxShadow: '0 4px 10px rgba(245,158,11,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontSize: '18px',
+            transition: 'all 0.2s',
+            outline: 'none'
+          }}
+        >
+          🏆
+        </button>
+
+        <button 
+          onClick={() => setPinMode(!pinMode)}
+          title={pinMode ? "駅作成モード解除" : "タップで駅を作る"}
+          style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '50%',
+            background: pinMode ? '#ef4444' : '#ffffff',
+            color: pinMode ? '#ffffff' : '#3b82f6',
+            border: pinMode ? '2px solid #b91c1c' : '2px solid #3b82f6',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            transition: 'all 0.2s',
+            outline: 'none'
+          }}
+        >
+          {pinMode ? '✕' : '➕'}
+        </button>
+      </div>
+
+      {/* 🌟 駅作成モード中の案内バナー */}
+      {pinMode && (
+        <div style={{
           position: 'absolute',
-          top: '25px',
-          right: '15px',
-          zIndex: 1001,
-          width: '44px',
-          height: '44px',
-          borderRadius: '50%',
-          background: '#ffffff',
-          border: '2px solid #cbd5e1',
-          boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+          top: '72px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1002,
+          background: 'rgba(239, 68, 68, 0.95)',
+          color: '#ffffff',
+          padding: '8px 16px',
+          borderRadius: '30px',
+          fontSize: '12px',
+          fontWeight: '900',
+          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.35)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          fontSize: '20px',
-          transition: 'all 0.2s',
-          outline: 'none'
-        }}
-      >
-        {isLocating ? '⏳' : '🎯'}
-      </button>
+          gap: '8px',
+          pointerEvents: 'auto',
+          animation: 'fadeInUp 0.2s ease-out',
+          whiteSpace: 'nowrap'
+        }}>
+          <span>📍 地図をタップ（または長押し）して駅を設置！</span>
+          <button 
+            onClick={() => setPinMode(false)}
+            style={{ background: 'rgba(255,255,255,0.25)', border: 'none', color: '#fff', borderRadius: '12px', padding: '2px 8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            中止
+          </button>
+        </div>
+      )}
 
       {/* 🌟 現在のズーム階層ガイドバッジ */}
       <div style={{ position: 'absolute', top: '75px', left: '25px', zIndex: 999, background: 'rgba(255,255,255,0.92)', border: '1px solid #cbd5e1', borderRadius: '20px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: '#475569', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', pointerEvents: 'none' }}>
@@ -421,6 +698,8 @@ export default function MoneyFlowMap({ transactions = [] }) {
             onZoomChange={setCurrentZoom}
             flyToTarget={flyToTarget}
             onFlyCompleted={() => setFlyToTarget(null)}
+            onMapClick={handleMapLocationSelect}
+            pinMode={pinMode}
           />
 
           {viewLevel === 'NATIONAL' && nationalGeoJson && (
@@ -573,6 +852,381 @@ export default function MoneyFlowMap({ transactions = [] }) {
           {isFabOpen ? '×' : '🎮'}
         </button>
       </div>
+
+      {/* 🌟 クイック記帳（駅を作る）モーダル */}
+      {quickTxModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="game-panel" style={{
+            width: '100%',
+            maxWidth: '380px',
+            padding: '24px',
+            animation: 'fadeInUp 0.25s ease-out',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+          }}>
+            {/* ヘッダー */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '24px' }}>🚉</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '900', color: '#1e293b' }}>
+                    ここに駅（記帳）を建設
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b' }}>
+                    マップをタップした場所に支出を記録
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setQuickTxModal(prev => ({ ...prev, isOpen: false }))}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 住所表示（逆引き結果） */}
+            <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span>📍 検出された地点</span>
+                {quickTxModal.isReverseGeocoding && <span style={{ color: '#3b82f6', fontSize: '10px' }}>(住所取得中...)</span>}
+              </div>
+              <input 
+                type="text" 
+                value={quickTxModal.address}
+                onChange={(e) => setQuickTxModal(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="場所名・住所"
+                style={{
+                  width: '100%',
+                  marginTop: '4px',
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  color: '#334155',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* 金額入力 */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+                金額
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <span style={{ position: 'absolute', left: '16px', fontSize: '22px', fontWeight: '900', color: '#ef4444' }}>¥</span>
+                <input 
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="0"
+                  autoFocus
+                  value={quickTxModal.amount}
+                  onChange={(e) => setQuickTxModal(prev => ({ ...prev, amount: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px 12px 42px',
+                    fontSize: '24px',
+                    fontWeight: '900',
+                    color: '#ef4444',
+                    background: '#fff',
+                    border: '2px solid #fca5a5',
+                    borderRadius: '14px',
+                    outline: 'none',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* カテゴリクイック選択 */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+                カテゴリ
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                {['食費', '交通費', '日用品', 'カフェ', '買い物', '趣味・娯楽'].map(cat => {
+                  const isSel = quickTxModal.category === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setQuickTxModal(prev => ({ ...prev, category: cat }))}
+                      style={{
+                        padding: '8px 4px',
+                        borderRadius: '10px',
+                        border: isSel ? '2px solid #3b82f6' : '1.5px solid #e2e8f0',
+                        background: isSel ? '#eff6ff' : '#ffffff',
+                        color: isSel ? '#1d4ed8' : '#64748b',
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 支払い方法選択 */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+                支払い方法
+              </label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {['EVERING', 'クレジットカード', '現金', 'PayPay / 電子マネー'].map(pm => {
+                  const isSel = quickTxModal.paymentMethod === pm;
+                  return (
+                    <button
+                      key={pm}
+                      type="button"
+                      onClick={() => setQuickTxModal(prev => ({ ...prev, paymentMethod: pm }))}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        border: isSel ? '2px solid #10b981' : '1.5px solid #e2e8f0',
+                        background: isSel ? '#ecfdf5' : '#ffffff',
+                        color: isSel ? '#047857' : '#64748b',
+                        fontWeight: 'bold',
+                        fontSize: '11px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {pm === 'EVERING' ? '💍 EVERING' : (pm === 'クレジットカード' ? '💳 クレカ' : (pm === '現金' ? '💵 現金' : '📱 電子マネー'))}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* メモ入力 */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#475569', marginBottom: '4px' }}>
+                店名・メモ（任意）
+              </label>
+              <input 
+                type="text"
+                value={quickTxModal.memo}
+                onChange={(e) => setQuickTxModal(prev => ({ ...prev, memo: e.target.value }))}
+                placeholder="例: セブンイレブン, スターバックス"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* 保存ボタン */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setQuickTxModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickTransaction}
+                disabled={isSavingQuick}
+                style={{
+                  flex: 2,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#ffffff',
+                  fontWeight: '900',
+                  fontSize: '14px',
+                  cursor: isSavingQuick ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 12px rgba(37,99,235,0.3)'
+                }}
+              >
+                {isSavingQuick ? '建設中...' : '🚉 駅を建設（保存）'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 桃鉄風 全国制覇ログモーダル */}
+      {isConquestModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="game-panel" style={{
+            width: '100%',
+            maxWidth: '430px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '24px',
+            animation: 'fadeInUp 0.25s ease-out',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.35)',
+            border: '3px solid #fef08a'
+          }}>
+            {/* ヘッダー */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px dashed #e2e8f0', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '28px' }}>🏆</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#1e293b' }}>
+                    桃鉄風 全国制覇ログ
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b' }}>
+                    日本中を旅してお金を使って駅を作ろう！
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsConquestModalOpen(false)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 称号バッジ */}
+            <div style={{ background: 'linear-gradient(135deg, #fef9c3, #fde047)', border: '2px solid #ca8a04', borderRadius: '16px', padding: '14px', textAlign: 'center', boxShadow: '0 4px 10px rgba(202,138,4,0.15)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#854d0e', textTransform: 'uppercase', letterSpacing: '1px' }}>現在の旅人ランク</div>
+              <div style={{ fontSize: '20px', fontWeight: '900', color: '#713f12', marginTop: '4px' }}>
+                {conquestStats.title}
+              </div>
+            </div>
+
+            {/* 制覇率プログレスバー */}
+            <div style={{ background: '#f8fafc', border: '2px solid #e2e8f0', borderRadius: '16px', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>🗾 47都道府県 制覇状況</span>
+                <span style={{ fontSize: '20px', fontWeight: '900', color: '#3b82f6' }}>
+                  {conquestStats.visitedCount} <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'normal' }}>/ 47 ({conquestStats.rate}%)</span>
+                </span>
+              </div>
+              <div style={{ width: '100%', height: '14px', background: '#e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                <div style={{ width: `${conquestStats.rate}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #10b981)', borderRadius: '10px', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+              </div>
+            </div>
+
+            {/* 今月新開拓した街 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '16px' }}>✨</span>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '900', color: '#334155' }}>
+                  今月の新開拓エリア ({conquestStats.newlyExploredCities.length}街)
+                </h4>
+              </div>
+              {conquestStats.newlyExploredCities.length > 0 ? (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {conquestStats.newlyExploredCities.map((city, idx) => (
+                    <span key={idx} style={{ background: '#ecfdf5', border: '1.5px solid #6ee7b7', color: '#047857', fontSize: '12px', fontWeight: 'bold', padding: '4px 10px', borderRadius: '20px' }}>
+                      🎉 {city}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '10px', fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
+                  今月はまだ新しい街の開拓がありません。旅に出て駅を作ろう！
+                </div>
+              )}
+            </div>
+
+            {/* 独占駅 TOP 5 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '16px' }}>👑</span>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '900', color: '#334155' }}>
+                  独占駅ランキング TOP 5（高投資エリア）
+                </h4>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {conquestStats.topStations.map((st, idx) => {
+                  const medals = ['👑 1位', '🥈 2位', '🥉 3位', '4位', '5位'];
+                  return (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '900', color: idx === 0 ? '#b45309' : '#64748b' }}>
+                          {medals[idx]}
+                        </span>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e293b' }}>{st.name}</div>
+                          <div style={{ fontSize: '10px', color: '#64748b' }}>{st.pref} · {st.count}回訪問</div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: '900', color: '#ef4444' }}>
+                        ¥{st.amount.toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 未踏県リスト */}
+            {conquestStats.unvisitedList.length > 0 && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '16px' }}>🗺️</span>
+                  <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>
+                    未踏の都道府県 (あと{conquestStats.unvisitedList.length}県)
+                  </h4>
+                </div>
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxHeight: '90px', overflowY: 'auto' }}>
+                  {conquestStats.unvisitedList.map(p => (
+                    <span key={p} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#64748b', fontSize: '11px', padding: '2px 8px', borderRadius: '10px' }}>
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <style>{`
         /* ボードゲーム風の白くて丸いパネル */
