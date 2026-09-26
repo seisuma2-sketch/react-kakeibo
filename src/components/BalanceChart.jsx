@@ -196,6 +196,23 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       };
     });
 
+    // 🌟 個人モード時、リクルートカードが未登録でもデフォルトでクレジットカードとして表示を保証
+    if (dbMode !== 'sync') {
+      const hasRecruit = Object.keys(creditSettings).some(k => isSameAccount(k, 'リクルートカード'));
+      const isDeleted = deletedAccounts.some(d => isSameAccount(d, 'リクルートカード'));
+      const isGhost = ghostAccounts.some(g => isSameAccount(g, 'リクルートカード'));
+      if (!hasRecruit && !isDeleted && !isGhost) {
+        cardData['リクルートカード'] = { 
+          budget: 0,
+          resetDay: 15,
+          paymentDay: 10,
+          withdrawalSource: '',
+          lastResetDate: null,
+          used: 0, usageCount: 0 
+        };
+      }
+    }
+
     const chronologicalTx = [...transactions].reverse();
     const runningBalances = {};
     const usageCounts = {}; 
@@ -549,6 +566,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         showToast(`[${cleanName}] を切断しました`, 'info');
       }
     });
+  };
+
+  const handleReconnectNode = (cleanName) => {
+    const newDeleted = deletedAccounts.filter(a => !isSameAccount(a, cleanName));
+    setDeletedAccounts(newDeleted);
+    saveSettingBoth(auth.currentUser?.uid, deletedField, deletedKey, newDeleted);
+    setLocalUpdate(prev => prev + 1);
+    showToast(`[${cleanName}] を再接続しました`, 'success');
   };
 
   const getOneMonthHistory = (accName) => {
@@ -1048,9 +1073,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                 ) : (
                   m402Accounts.map(acc => {
                     const clean = acc.includes(' ') ? acc.split(' ')[1] : acc;
-                    const isHidden = deletedAccounts.includes(clean);
+                    const isHidden = deletedAccounts.some(d => isSameAccount(d, clean));
                     return (
-                      <div key={acc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#11141a', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${isHidden ? '#ff336655' : '#252838'}`, opacity: isHidden ? 0.5 : 1 }}>
+                      <div key={acc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#11141a', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${isHidden ? '#ff336655' : '#252838'}`, opacity: isHidden ? 0.6 : 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#ccc' }}>
                           {acc.startsWith('/') && <img src={acc.split(' ')[0]} alt="" style={{ width:'16px', height:'16px' }}/>}
                           <span>{clean}</span>
@@ -1071,7 +1096,15 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                             </button>
                           </div>
                         ) : (
-                          <span style={{ fontSize: '10px', color: '#ff3366' }}>切断済</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '10px', color: '#ff3366' }}>切断済</span>
+                            <button 
+                              onClick={() => handleReconnectNode(clean)}
+                              style={{ background: '#00ff66', color: '#000', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              再接続
+                            </button>
+                          </div>
                         )}
                       </div>
                     );

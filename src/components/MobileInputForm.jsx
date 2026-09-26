@@ -171,14 +171,22 @@ export default function MobileInputForm({
     let newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
     let accModified = false;
 
-    // リクルートカードのアイコン修正・最新化
-    newAccs = newAccs.map(acc => {
-      if (acc.includes('リクルートカード') && !acc.includes('/S__32391170.jpg')) {
+    // 🌟 リクルートカードの存在確認・追加＆アイコン最新化
+    if (!isSync) {
+      const hasRecruit = newAccs.some(acc => acc.includes('リクルートカード'));
+      if (!hasRecruit) {
+        newAccs.push('/S__32391170.jpg リクルートカード');
         accModified = true;
-        return '/S__32391170.jpg リクルートカード';
+      } else {
+        newAccs = newAccs.map(acc => {
+          if (acc.includes('リクルートカード') && !acc.includes('/S__32391170.jpg')) {
+            accModified = true;
+            return '/S__32391170.jpg リクルートカード';
+          }
+          return acc;
+        });
       }
-      return acc;
-    });
+    }
 
     // 🌟 重複排除（リクルートカード等の2重化を完全に解消）
     const origLen = newAccs.length;
