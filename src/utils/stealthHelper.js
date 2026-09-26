@@ -1,3 +1,5 @@
+import { isGhostAccount, getCleanAccountName } from './accountUtils';
+
 /**
  * 🌟 ステルス・ゴースト口座偽装エンジン
  * 隠している口座（ゴースト口座）が関わる資金移動について：
@@ -8,22 +10,11 @@
  */
 
 export const cleanAccountName = (str) => {
-  if (!str) return '';
-  let s = String(str).trim();
-  if (s.startsWith('/')) {
-    const idx = s.indexOf(' ');
-    if (idx !== -1) s = s.slice(idx + 1).trim();
-  }
-  return s.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '').trim();
+  return getCleanAccountName(str);
 };
 
 export function getStealthDisguisedTransactions(transactions = [], ghostAccounts = [], isStealthActive = true) {
-  if (!isStealthActive) {
-    return transactions;
-  }
-
-  const cleanGhosts = (ghostAccounts || []).map(cleanAccountName).filter(Boolean);
-  if (cleanGhosts.length === 0) {
+  if (!isStealthActive || !Array.isArray(ghostAccounts) || ghostAccounts.length === 0) {
     return transactions;
   }
 
@@ -39,10 +30,10 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
   const ghostOutflows = []; // 隠し口座からの流出プール
 
   sortedTx.forEach(tx => {
-    const fromAcc = cleanAccountName(tx.paymentMethod);
-    const toAcc = cleanAccountName(tx.category);
-    const isFromGhost = cleanGhosts.includes(fromAcc);
-    const isToGhost = tx.type === 'transfer' && cleanGhosts.includes(toAcc);
+    const fromAcc = tx.paymentMethod;
+    const toAcc = tx.category;
+    const isFromGhost = isGhostAccount(fromAcc, ghostAccounts);
+    const isToGhost = tx.type === 'transfer' && isGhostAccount(toAcc, ghostAccounts);
 
     // 隠し口座同士の振替は隠蔽状態では完全不可視化
     if (isFromGhost && isToGhost) {
@@ -59,7 +50,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
     if (isToGhost) {
       ghostInflows.push({
         origTx: tx,
-        source: fromAcc,
+        source: getCleanAccountName(fromAcc),
         rawSource: tx.paymentMethod,
         isIncome: false,
         category: tx.category,
@@ -73,10 +64,10 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
     // 隠し口座からの流出（支出 or 一般口座への振替）
     if (isFromGhost) {
       if (tx.type === 'income') {
-        // 隠し口座への直接入金（給与など）
+        // 隠し口座への直接入金（給与など）- ステルス中はこのままでは表に絶対に出さない
         ghostInflows.push({
           origTx: tx,
-          source: fromAcc,
+          source: getCleanAccountName(fromAcc),
           rawSource: tx.paymentMethod,
           isIncome: true,
           category: tx.category,
@@ -89,7 +80,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
 
       ghostOutflows.push({
         origTx: tx,
-        destination: toAcc,
+        destination: getCleanAccountName(toAcc),
         rawDestination: tx.category,
         type: tx.type, // 'transfer' or 'expense'
         category: tx.category,
@@ -119,16 +110,17 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
       outflow.amount -= matchAmt;
 
       if (matchedInflow.isIncome) {
-        // 収入 -> 隠し口座 -> 一般口座
+        // 隠し口座経由の一般口座への入金
         if (outflow.type === 'transfer') {
           disguisedTransactions.push({
             ...outflow.origTx,
             id: `disguised_${outflow.origTx.id || Math.random()}`,
-            type: 'income',
-            paymentMethod: outflow.rawDestination || outflow.destination,
-            category: matchedInflow.category,
+            type: 'transfer',
+            paymentMethod: matchedInflow.rawSource || matchedInflow.source,
+            category: outflow.rawDestination || outflow.destination,
             amount: matchAmt,
-            memo: outflow.memo || matchedInflow.memo || ''
+            memo: outflow.memo || matchedInflow.memo || '振替',
+            isGhostBridge: true
           });
         }
       } else {
@@ -142,7 +134,8 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
             paymentMethod: matchedInflow.rawSource || matchedInflow.source,
             category: outflow.rawDestination || outflow.destination,
             amount: matchAmt,
-            memo: outflow.memo || matchedInflow.memo || '振替'
+            memo: outflow.memo || matchedInflow.memo || '振替',
+            isGhostBridge: true
           });
         } else {
           // 一般口座A -> 支出 に偽装
@@ -153,21 +146,24 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
             paymentMethod: matchedInflow.rawSource || matchedInflow.source,
             category: outflow.category,
             amount: matchAmt,
-            memo: outflow.memo || matchedInflow.memo || ''
+            memo: outflow.memo || matchedInflow.memo || '',
+            isGhostBridge: true
           });
         }
       }
     } else {
-      // ペアとなる流入がない流出（隠し口座の元々あった残高から一般口座Bへ移動した場合）
+      // ペアとなる流入がない流出（隠し口座から一般口座Bへ移動した場合）
+      // 総収入を狂わせないため、type を 'transfer'（振替）にして偽装
       if (outflow.type === 'transfer' && outflow.amount > 0) {
         disguisedTransactions.push({
           ...outflow.origTx,
           id: `disguised_${outflow.origTx.id || Math.random()}`,
-          type: 'income',
-          paymentMethod: outflow.rawDestination || outflow.destination,
-          category: '臨時収入',
+          type: 'transfer',
+          paymentMethod: '資金振替',
+          category: outflow.rawDestination || outflow.destination,
           amount: outflow.amount,
-          memo: '資金移動'
+          memo: '口座振替',
+          isGhostBridge: true
         });
       }
     }
@@ -183,7 +179,8 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
         paymentMethod: inflow.rawSource || inflow.source,
         category: '貯蓄・積立',
         amount: inflow.amount,
-        memo: '内部振替'
+        memo: '内部振替',
+        isGhostBridge: true
       });
     }
   });

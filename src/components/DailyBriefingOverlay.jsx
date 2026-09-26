@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { isGhostAccount } from '../utils/accountUtils';
 
 export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete, dbMode = 'main', onOpenReset }) {
   const [displayedText, setDisplayedText] = useState([]);
@@ -28,8 +29,9 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const amt = Number(tx.amount) || 0;
       const method = tx.paymentMethod || '';
+      const cat = tx.category || '';
 
-      if (ghostAccounts.includes(method)) return;
+      if (isGhostAccount(method, ghostAccounts) || isGhostAccount(cat, ghostAccounts) || tx.isGhostBridge) return;
 
       // 昨日の支出
       if (txDate >= yesterdayStart && txDate <= yesterdayEnd && tx.type === 'expense') {

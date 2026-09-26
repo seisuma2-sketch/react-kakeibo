@@ -22,7 +22,7 @@ import DesktopCockpitOS from './components/DesktopCockpitOS';
 import SavingsHub from './components/SavingsHub';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 import { getStealthDisguisedTransactions } from './utils/stealthHelper';
-import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName } from './utils/accountUtils';
+import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName, isGhostAccount } from './utils/accountUtils';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -415,6 +415,13 @@ function App() {
       if (!tx.date) return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       if (txDate >= startDate && txDate <= endDate) {
+        // 🌟 ステルスON時は、隠し口座宛の収入・支出・振替を完璧に100%除外する安全ガード
+        if (stealthConfig.active) {
+          const isFromGhost = isGhostAccount(tx.paymentMethod, stealthConfig.ghostAccounts);
+          const isToGhost = isGhostAccount(tx.category, stealthConfig.ghostAccounts);
+          if (isFromGhost || isToGhost || tx.isGhostBridge) return;
+        }
+
         if (tx.type === 'income') monthlyIncome += (tx.amount || 0);
         if (tx.type === 'expense') monthlyExpense += (tx.amount || 0);
       }
@@ -426,7 +433,7 @@ function App() {
     const label = `${fmt(startDate)} - ${fmt(endDate)}`;
 
     return { startDate, endDate, monthlyIncome, monthlyExpense, netIncome, isSurplus, label };
-  }, [displayTransactions, cycleStartDay]);
+  }, [displayTransactions, cycleStartDay, stealthConfig.active, stealthConfig.ghostAccounts]);
 
   const tabTitles = {
     'home': '総合', 'calendar': 'カレンダー', 'balance': '総合残高', 'input': ' クイック入力',

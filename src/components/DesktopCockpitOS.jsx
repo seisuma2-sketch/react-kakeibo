@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
+import { isGhostAccount, getCleanAccountName } from '../utils/accountUtils';
 
 export default function DesktopCockpitOS({ transactions = [], ghostAccounts = [], onSwitchMode }) {
   const [panels, setPanels] = useState(() => {
@@ -26,7 +27,7 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
   const radarRef = useRef(null);
 
   useEffect(() => {
-    localStorage.getItem('cockpitPanelsConfig', JSON.stringify(panels));
+    localStorage.setItem('cockpitPanelsConfig', JSON.stringify(panels));
   }, [panels]);
 
   const togglePanel = (key) => {
@@ -63,29 +64,38 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
 
     const chronologicalTx = [...transactions].reverse();
     chronologicalTx.forEach(tx => {
-      const amt = Number(tx.amount) || 0; const method = tx.paymentMethod || '不明'; const cat = tx.category || '不明';
-      if (!ghostAccounts.includes(method)) {
-        if (!methodBal[method]) methodBal[method] = 0;
-        
-        // 取引が「設定した現在のサイクル（期間内）」に収まっているか判定
-        const txDateObj = tx.date ? (tx.date.toDate ? tx.date.toDate() : new Date(tx.date)) : null;
-        const isCurrentCycle = txDateObj && txDateObj >= startDate && txDateObj <= endDate;
+      const amt = Number(tx.amount) || 0;
+      const rawMethod = tx.paymentMethod || '不明';
+      const cleanMethod = getCleanAccountName(rawMethod);
+      const cat = tx.category || '不明';
 
-        if (tx.type === 'income') { 
-          methodBal[method] += amt; 
-          if (isCurrentCycle) totalIn += amt; // 期間内のみ収入加算
-        } else if (tx.type === 'expense') { 
-          methodBal[method] -= amt; 
-          if (isCurrentCycle) { 
-            totalOut += amt; // 期間内のみ支出加算
-            catOut[cat] = (catOut[cat] || 0) + amt; // レーダーチャートも期間内に限定
-          } 
-        }
-        let currentTot = 0; Object.values(methodBal).forEach(v => currentTot += v);
-        if (tx.date) { 
-          dLabels.push(txDateObj.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })); 
-          bData.push(currentTot); 
-        }
+      // 🌟 隠し口座が関わる取引は総収入・総支出・残高・グラフから完全に100%遮断
+      const isFromGhost = isGhostAccount(rawMethod, ghostAccounts);
+      const isToGhost = isGhostAccount(cat, ghostAccounts);
+      if (isFromGhost || isToGhost || tx.isGhostBridge) {
+        return;
+      }
+
+      if (!methodBal[cleanMethod]) methodBal[cleanMethod] = 0;
+      
+      // 取引が「設定した現在のサイクル（期間内）」に収まっているか判定
+      const txDateObj = tx.date ? (tx.date.toDate ? tx.date.toDate() : new Date(tx.date)) : null;
+      const isCurrentCycle = txDateObj && txDateObj >= startDate && txDateObj <= endDate;
+
+      if (tx.type === 'income') { 
+        methodBal[cleanMethod] += amt; 
+        if (isCurrentCycle) totalIn += amt; // 期間内のみ収入加算
+      } else if (tx.type === 'expense') { 
+        methodBal[cleanMethod] -= amt; 
+        if (isCurrentCycle) { 
+          totalOut += amt; // 期間内のみ支出加算
+          catOut[cat] = (catOut[cat] || 0) + amt; // レーダーチャートも期間内に限定
+        } 
+      }
+      let currentTot = 0; Object.values(methodBal).forEach(v => currentTot += v);
+      if (tx.date) { 
+        dLabels.push(txDateObj.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })); 
+        bData.push(currentTot); 
       }
     });
     Object.values(methodBal).forEach(v => totalBal += v);

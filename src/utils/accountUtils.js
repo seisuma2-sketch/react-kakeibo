@@ -61,3 +61,20 @@ export function normalizeCreditCardSettings(settings = {}) {
   });
   return normalized;
 }
+
+/**
+ * 対象の口座名がゴースト口座（隠し口座リスト）に含まれるかを柔軟・確実に判定
+ * アイコンパス（/xxx.png）、余分な空白、大文字小文字、表記揺れ（部分一致）を吸収
+ */
+export function isGhostAccount(accountName, ghostAccounts = []) {
+  if (!accountName || !Array.isArray(ghostAccounts) || ghostAccounts.length === 0) return false;
+  const cleanTarget = getCleanAccountName(accountName).toLowerCase().replace(/\s+/g, '');
+  if (!cleanTarget) return false;
+
+  return ghostAccounts.some(g => {
+    const cleanGhost = getCleanAccountName(g).toLowerCase().replace(/\s+/g, '');
+    if (!cleanGhost) return false;
+    // 完全一致、または相互部分一致（例: 「三井住友」と「三井住友銀行」）
+    return cleanTarget === cleanGhost || cleanTarget.includes(cleanGhost) || cleanGhost.includes(cleanTarget);
+  });
+}

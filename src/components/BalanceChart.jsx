@@ -3,7 +3,7 @@ import * as echarts from 'echarts';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { saveSettingBoth } from '../utils/cloudSync';
-import { getCleanAccountName, isSameAccount, normalizeCreditCardSettings, deduplicateAccounts } from '../utils/accountUtils';
+import { getCleanAccountName, isSameAccount, normalizeCreditCardSettings, deduplicateAccounts, isGhostAccount } from '../utils/accountUtils';
 
 const getCycleBounds = (resetDay, currentDate = new Date()) => {
   const rd = parseInt(resetDay, 10);
@@ -185,7 +185,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const cardData = {};
     Object.keys(creditSettings).forEach(rawName => {
       const cleanName = getCleanAccountName(rawName);
-      if (ghostAccounts.some(g => isSameAccount(g, cleanName)) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
+      if (isGhostAccount(cleanName, ghostAccounts) || isGhostAccount(rawName, ghostAccounts) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
       cardData[cleanName] = { 
         budget: Number(creditSettings[rawName].budget) || 0,
         resetDay: Number(creditSettings[rawName].resetDay) || 1,
@@ -199,7 +199,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     // 🌟 リクルートカードが未登録でもデフォルトでクレジットカードとして表示を保証
     const hasRecruit = Object.keys(creditSettings).some(k => isSameAccount(k, 'リクルートカード'));
     const isDeleted = deletedAccounts.some(d => isSameAccount(d, 'リクルートカード'));
-    const isGhost = ghostAccounts.some(g => isSameAccount(g, 'リクルートカード'));
+    const isGhost = isGhostAccount('リクルートカード', ghostAccounts);
     if (!hasRecruit && !isDeleted && !isGhost) {
       cardData['リクルートカード'] = { 
         budget: 0,
@@ -222,26 +222,29 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
       const amount = Number(tx.amount) || 0;
-      const method = getCleanAccountName(tx.paymentMethod) || '不明';
-      const category = getCleanAccountName(tx.category) || '不明';
+      const rawMethod = tx.paymentMethod || '不明';
+      const cleanMethod = getCleanAccountName(rawMethod) || '不明';
+      const rawCategory = tx.category || '不明';
+      const cleanCategory = getCleanAccountName(rawCategory) || '不明';
 
-      if (!runningBalances[method]) runningBalances[method] = 0;
-      usageCounts[method] = (usageCounts[method] || 0) + 1;
+      if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
+      usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
 
       if (tx.type === 'income') {
-        runningBalances[method] += amount;
+        runningBalances[cleanMethod] += amount;
       } else if (tx.type === 'expense') {
-        runningBalances[method] -= amount;
+        runningBalances[cleanMethod] -= amount;
       } else if (tx.type === 'transfer') {
-        if (!runningBalances[category]) runningBalances[category] = 0;
-        usageCounts[category] = (usageCounts[category] || 0) + 1;
-        runningBalances[method] -= amount;
-        runningBalances[category] += amount;
+        if (!runningBalances[cleanCategory]) runningBalances[cleanCategory] = 0;
+        usageCounts[cleanCategory] = (usageCounts[cleanCategory] || 0) + 1;
+        runningBalances[cleanMethod] -= amount;
+        runningBalances[cleanCategory] += amount;
       }
 
+      // 🌟 隠し口座・切断口座の残高を折れ線グラフから100%確実に除外
       let currentVisibleTotal = 0;
       for (const [accName, accBalance] of Object.entries(runningBalances)) {
-        if (!ghostAccounts.some(g => isSameAccount(g, accName)) && !deletedAccounts.some(d => isSameAccount(d, accName))) {
+        if (!isGhostAccount(accName, ghostAccounts) && !deletedAccounts.some(d => isSameAccount(d, accName))) {
           currentVisibleTotal += accBalance;
         }
       }
@@ -271,7 +274,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     const bankData = {};
     Object.entries(runningBalances).forEach(([name, bal]) => {
       const cleanName = getCleanAccountName(name);
-      if (ghostAccounts.some(g => isSameAccount(g, cleanName)) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
+      // 🌟 隠し口座または切断口座は銀行口座データおよびTOTAL合算から完全に100%排除
+      if (isGhostAccount(cleanName, ghostAccounts) || isGhostAccount(name, ghostAccounts) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
       // 🌟 クレジットカードとして既に存在する口座は絶対に銀行口座側に追加しない！
       if (cardData[cleanName]) return; 
       
@@ -1066,10 +1070,10 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             <div style={{ flex: 1, overflowY: 'auto', minHeight: '150px' }}>
               <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px', fontWeight: 'bold' }}>[-] 接続済み口座 (切断・削除)</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {m402Accounts.length === 0 ? (
+                {m402Accounts.filter(acc => !isGhostAccount(acc, ghostAccounts)).length === 0 ? (
                   <div style={{ color: '#555', textAlign: 'center', fontSize: '12px', padding: '20px 0' }}>NO NODES FOUND</div>
                 ) : (
-                  m402Accounts.map(acc => {
+                  m402Accounts.filter(acc => !isGhostAccount(acc, ghostAccounts)).map(acc => {
                     const clean = acc.includes(' ') ? acc.split(' ')[1] : acc;
                     const isHidden = deletedAccounts.some(d => isSameAccount(d, clean));
                     return (
