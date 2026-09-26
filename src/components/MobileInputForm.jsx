@@ -1705,7 +1705,13 @@ export default function MobileInputForm({
                     <div style={{ color: openDropdown === 'transferFrom' ? '#b666ff' : '#666', fontSize: '12px' }}>{openDropdown === 'transferFrom' ? '▲' : '▼'}</div>
                   </div>
                   {openDropdown === 'transferFrom' && (
-                    <div style={customDropdownMenuStyle}>
+                    <div 
+                      className="custom-dropdown-scroll"
+                      style={customDropdownMenuStyle}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                      onWheel={(e) => e.stopPropagation()}
+                    >
                       {accounts.map(acc => (
                         <div key={`from-${acc}`} onClick={() => { setPaymentMethod(acc); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                           {renderIconOrText(acc, '20px')}
@@ -1724,7 +1730,13 @@ export default function MobileInputForm({
                     <div style={{ color: openDropdown === 'transferTo' ? '#b666ff' : '#666', fontSize: '12px' }}>{openDropdown === 'transferTo' ? '▲' : '▼'}</div>
                   </div>
                   {openDropdown === 'transferTo' && (
-                    <div style={customDropdownMenuStyle}>
+                    <div 
+                      className="custom-dropdown-scroll"
+                      style={customDropdownMenuStyle}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                      onWheel={(e) => e.stopPropagation()}
+                    >
                       {accounts.map(acc => (
                         <div key={`to-${acc}`} onClick={() => { setCategory(acc); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                           {renderIconOrText(acc, '20px')}
@@ -1746,7 +1758,13 @@ export default function MobileInputForm({
                       <div style={{ color: openDropdown === 'category' ? '#00bfff' : '#666', fontSize: '12px' }}>{openDropdown === 'category' ? '▲' : '▼'}</div>
                     </div>
                     {openDropdown === 'category' && (
-                      <div style={{ ...customDropdownMenuStyle, borderColor: '#00bfff' }}>
+                      <div 
+                        className="custom-dropdown-scroll"
+                        style={{ ...customDropdownMenuStyle, borderColor: '#00bfff' }}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                        onWheel={(e) => e.stopPropagation()}
+                      >
                         {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => (
                           <div key={cat} onClick={() => { setCategory(cat); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                             {renderIconOrText(cat, '20px')}
@@ -1767,7 +1785,13 @@ export default function MobileInputForm({
                       <div style={{ color: openDropdown === 'payment' ? '#ff9900' : '#666', fontSize: '12px' }}>{openDropdown === 'payment' ? '▲' : '▼'}</div>
                     </div>
                     {openDropdown === 'payment' && (
-                      <div style={{ ...customDropdownMenuStyle, borderColor: '#ff9900' }}>
+                      <div 
+                        className="custom-dropdown-scroll"
+                        style={{ ...customDropdownMenuStyle, borderColor: '#ff9900' }}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchMove={(e) => e.stopPropagation()}
+                        onWheel={(e) => e.stopPropagation()}
+                      >
                         {accounts.map(acc => (
                           <div key={acc} onClick={() => { setPaymentMethod(acc); if (!acc.includes('EVERING')) setIsEveringNfcActive(false); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                             {renderIconOrText(acc, '20px')}
@@ -1946,5 +1970,5 @@ const addBtnStyle = { background: 'transparent', color: '#00bfff', border: '1px 
 const keyBtnStyle = { borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', transition: 'all 0.1s active:scale-95' };
 const memBtnStyle = { background: '#11141a', border: '1px solid #333', color: '#aaa', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
 
-const customDropdownMenuStyle = { position: 'absolute', top: '100%', left: 0, width: '100%', background: '#11141a', border: '1px solid #b666ff', borderRadius: '6px', marginTop: '4px', zIndex: 100, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.8)' };
-const customDropdownItemStyle = { padding: '12px 15px', borderBottom: '1px solid #252838', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'background 0.2s' };
+const customDropdownMenuStyle = { position: 'absolute', top: '100%', left: 0, width: '100%', background: '#11141a', border: '1px solid #b666ff', borderRadius: '8px', marginTop: '4px', zIndex: 1000, maxHeight: '270px', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y', boxShadow: '0 12px 30px rgba(0,0,0,0.9)' };
+const customDropdownItemStyle = { padding: '12px 15px', borderBottom: '1px solid #252838', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'pan-y', userSelect: 'none', WebkitUserSelect: 'none', transition: 'background 0.2s' };
