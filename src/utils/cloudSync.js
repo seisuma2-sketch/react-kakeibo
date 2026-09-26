@@ -1,18 +1,19 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// 🌟 クラウド (Firestore) と ローカル (localStorage) の同期キー一覧
+// 🌟 クラウド (Firestore) と ローカル (localStorage) の同期キー一覧（一本化＆全設定リアルタイム同期）
 const SYNC_KEYS = [
   { field: 'creditCardSettings', localKey: 'creditCardSettings' },
-  { field: 'creditCardSettings_sync', localKey: 'creditCardSettings_sync' },
   { field: 'accounts', localKey: 'm402_accounts' },
-  { field: 'accounts_sync', localKey: 'm402_accounts_sync' },
   { field: 'deletedAccounts', localKey: 'deletedAccountsConfig' },
-  { field: 'deletedAccounts_sync', localKey: 'deletedAccountsConfig_sync' },
   { field: 'customOrder', localKey: 'customOrderConfig' },
-  { field: 'customOrder_sync', localKey: 'customOrderConfig_sync' },
   { field: 'monthlyBudget', localKey: 'm402_monthly_budget' },
-  { field: 'savingsTsumoriLogs', localKey: 'm402_tsumori_logs' }
+  { field: 'savingsTsumoriLogs', localKey: 'm402_tsumori_logs' },
+  { field: 'expenseCategories', localKey: 'm402_expense_cats' },
+  { field: 'incomeCategories', localKey: 'm402_income_cats' },
+  { field: 'recurringItems', localKey: 'm402_recurring_items' },
+  { field: 'appTheme', localKey: 'm402_app_theme' },
+  { field: 'cardMode', localKey: 'm402_card_mode' }
 ];
 
 /**

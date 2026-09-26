@@ -148,44 +148,59 @@ export default function MobileInputForm({
   const [incomeCategories, setIncomeCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
 
-  // 🌟 モード（個人/共有）が切り替わった時に、読み込むリストを完全に切り替える
+  // 🌟 単一金庫の初期読み込み＆自動同期
   useEffect(() => {
-    const isSync = dbMode === 'sync';
-    
-    // 保存先の金庫の名前を分ける
-    const expKey = isSync ? 'm402_expense_cats_sync' : 'm402_expense_cats';
-    const incKey = isSync ? 'm402_income_cats_sync' : 'm402_income_cats';
-    const accKey = isSync ? 'm402_accounts_sync' : 'm402_accounts';
-    const accField = isSync ? 'accounts_sync' : 'accounts';
-    const cardKey = isSync ? 'creditCardSettings_sync' : 'creditCardSettings';
-    const recKey = isSync ? 'm402_recurring_items_sync' : 'm402_recurring_items';
+    const expKey = 'm402_expense_cats';
+    const incKey = 'm402_income_cats';
+    const accKey = 'm402_accounts';
+    const accField = 'accounts';
+    const cardKey = 'creditCardSettings';
+    const recKey = 'm402_recurring_items';
 
     // もし過去に保存されたリストがあればそれを使い、なければ専用の初期リストを使う
     const savedExp = localStorage.getItem(expKey);
-    const newExpCats = savedExp ? JSON.parse(savedExp) : (isSync ? defaultExpenseSync : defaultExpense);
+    const newExpCats = savedExp ? JSON.parse(savedExp) : defaultExpense;
     
     const savedInc = localStorage.getItem(incKey);
-    const newIncCats = savedInc ? JSON.parse(savedInc) : (isSync ? defaultIncomeSync : defaultIncome);
+    const newIncCats = savedInc ? JSON.parse(savedInc) : defaultIncome;
     
     const savedAcc = localStorage.getItem(accKey);
-    let newAccs = savedAcc ? JSON.parse(savedAcc) : (isSync ? defaultAccountsSync : defaultAccounts);
+    let newAccs = savedAcc ? JSON.parse(savedAcc) : defaultAccounts;
     let accModified = false;
 
     // 🌟 リクルートカードの存在確認・追加＆アイコン最新化
-    if (!isSync) {
-      const hasRecruit = newAccs.some(acc => acc.includes('リクルートカード'));
-      if (!hasRecruit) {
-        newAccs.push('/S__32391170.jpg リクルートカード');
-        accModified = true;
+    const hasRecruit = newAccs.some(acc => acc.includes('リクルートカード'));
+    if (!hasRecruit) {
+      newAccs.push('/S__32391170.jpg リクルートカード');
+      accModified = true;
+    } else {
+      newAccs = newAccs.map(acc => {
+        if (acc.includes('リクルートカード') && !acc.includes('/S__32391170.jpg')) {
+          accModified = true;
+          return '/S__32391170.jpg リクルートカード';
+        }
+        return acc;
+      });
+    }
+
+    // みずほ銀行の追加＆アイコン最新化
+    const hasMizuho = newAccs.some(acc => acc.includes('みずほ銀行'));
+    if (!hasMizuho) {
+      const mufgIdx = newAccs.findIndex(acc => acc.includes('三菱UFJ銀行'));
+      if (mufgIdx !== -1) {
+        newAccs.splice(mufgIdx + 1, 0, '/mizuho.jpg みずほ銀行');
       } else {
-        newAccs = newAccs.map(acc => {
-          if (acc.includes('リクルートカード') && !acc.includes('/S__32391170.jpg')) {
-            accModified = true;
-            return '/S__32391170.jpg リクルートカード';
-          }
-          return acc;
-        });
+        newAccs.push('/mizuho.jpg みずほ銀行');
       }
+      accModified = true;
+    } else {
+      newAccs = newAccs.map(acc => {
+        if (acc.includes('みずほ銀行') && !acc.includes('/mizuho.jpg')) {
+          accModified = true;
+          return '/mizuho.jpg みずほ銀行';
+        }
+        return acc;
+      });
     }
 
     // 🌟 重複排除（リクルートカード等の2重化を完全に解消）
@@ -193,30 +208,6 @@ export default function MobileInputForm({
     newAccs = deduplicateAccounts(newAccs);
     if (newAccs.length !== origLen) {
       accModified = true;
-    }
-
-    // みずほ銀行の追加＆アイコン最新化
-    if (!isSync) {
-      const hasMizuho = newAccs.some(acc => acc.includes('みずほ銀行'));
-      if (!hasMizuho) {
-        const mufgIdx = newAccs.findIndex(acc => acc.includes('三菱UFJ銀行'));
-        if (mufgIdx !== -1) {
-          newAccs.splice(mufgIdx + 1, 0, '/mizuho.jpg みずほ銀行');
-        } else {
-          newAccs.push('/mizuho.jpg みずほ銀行');
-        }
-        accModified = true;
-      } else {
-        newAccs = newAccs.map(acc => {
-          if (acc.includes('みずほ銀行') && !acc.includes('/mizuho.jpg')) {
-            accModified = true;
-            return '/mizuho.jpg みずほ銀行';
-          }
-          return acc;
-        });
-      }
-      // 再度重複チェック
-      newAccs = deduplicateAccounts(newAccs);
     }
 
     if (accModified) {
@@ -454,7 +445,7 @@ export default function MobileInputForm({
     setNewAccName(''); setNewAccType('bank'); setNewAccBudget(''); setNewAccResetDay('1'); setNewAccPaymentDay('27');
     setNewAccWithdrawalSource('');
     setAccountPanelMode('add'); setEditTargetCard('');
-    const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+    const cardKey = 'creditCardSettings';
     const cards = JSON.parse(localStorage.getItem(cardKey) || '{}');
     setSavedCards(cards);
     setShowAccountPanel(true);
@@ -474,10 +465,10 @@ export default function MobileInputForm({
   };
 
   const handleSaveAccount = () => {
-    const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
-    const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
-    const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
-    const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+    const accKey = 'm402_accounts';
+    const accField = 'accounts';
+    const cardKey = 'creditCardSettings';
+    const cardField = 'creditCardSettings';
 
     if (accountPanelMode === 'add') {
       if (!newAccName.trim()) { showAlert("名前を入力してください", "error"); return; }
@@ -521,7 +512,7 @@ export default function MobileInputForm({
     setShowAccountPanel(false);
   };
 
-  // 🌟 削除機能（今のモードのリストからだけ完全に消去する・自作確認モーダル使用）
+  // 🌟 削除機能（リストから安全に消去）
   const handleDeleteAccount = () => {
     if (!editTargetCard) { showAlert("削除する項目を選択してください", "error"); return; }
     setCustomConfirm({
@@ -529,10 +520,10 @@ export default function MobileInputForm({
       title: '口座・カードの削除',
       message: `本当に [${editTargetCard}] を削除しますか？\n(※過去の取引履歴は保持されます)`,
       onConfirm: () => {
-        const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
-        const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
-        const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
-        const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+        const accKey = 'm402_accounts';
+        const accField = 'accounts';
+        const cardKey = 'creditCardSettings';
+        const cardField = 'creditCardSettings';
 
         const newAccounts = accounts.filter(acc => getCleanName(acc) !== editTargetCard);
         setAccounts(newAccounts);
@@ -607,29 +598,29 @@ export default function MobileInputForm({
               memo: `[固定費自動計上] ${item.name}`,
               date: Timestamp.now(),
               createdAt: Timestamp.now(),
-              mode: dbMode === 'sync' ? 'sync' : 'personal'
+              mode: 'main'
             };
-            if (dbMode === 'sync' && familyId) txData.familyId = familyId;
+            if (familyId) txData.familyId = familyId;
             await addDoc(collection(db, "transactions"), txData);
             newlyPostedIds.push(item.id);
           }
           localStorage.setItem(autoPostKey, JSON.stringify(newlyPostedIds));
-          showAlert(`📅 今月の固定費 [${toPost.map(t => t.name).join(', ')}] を自動計上しました！`, 'success');
+          showAlert(`今月の固定費 [${toPost.map(t => t.name).join(', ')}] を自動計上しました！`, 'success');
         } catch (err) {
           console.error("Auto recurring post error:", err);
         }
       };
       executeAutoPost();
     }
-  }, [recurringList, dbMode, familyId]);
+  }, [recurringList, familyId]);
 
-  // 🌟 固定費・サブスクの操作ハンドラー
+  // 🌟 固定費・サブスクの操作ハンドラー（完全クラウド同期）
   const handleAddRecurring = () => {
     if (!newRecName.trim() || !newRecAmount) {
       showAlert("項目名と金額を入力してください", "error");
       return;
     }
-    const recKey = dbMode === 'sync' ? 'm402_recurring_items_sync' : 'm402_recurring_items';
+    const recKey = 'm402_recurring_items';
     const newItem = {
       id: Date.now().toString(),
       name: newRecName.trim(),
@@ -641,17 +632,17 @@ export default function MobileInputForm({
     };
     const updated = [...recurringList, newItem];
     setRecurringList(updated);
-    localStorage.setItem(recKey, JSON.stringify(updated));
+    saveSettingBoth(auth.currentUser?.uid, 'recurringItems', recKey, updated);
     setNewRecName('');
     setNewRecAmount('');
     showAlert(`固定費 [${newItem.name}] (毎月${newItem.billingDay}日・自動計上:${newItem.autoPost ? 'ON' : 'OFF'}) を追加しました`, "success");
   };
 
   const handleDeleteRecurring = (id) => {
-    const recKey = dbMode === 'sync' ? 'm402_recurring_items_sync' : 'm402_recurring_items';
+    const recKey = 'm402_recurring_items';
     const updated = recurringList.filter(item => item.id !== id);
     setRecurringList(updated);
-    localStorage.setItem(recKey, JSON.stringify(updated));
+    saveSettingBoth(auth.currentUser?.uid, 'recurringItems', recKey, updated);
     showAlert("固定費を削除しました", "info");
   };
 
@@ -668,9 +659,9 @@ export default function MobileInputForm({
         memo: `[固定費] ${item.name}`,
         date: Timestamp.now(),
         createdAt: Timestamp.now(),
-        mode: dbMode === 'sync' ? 'sync' : 'personal'
+        mode: 'main'
       };
-      if (dbMode === 'sync' && familyId) txData.familyId = familyId;
+      if (familyId) txData.familyId = familyId;
       await addDoc(collection(db, "transactions"), txData);
       showAlert(`[${item.name}] ¥${item.amount.toLocaleString()} を記録しました`, "success");
     } catch(e) {
@@ -705,9 +696,9 @@ export default function MobileInputForm({
               memo: `[固定費一括] ${item.name}`,
               date: Timestamp.now(),
               createdAt: Timestamp.now(),
-              mode: dbMode === 'sync' ? 'sync' : 'personal'
+              mode: 'main'
             };
-            if (dbMode === 'sync' && familyId) txData.familyId = familyId;
+            if (familyId) txData.familyId = familyId;
             await addDoc(collection(db, "transactions"), txData);
           }
           setShowRecurringModal(false);
@@ -722,20 +713,21 @@ export default function MobileInputForm({
     });
   };
 
+  // 🌟 カテゴリ追加ハンドラー（完全クラウド同期）
   const handlePromptSubmit = () => {
     if (!customPrompt.text.trim()) { setCustomPrompt({ ...customPrompt, isOpen: false }); return; }
-    const newItem = `✨ ${customPrompt.text}`;
+    const newItem = customPrompt.text.trim();
     
     if (type === 'expense') {
-      const expKey = dbMode === 'sync' ? 'm402_expense_cats_sync' : 'm402_expense_cats';
+      const expKey = 'm402_expense_cats';
       const newCats = [...expenseCategories, newItem];
       setExpenseCategories(newCats);
-      localStorage.setItem(expKey, JSON.stringify(newCats));
+      saveSettingBoth(auth.currentUser?.uid, 'expenseCategories', expKey, newCats);
     } else {
-      const incKey = dbMode === 'sync' ? 'm402_income_cats_sync' : 'm402_income_cats';
+      const incKey = 'm402_income_cats';
       const newCats = [...incomeCategories, newItem];
       setIncomeCategories(newCats);
-      localStorage.setItem(incKey, JSON.stringify(newCats));
+      saveSettingBoth(auth.currentUser?.uid, 'incomeCategories', incKey, newCats);
     }
     
     setCategory(newItem);
@@ -967,7 +959,7 @@ export default function MobileInputForm({
       const txData = {
         userId: auth.currentUser.uid, 
         familyId: familyId || auth.currentUser.uid,
-        mode: dbMode, 
+        mode: 'main', 
         type: type, 
         amount: Number(finalAmount),
         category: cleanCategory, 
@@ -989,8 +981,7 @@ export default function MobileInputForm({
       setAmount(''); setCalcStr(''); setMemo(''); setScanLocation(null);
       setIsEveringNfcActive(false);
       
-      const successMsg = dbMode === 'sync' ? "🔗 共有金庫に記録しました！" : "👤 個人記録完了！";
-      showAlert(successMsg, "success");
+      showAlert("金庫に記録しました！", "success");
     } catch (error) { 
       showAlert("エラー発生", "error"); 
     } finally { 
@@ -1804,7 +1795,7 @@ export default function MobileInputForm({
             onClick={handleSubmit} 
             disabled={isSubmitting} 
             style={{ 
-              background: isSubmitting ? '#555' : (dbMode === 'sync' ? '#00ff66' : '#00bfff'), 
+              background: isSubmitting ? '#555' : '#00bfff', 
               color: '#000', 
               padding: '15px', 
               borderRadius: '8px', 
@@ -1813,11 +1804,11 @@ export default function MobileInputForm({
               fontWeight: 'bold', 
               marginTop: '10px', 
               cursor: isSubmitting ? 'not-allowed' : 'pointer', 
-              boxShadow: isSubmitting ? 'none' : `0 0 15px ${dbMode === 'sync' ? 'rgba(0,255,102,0.4)' : 'rgba(0,191,255,0.4)'}`, 
+              boxShadow: isSubmitting ? 'none' : '0 0 20px rgba(0, 191, 255, 0.4)', 
               transition: 'all 0.2s' 
             }}
           >
-            {isSubmitting ? '記録中...' : (dbMode === 'sync' ? '🔗 共有金庫に記録する' : '👤 個人金庫に記録する')}
+            {isSubmitting ? '記録中...' : '金庫に記録する'}
           </button>
         </div>
       </div>

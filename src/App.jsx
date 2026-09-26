@@ -27,8 +27,6 @@ import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName }
 function App() {
   const [user, setUser] = useState(null);
   
-  // 🌟 追加：デュアルコアシステムの核（現在どちらの金庫を見ているか）
-  const [dbMode, setDbMode] = useState('personal'); // 'personal' or 'sync'
   const [familyId, setFamilyId] = useState(null);
 
   const [transactions, setTransactions] = useState([]);
@@ -39,6 +37,7 @@ function App() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [stealthPassword, setStealthPassword] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   
   const [authMode, setAuthMode] = useState('login'); 
   const [loginEmail, setLoginEmail] = useState('');
@@ -268,8 +267,11 @@ function App() {
           localStorage.setItem('m402_cycle_start_day', data.cycleStartDay);
         }
 
-        // 🌟 クラウドの口座・クレカ設定をローカルへ同期
-        applyCloudSettingsToLocal(data);
+        // 🌟 クラウドの口座・クレカ設定をローカルへ同期（変更があればPC画面を即座に再描画）
+        const updated = applyCloudSettingsToLocal(data);
+        if (updated) {
+          setSettingsVersion(v => v + 1);
+        }
 
         // 🌟 クラウド側にクレカ設定がまだ無く、ローカルにある場合は初回アップロード
         if (!data.creditCardSettings && localStorage.getItem('creditCardSettings')) {
@@ -292,28 +294,20 @@ function App() {
     return () => { unsubSettings(); unsubUsers(); };
   }, [user]);
 
+  // 🌟 単一金庫トランザクションの完全リアルタイム同期取得
   useEffect(() => {
     if (!user) return;
-    let q;
-    if (dbMode === 'sync') {
-      if (!familyId) return;
-      q = query(collection(db, "transactions"), where("familyId", "==", familyId), where("mode", "==", "sync"));
-    } else {
-      q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-    }
+    const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
-      if (dbMode === 'personal') {
-        data = data.filter(tx => tx.mode !== 'sync');
-      }
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
       setIsTxLoaded(true); 
     });
 
     return () => unsubscribe();
-  }, [user, familyId, dbMode]);
+  }, [user]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -442,11 +436,11 @@ function App() {
 
   const ghostList = stealthConfig.active ? stealthConfig.ghostAccounts : [];
   
-  // 🌟 初期化ウィザードは個人モードの時だけ起動
-  const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot && dbMode === 'personal';
+  // 🌟 初期化ウィザード判定
+  const showBootWizard = isTxLoaded && transactions.length === 0 && !hasSkippedBoot;
   
-  // モードごとのテーマカラー
-  const themeColor = dbMode === 'sync' ? '#00ff66' : '#00bfff';
+  // メインテーマカラー
+  const themeColor = '#00bfff';
 
   if (isAuthChecking) {
     return (
@@ -567,22 +561,6 @@ function App() {
             >
               {tabTitles[currentTab] || '開発中...'}
             </h2>
-
-            {/* 🌟 デュアルコア・切り替えスイッチ */}
-            <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '4px', border: `1px solid ${themeColor}`, boxShadow: `0 0 15px ${themeColor}33`, marginLeft: '10px' }}>
-              <button 
-                onClick={() => setDbMode('personal')}
-                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? '#00bfff' : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
-              >
-                👤 個人
-              </button>
-              <button 
-                onClick={() => setDbMode('sync')}
-                style={{ padding: '6px 12px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.3s' }}
-              >
-                🔗 共有
-              </button>
-            </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -603,10 +581,11 @@ function App() {
         <div>
           {currentTab === 'home' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
-              <SummaryPanel currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
+              <SummaryPanel key={`sum_${settingsVersion}`} currentMonth={cyclePeriod.label} monthlyIncome={cyclePeriod.monthlyIncome} monthlyExpense={cyclePeriod.monthlyExpense} netIncome={cyclePeriod.netIncome} isSurplus={cyclePeriod.isSurplus} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} isMobile={isMobile} />
               
               {/* 🌟 節約ハブ：デイリー・セーフ・スペンド（日割り枠メーター）＆つもり貯金（我慢カウンター） */}
               <SavingsHub 
+                key={`sav_${settingsVersion}`}
                 transactions={displayTransactions}
                 cyclePeriod={cyclePeriod}
                 user={user}
@@ -617,7 +596,7 @@ function App() {
 
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} dbMode={dbMode} />
+                  <BalanceChart key={`bal_home_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} />
@@ -644,13 +623,13 @@ function App() {
           {currentTab === 'input' && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '600px' }}>
               <div style={{ width: '100%', maxWidth: '400px', border: `1px solid ${themeColor}`, borderRadius: '12px', boxShadow: `0 0 30px ${themeColor}22` }}>
-                <MobileInputForm dbMode={dbMode} familyId={familyId} />
+                <MobileInputForm key={`inp_${settingsVersion}`} familyId={familyId} />
               </div>
             </div>
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} dbMode={dbMode} />}
+          {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}

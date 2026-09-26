@@ -14,7 +14,6 @@ import DailyBriefingOverlay from './components/DailyBriefingOverlay';
 import NfcSettingsModal from './components/NfcSettingsModal';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 import { getStealthDisguisedTransactions } from './utils/stealthHelper';
-import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName } from './utils/accountUtils';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -28,7 +27,6 @@ export default function MobileApp() {
   const [settingsVersion, setSettingsVersion] = useState(0);
   
   // 🌟 追加：デュアルコアシステムの核
-  const [dbMode, setDbMode] = useState('personal'); // 'personal' or 'sync'
   const [familyId, setFamilyId] = useState(null);
 
   const [transactions, setTransactions] = useState([]);
@@ -40,11 +38,16 @@ export default function MobileApp() {
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('mobileUiMode') || '2d');
   useEffect(() => localStorage.setItem('mobileUiMode', uiMode), [uiMode]);
   
-  const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'neon');
-  useEffect(() => localStorage.setItem('mobileAppTheme', appTheme), [appTheme]);
+  const [appTheme, setAppTheme] = useState(() => localStorage.getItem('mobileAppTheme') || 'cyber');
+  const handleThemeChange = (newTheme) => {
+    setAppTheme(newTheme);
+    localStorage.setItem('mobileAppTheme', newTheme);
+    if (user) {
+      saveSettingBoth(user.uid, 'appTheme', 'mobileAppTheme', newTheme);
+    }
+  };
 
-  // 🌟 共有モードの時は、テーマカラーを強制的に Family Sync と同じ「エメラルドグリーン」にする
-  const activeThemeColor = dbMode === 'sync' ? '#00ff66' : THEMES[appTheme].color;
+  const activeThemeColor = THEMES[appTheme]?.color || '#00bfff';
 
   const [timeTreeToken, setTimeTreeToken] = useState(() => localStorage.getItem('timeTreeToken') || '');
   const handleSaveToken = (val) => {
@@ -308,6 +311,10 @@ export default function MobileApp() {
           setIsStealthActive(data.isStealthActive);
           localStorage.setItem('stealthActiveMobile', data.isStealthActive);
         }
+        if (data.appTheme && THEMES[data.appTheme]) {
+          setAppTheme(data.appTheme);
+          localStorage.setItem('mobileAppTheme', data.appTheme);
+        }
 
         // 🌟 クラウドの口座・クレカ設定をローカルへ同期
         const updated = applyCloudSettingsToLocal(data);
@@ -333,70 +340,19 @@ export default function MobileApp() {
     };
   }, [user]);
 
-  // 🌟 口座やカード設定の重複（リクルートカード等の2重化）を自動クリーンアップ
-  useEffect(() => {
-    ['creditCardSettings', 'creditCardSettings_sync'].forEach(cardKey => {
-      const raw = localStorage.getItem(cardKey);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          const normalized = normalizeCreditCardSettings(parsed);
-          if (Object.keys(parsed).length !== Object.keys(normalized).length) {
-            localStorage.setItem(cardKey, JSON.stringify(normalized));
-            if (user) {
-              setDoc(doc(db, "user_settings", user.uid), { [cardKey]: normalized }, { merge: true });
-            }
-          }
-        } catch (e) {}
-      }
-    });
-
-    ['m402_accounts', 'm402_accounts_sync'].forEach(accKey => {
-      const raw = localStorage.getItem(accKey);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          const deduped = deduplicateAccounts(parsed);
-          if (parsed.length !== deduped.length) {
-            localStorage.setItem(accKey, JSON.stringify(deduped));
-            const field = accKey === 'm402_accounts_sync' ? 'accounts_sync' : 'accounts';
-            if (user) {
-              setDoc(doc(db, "user_settings", user.uid), { [field]: deduped }, { merge: true });
-            }
-          }
-        } catch (e) {}
-      }
-    });
-  }, [user]);
-
-  // 🌟 変更点②：デュアルコア・トランザクション取得（dbModeで取得先を切り替え）
+  // 🌟 単一金庫トランザクションの完全リアルタイム同期取得
   useEffect(() => {
     if (!user) return;
-    
-    let q;
-    if (dbMode === 'sync') {
-      if (!familyId) return;
-      // 🔗 家族モード：familyIdの一致、かつ modeが'sync'のものだけを取得
-      q = query(collection(db, "transactions"), where("familyId", "==", familyId), where("mode", "==", "sync"));
-    } else {
-      // 👤 個人モード：自分のIDのものだけを取得
-      q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-    }
+    const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
 
     const unsubscribeTx = onSnapshot(q, (snapshot) => {
       let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
-      
-      // 個人モードの時は、SYNCで入力した相手のデータが混ざらないようにフィルタリング
-      if (dbMode === 'personal') {
-        data = data.filter(tx => tx.mode !== 'sync');
-      }
-
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
     });
 
     return () => unsubscribeTx();
-  }, [user, familyId, dbMode]);
+  }, [user]);
 
   const handleAddGhostBank = async () => {
     if (!newGhostBank.trim() || !user) return;
@@ -731,7 +687,6 @@ export default function MobileApp() {
           transactions={safeTransactions} 
           ghostAccounts={ghostAccountsList} 
           onComplete={handleBriefingComplete} 
-          dbMode={dbMode}
           onOpenReset={(cardName) => {
             setCurrentTab('balance');
             setPendingResetCard(cardName);
@@ -748,29 +703,14 @@ export default function MobileApp() {
         <div 
           onClick={handleBalanceQuadTap}
           style={{ 
-            fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '14px', 
+            fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '15px', 
             cursor: 'default', userSelect: 'none'
           }}
         >
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        {/* 🌟 デュアルコア・切り替えスイッチ（スマホ版ヘッダー右側） */}
-        <div style={{ display: 'flex', background: '#050608', borderRadius: '30px', padding: '3px', border: `1px solid ${activeThemeColor}`, boxShadow: `0 0 10px ${activeThemeColor}33` }}>
-          <button 
-            onClick={() => setDbMode('personal')}
-            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'personal' ? activeThemeColor : 'transparent', color: dbMode === 'personal' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
-          >
-            👤 個人
-            [個人]
-          </button>
-          <button 
-            onClick={() => setDbMode('sync')}
-            style={{ padding: '4px 10px', borderRadius: '26px', border: 'none', background: dbMode === 'sync' ? '#00ff66' : 'transparent', color: dbMode === 'sync' ? '#000' : '#888', fontWeight: 'bold', fontSize: '10px', cursor: 'pointer', transition: 'all 0.3s' }}
-          >
-            [共有]
-          </button>
-        </div>
+        <div style={{ width: '40px' }} />
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -853,8 +793,7 @@ export default function MobileApp() {
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
-            key={dbMode}
-            dbMode={dbMode} 
+            key={`inp_${settingsVersion}`}
             familyId={familyId} 
             initialAccount={nfcAccount} 
             autoOpenKeypad={nfcAutoKeypad} 
@@ -871,13 +810,12 @@ export default function MobileApp() {
               <h2 onDoubleClick={toggleStealth} style={{ fontSize: '18px', margin: 0, userSelect: 'none' }}> 口座・決済手段別の現在高</h2>
             </div>
             <BalanceChart 
-              key={`${dbMode}_${settingsVersion}`}
+              key={`bal_${settingsVersion}`}
               transactions={safeTransactions} 
               ghostAccounts={ghostAccountsList} 
               sortKey={sortKey} 
               sortOrder={sortOrder} 
               setSortKey={setSortKey} 
-              dbMode={dbMode}
               initialResetCard={pendingResetCard ? { name: pendingResetCard } : null}
               onQuadTap={handleBalanceQuadTap}
             />

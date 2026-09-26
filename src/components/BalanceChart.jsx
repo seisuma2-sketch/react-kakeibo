@@ -22,19 +22,19 @@ const getCycleBounds = (resetDay, currentDate = new Date()) => {
   return { startDate, endDate };
 };
 
-export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, onQuadTap = null, dbMode = 'personal', initialResetCard = null }) {
+export default function BalanceChart({ transactions = [], ghostAccounts = [], sortKey = 'amount', sortOrder = 'desc', setSortKey, onOpenStealth, onQuadTap = null, dbMode = 'main', initialResetCard = null }) {
   const chartRef = useRef(null);
   
-  // モード別の保存先キーおよびクラウド同期フィールド
-  const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
-  const cardField = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
-  const accKey = dbMode === 'sync' ? 'm402_accounts_sync' : 'm402_accounts';
-  const accField = dbMode === 'sync' ? 'accounts_sync' : 'accounts';
-  const deletedKey = dbMode === 'sync' ? 'deletedAccountsConfig_sync' : 'deletedAccountsConfig';
-  const deletedField = dbMode === 'sync' ? 'deletedAccounts_sync' : 'deletedAccounts';
-  const recycledKey = dbMode === 'sync' ? 'recycledAccountsConfig_sync' : 'recycledAccountsConfig';
-  const customOrderKey = dbMode === 'sync' ? 'customOrderConfig_sync' : 'customOrderConfig';
-  const customOrderField = dbMode === 'sync' ? 'customOrder_sync' : 'customOrder';
+  // 単一金庫の保存先キーおよびクラウド同期フィールド
+  const cardKey = 'creditCardSettings';
+  const cardField = 'creditCardSettings';
+  const accKey = 'm402_accounts';
+  const accField = 'accounts';
+  const deletedKey = 'deletedAccountsConfig';
+  const deletedField = 'deletedAccounts';
+  const recycledKey = 'recycledAccountsConfig';
+  const customOrderKey = 'customOrderConfig';
+  const customOrderField = 'customOrder';
 
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
   const [tick, setTick] = useState(0); 
@@ -196,21 +196,19 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       };
     });
 
-    // 🌟 個人モード時、リクルートカードが未登録でもデフォルトでクレジットカードとして表示を保証
-    if (dbMode !== 'sync') {
-      const hasRecruit = Object.keys(creditSettings).some(k => isSameAccount(k, 'リクルートカード'));
-      const isDeleted = deletedAccounts.some(d => isSameAccount(d, 'リクルートカード'));
-      const isGhost = ghostAccounts.some(g => isSameAccount(g, 'リクルートカード'));
-      if (!hasRecruit && !isDeleted && !isGhost) {
-        cardData['リクルートカード'] = { 
-          budget: 0,
-          resetDay: 15,
-          paymentDay: 10,
-          withdrawalSource: '',
-          lastResetDate: null,
-          used: 0, usageCount: 0 
-        };
-      }
+    // 🌟 リクルートカードが未登録でもデフォルトでクレジットカードとして表示を保証
+    const hasRecruit = Object.keys(creditSettings).some(k => isSameAccount(k, 'リクルートカード'));
+    const isDeleted = deletedAccounts.some(d => isSameAccount(d, 'リクルートカード'));
+    const isGhost = ghostAccounts.some(g => isSameAccount(g, 'リクルートカード'));
+    if (!hasRecruit && !isDeleted && !isGhost) {
+      cardData['リクルートカード'] = { 
+        budget: 0,
+        resetDay: 15,
+        paymentDay: 10,
+        withdrawalSource: '',
+        lastResetDate: null,
+        used: 0, usageCount: 0 
+      };
     }
 
     const chronologicalTx = [...transactions].reverse();
@@ -775,7 +773,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
           memo: `カード利用額精算 (${cardName})`,
           date: Timestamp.now(),
           createdAt: Timestamp.now(),
-          mode: dbMode === 'sync' ? 'sync' : 'personal'
+          mode: 'main'
         };
         await addDoc(collection(db, "transactions"), txData);
       }
@@ -862,7 +860,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         memo: `実残高との一致調整 (差額: ${diff > 0 ? '+' : ''}¥${diff.toLocaleString()})`,
         date: Timestamp.now(),
         createdAt: Timestamp.now(),
-        mode: dbMode === 'sync' ? 'sync' : 'personal'
+        mode: 'main'
       };
       await addDoc(collection(db, "transactions"), txData);
       setIsAuditModalOpen(false);
@@ -891,7 +889,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
         memo: 'システム・ルーティング (UI)', 
         date: Timestamp.now(), 
         createdAt: Timestamp.now(),
-        mode: dbMode === 'sync' ? 'sync' : 'personal'
+        mode: 'main'
       };
       await addDoc(collection(db, "transactions"), txData);
       setRoutingSource(null); setRoutingTarget(null); setTransferAmount(''); setRoutingMode(false);
@@ -1480,7 +1478,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                 e.stopPropagation();
                 const next = cardMode === 'remain' ? 'used' : 'remain';
                 setCardMode(next);
-                localStorage.setItem('m402_card_mode', next);
+                saveSettingBoth(auth.currentUser?.uid, 'cardMode', 'm402_card_mode', next);
               }}
               style={{ background: '#11141a', color: cardMode === 'remain' ? '#00ff66' : '#ff3366', border: `1px solid ${cardMode === 'remain' ? '#00ff66' : '#ff3366'}`, padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', boxShadow: cardMode === 'remain' ? '0 0 10px rgba(0,255,102,0.1)' : '0 0 10px rgba(255,51,102,0.1)' }}
             >

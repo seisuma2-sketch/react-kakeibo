@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 
-export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete, dbMode = 'personal', onOpenReset }) {
+export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete, dbMode = 'main', onOpenReset }) {
   const [displayedText, setDisplayedText] = useState([]);
   const [isTypingDone, setIsTypingDone] = useState(false);
 
-  const cardKey = dbMode === 'sync' ? 'creditCardSettings_sync' : 'creditCardSettings';
+  const cardKey = 'creditCardSettings';
 
   // 🌟 分析ロジック：昨日・今月・引き落としアラートの解析
   const briefingData = useMemo(() => {
