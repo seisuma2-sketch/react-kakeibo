@@ -3,6 +3,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
 import { saveSettingBoth } from '../utils/cloudSync';
+import { deduplicateAccounts } from '../utils/accountUtils';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (!item) return '';
@@ -179,6 +180,13 @@ export default function MobileInputForm({
       return acc;
     });
 
+    // 🌟 重複排除（リクルートカード等の2重化を完全に解消）
+    const origLen = newAccs.length;
+    newAccs = deduplicateAccounts(newAccs);
+    if (newAccs.length !== origLen) {
+      accModified = true;
+    }
+
     // みずほ銀行の追加＆アイコン最新化
     if (!isSync) {
       const hasMizuho = newAccs.some(acc => acc.includes('みずほ銀行'));
@@ -199,6 +207,8 @@ export default function MobileInputForm({
           return acc;
         });
       }
+      // 再度重複チェック
+      newAccs = deduplicateAccounts(newAccs);
     }
 
     if (accModified) {

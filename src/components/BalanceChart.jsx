@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { saveSettingBoth } from '../utils/cloudSync';
+import { getCleanAccountName, isSameAccount, normalizeCreditCardSettings, deduplicateAccounts } from '../utils/accountUtils';
 
 const getCycleBounds = (resetDay, currentDate = new Date()) => {
   const rd = parseInt(resetDay, 10);
@@ -179,16 +180,18 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
   const systemData = useMemo(() => {
     const now = new Date(); 
-    const creditSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+    const rawCreditSettings = JSON.parse(localStorage.getItem(cardKey) || '{}');
+    const creditSettings = normalizeCreditCardSettings(rawCreditSettings);
     const cardData = {};
-    Object.keys(creditSettings).forEach(name => {
-      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
-      cardData[name] = { 
-        budget: Number(creditSettings[name].budget) || 0,
-        resetDay: Number(creditSettings[name].resetDay) || 1,
-        paymentDay: Number(creditSettings[name].paymentDay) || 27,
-        withdrawalSource: creditSettings[name].withdrawalSource || '',
-        lastResetDate: creditSettings[name].lastResetDate || null,
+    Object.keys(creditSettings).forEach(rawName => {
+      const cleanName = getCleanAccountName(rawName);
+      if (ghostAccounts.some(g => isSameAccount(g, cleanName)) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
+      cardData[cleanName] = { 
+        budget: Number(creditSettings[rawName].budget) || 0,
+        resetDay: Number(creditSettings[rawName].resetDay) || 1,
+        paymentDay: Number(creditSettings[rawName].paymentDay) || 27,
+        withdrawalSource: creditSettings[rawName].withdrawalSource || '',
+        lastResetDate: creditSettings[rawName].lastResetDate || null,
         used: 0, usageCount: 0 
       };
     });
@@ -204,8 +207,8 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
       const amount = Number(tx.amount) || 0;
-      const method = tx.paymentMethod || '不明';
-      const category = tx.category || '不明';
+      const method = getCleanAccountName(tx.paymentMethod) || '不明';
+      const category = getCleanAccountName(tx.category) || '不明';
 
       if (!runningBalances[method]) runningBalances[method] = 0;
       usageCounts[method] = (usageCounts[method] || 0) + 1;
@@ -223,7 +226,9 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
       let currentVisibleTotal = 0;
       for (const [accName, accBalance] of Object.entries(runningBalances)) {
-        if (!ghostAccounts.includes(accName) && !deletedAccounts.includes(accName)) currentVisibleTotal += accBalance;
+        if (!ghostAccounts.some(g => isSameAccount(g, accName)) && !deletedAccounts.some(d => isSameAccount(d, accName))) {
+          currentVisibleTotal += accBalance;
+        }
       }
       dLabels.push(dateStr);
       bData.push(currentVisibleTotal);
@@ -232,10 +237,10 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     transactions.forEach(tx => {
       if (!tx.date || tx.type !== 'expense') return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
-      const method = tx.paymentMethod || '不明';
+      const method = getCleanAccountName(tx.paymentMethod) || '不明';
 
       if (cardData[method]) {
-        cardData[method].usageCount = usageCounts[method] || 0;
+        cardData[method].usageCount = (cardData[method].usageCount || 0) + 1;
         const bounds = getCycleBounds(cardData[method].resetDay, now);
         
         // 🌟 最終リセット日がある場合、それ以降の支出のみを集計（リセット機能の核）
@@ -250,17 +255,33 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
     const bankData = {};
     Object.entries(runningBalances).forEach(([name, bal]) => {
-      if (ghostAccounts.includes(name) || deletedAccounts.includes(name)) return;
-      if (cardData[name]) return; 
-      bankData[name] = { balance: bal, usageCount: usageCounts[name] || 0 };
+      const cleanName = getCleanAccountName(name);
+      if (ghostAccounts.some(g => isSameAccount(g, cleanName)) || deletedAccounts.some(d => isSameAccount(d, cleanName))) return;
+      // 🌟 クレジットカードとして既に存在する口座は絶対に銀行口座側に追加しない！
+      if (cardData[cleanName]) return; 
+      
+      if (!bankData[cleanName]) {
+        bankData[cleanName] = { balance: 0, usageCount: 0 };
+      }
+      bankData[cleanName].balance += bal;
+      bankData[cleanName].usageCount += (usageCounts[name] || 0);
     });
 
     const combined = [];
+    const addedCleanNames = new Set();
     Object.entries(cardData).forEach(([name, data]) => {
-      combined.push({ id: name, name, type: 'card', ...data });
+      const clean = getCleanAccountName(name);
+      if (!addedCleanNames.has(clean)) {
+        addedCleanNames.add(clean);
+        combined.push({ id: clean, name: clean, type: 'card', ...data });
+      }
     });
     Object.entries(bankData).forEach(([name, data]) => {
-      combined.push({ id: name, name, type: 'bank', ...data });
+      const clean = getCleanAccountName(name);
+      if (!addedCleanNames.has(clean)) {
+        addedCleanNames.add(clean);
+        combined.push({ id: clean, name: clean, type: 'bank', ...data });
+      }
     });
 
     const lastBalance = bData.length > 0 ? bData[bData.length - 1] : 0;

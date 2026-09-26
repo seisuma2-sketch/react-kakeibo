@@ -22,6 +22,7 @@ import DesktopCockpitOS from './components/DesktopCockpitOS';
 import SavingsHub from './components/SavingsHub';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 import { getStealthDisguisedTransactions } from './utils/stealthHelper';
+import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName } from './utils/accountUtils';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -353,9 +354,48 @@ function App() {
     return getStealthDisguisedTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
   }, [transactions, stealthConfig.ghostAccounts, stealthConfig.active]); 
 
-  const uniqueAccountsFromTx = [...new Set(transactions.map(tx => tx.paymentMethod).filter(Boolean))];
-  const defaultAvailableAccounts = ['現金', '三井住友銀行', '三菱UFJ銀行', 'みずほ銀行', 'ゆうちょ銀行', 'PayPay', 'EVERING', 'リクルートカード'];
-  const allAccountsToDisplay = [...new Set([...uniqueAccountsFromTx, ...defaultAvailableAccounts, ...stealthConfig.ghostAccounts])];
+  // 🌟 口座やカード設定の重複（リクルートカード等の2重化）を自動クリーンアップ
+  useEffect(() => {
+    ['creditCardSettings', 'creditCardSettings_sync'].forEach(cardKey => {
+      const raw = localStorage.getItem(cardKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const normalized = normalizeCreditCardSettings(parsed);
+          if (Object.keys(parsed).length !== Object.keys(normalized).length) {
+            localStorage.setItem(cardKey, JSON.stringify(normalized));
+            if (user) {
+              setDoc(doc(db, "user_settings", user.uid), { [cardKey]: normalized }, { merge: true });
+            }
+          }
+        } catch (e) {}
+      }
+    });
+
+    ['m402_accounts', 'm402_accounts_sync'].forEach(accKey => {
+      const raw = localStorage.getItem(accKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const deduped = deduplicateAccounts(parsed);
+          if (parsed.length !== deduped.length) {
+            localStorage.setItem(accKey, JSON.stringify(deduped));
+            const field = accKey === 'm402_accounts_sync' ? 'accounts_sync' : 'accounts';
+            if (user) {
+              setDoc(doc(db, "user_settings", user.uid), { [field]: deduped }, { merge: true });
+            }
+          }
+        } catch (e) {}
+      }
+    });
+  }, [user]);
+
+  const allAccountsToDisplay = useMemo(() => {
+    const fromTx = transactions.map(tx => tx.paymentMethod).filter(Boolean);
+    const defaultAvailableAccounts = ['現金', '三井住友銀行', '三菱UFJ銀行', 'みずほ銀行', 'ゆうちょ銀行', 'PayPay', 'EVERING', 'リクルートカード'];
+    const merged = [...fromTx, ...defaultAvailableAccounts, ...stealthConfig.ghostAccounts];
+    return deduplicateAccounts(merged).map(getCleanAccountName);
+  }, [transactions, stealthConfig.ghostAccounts]);
 
   const cyclePeriod = useMemo(() => {
     const now = new Date();
