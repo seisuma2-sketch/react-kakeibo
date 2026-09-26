@@ -855,9 +855,21 @@ export default function MobileApp() {
         )}
       </div>
 
-      {/* 🚀 ハイブリッド・タブバーエリア */}
+      {/* 🚀 ハイブリッド・タブバーエリア（グラスモフィズム＆セーフエリア対応） */}
       {uiMode === '2d' ? (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, display: 'flex', justifyContent: 'space-around', padding: '10px 0', paddingBottom: '20px', alignItems: 'center', position: 'relative' }}>
+        <div style={{ 
+          background: 'rgba(10, 12, 16, 0.88)', 
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderTop: `1px solid rgba(255, 255, 255, 0.1)`, 
+          boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.6)',
+          display: 'flex', 
+          justifyContent: 'space-around', 
+          padding: '8px 0 calc(env(safe-area-inset-bottom, 15px) + 8px) 0', 
+          alignItems: 'center', 
+          position: 'relative',
+          zIndex: 100
+        }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
           <BottomTab 
             icon="/S__32194590.jpg" label="残高" 
@@ -1132,17 +1144,70 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
 
   return (
     <div 
-      onClick={onClick} 
+      onClick={() => {
+        if (navigator.vibrate) navigator.vibrate(12);
+        if (onClick) onClick();
+      }} 
       onPointerDown={onPointerDown} 
       onPointerUp={onPointerUp} 
       onPointerLeave={onPointerLeave}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', opacity: isActive ? 1 : 0.4, transition: 'all 0.2s', width: '52px', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
+      className="clickable-item"
+      style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        cursor: 'pointer', 
+        opacity: isActive ? 1 : 0.45, 
+        transform: isActive ? 'translateY(-2px)' : 'none',
+        transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)', 
+        width: '56px', 
+        position: 'relative',
+        WebkitTouchCallout: 'none', 
+        WebkitUserSelect: 'none', 
+        userSelect: 'none' 
+      }}>
       {isImage ? (
-        <img src={icon} alt={label} style={{ width: '38px', height: '36px', objectFit: 'contain', marginBottom: '4px', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(70%)', pointerEvents: 'none' }} />
+        <img 
+          src={icon} 
+          alt={label} 
+          style={{ 
+            width: '36px', 
+            height: '36px', 
+            objectFit: 'contain', 
+            marginBottom: '3px', 
+            filter: isActive ? `drop-shadow(0 0 10px ${themeColor})` : 'grayscale(100%) opacity(60%)', 
+            pointerEvents: 'none',
+            transition: 'filter 0.2s ease'
+          }} 
+        />
       ) : (
-        <div style={{ fontSize: '24px', marginBottom: '4px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'none' }}>{icon}</div>
+        <div style={{ fontSize: '24px', marginBottom: '3px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 10px ${themeColor})` : 'none' }}>
+          {icon}
+        </div>
       )}
-      <div style={{ fontSize: '9px', color: isActive ? themeColor : '#666', fontWeight: 'bold', textShadow: isActive ? `0 0 5px ${themeColor}` : 'none', pointerEvents: 'none' }}>{label}</div>
+      <div style={{ 
+        fontSize: '10px', 
+        color: isActive ? themeColor : '#777', 
+        fontWeight: 'bold', 
+        textShadow: isActive ? `0 0 8px ${themeColor}66` : 'none', 
+        pointerEvents: 'none',
+        transition: 'color 0.2s ease'
+      }}>
+        {label}
+      </div>
+
+      {/* アクティブ時のインジケーターバー */}
+      {isActive && (
+        <div style={{
+          position: 'absolute',
+          bottom: '-6px',
+          width: '16px',
+          height: '2px',
+          borderRadius: '2px',
+          background: themeColor,
+          boxShadow: `0 0 6px ${themeColor}`
+        }} />
+      )}
     </div>
   );                                                         
 }

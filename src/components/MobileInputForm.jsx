@@ -1585,10 +1585,10 @@ export default function MobileInputForm({
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '20px' }}>
-        <div style={{ background: '#11141a', width: '100%', maxWidth: '500px', borderRadius: '12px', border: '1px solid #252838', padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '15px' }}>
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', borderRadius: '16px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          <div style={{ display: 'flex', background: '#0a0c10', borderRadius: '8px', padding: '4px', border: '1px solid #252838' }}>
+          <div style={{ display: 'flex', background: 'rgba(5, 6, 8, 0.7)', borderRadius: '10px', padding: '4px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
             <button onClick={() => handleTypeChange('expense')} style={tabStyle(type === 'expense', '#ff3366', '#fff')}>支出</button>
             <button onClick={() => handleTypeChange('income')} style={tabStyle(type === 'income', '#00bfff', '#aaa')}>収入</button>
             <button onClick={() => handleTypeChange('transfer')} style={tabStyle(type === 'transfer', '#b666ff', '#aaa')}>振替</button>
@@ -1596,7 +1596,18 @@ export default function MobileInputForm({
 
           <div>
             <div style={labelStyle}>発生日時</div>
-            <input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
+            <input 
+              type="datetime-local" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+              style={{ 
+                ...inputStyle, 
+                width: '100%', 
+                textAlign: 'center', 
+                letterSpacing: '0.5px',
+                fontFamily: 'monospace'
+              }} 
+            />
           </div>
 
           {/* 🌟 NFCでEVERING読み込み時のみ表示：付近のスポット（絵文字・アイコンなし） */}

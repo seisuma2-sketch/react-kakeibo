@@ -1,30 +1,36 @@
+import { useCountUp } from '../utils/animationUtils';
+
 export default function SummaryPanel({ currentMonth, monthlyIncome, monthlyExpense, netIncome, isSurplus, isStealthMode, isMobile }) {
+  const animatedIncome = useCountUp(monthlyIncome);
+  const animatedExpense = useCountUp(monthlyExpense);
+  const animatedNet = useCountUp(netIncome);
+
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px' }}>
       
       {/* 📱 スマホなら収入と支出をギュッと横並びに、PCなら等間隔に配置 */}
       <div style={{ display: 'flex', gap: '15px', flexDirection: 'row', flex: 2 }}>
-        <div style={cardStyle}>
+        <div className="glass-panel" style={cardStyle}>
           <div style={labelStyle}>{currentMonth}月の総収入</div>
-          <div style={{ color: '#00ff66', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-            {`¥${monthlyIncome.toLocaleString()}`}
+          <div className="tabular-nums" style={{ color: '#00ff66', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+            {`¥${animatedIncome.toLocaleString()}`}
           </div>
         </div>
-        <div style={cardStyle}>
+        <div className="glass-panel" style={cardStyle}>
           <div style={labelStyle}>{currentMonth}月の総支出</div>
-          <div style={{ color: '#ff3366', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-            {`¥${monthlyExpense.toLocaleString()}`}
+          <div className="tabular-nums" style={{ color: '#ff3366', fontSize: isMobile ? '18px' : '28px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+            {`¥${animatedExpense.toLocaleString()}`}
           </div>
         </div>
       </div>
 
       {/* 収支バランスは常にデカく！ */}
-      <div style={{ ...cardStyle, flex: 1, border: `1px solid ${isSurplus ? '#00ff66' : '#ff3366'}`, boxShadow: isSurplus ? '0 0 15px rgba(0,255,102,0.1)' : '0 0 15px rgba(255,51,102,0.1)' }}>
+      <div className="glass-panel" style={{ ...cardStyle, flex: 1, border: `1px solid ${isSurplus ? '#00ff66' : '#ff3366'}`, boxShadow: isSurplus ? '0 0 20px rgba(0,255,102,0.15)' : '0 0 20px rgba(255,51,102,0.15)' }}>
         <div style={labelStyle}>今月の収支バランス</div>
-        <div style={{ color: isSurplus ? '#00ff66' : '#ff3366', fontSize: isMobile ? '24px' : '32px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-          {`${isSurplus ? '+' : ''}¥${netIncome.toLocaleString()}`}
+        <div className="tabular-nums" style={{ color: isSurplus ? '#00ff66' : '#ff3366', fontSize: isMobile ? '24px' : '32px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+          {`${isSurplus ? '+' : ''}¥${animatedNet.toLocaleString()}`}
         </div>
-        <div style={{ fontSize: '11px', marginTop: '8px', color: isSurplus ? '#00ff66' : '#ff3366' }}>
+        <div style={{ fontSize: '11px', marginTop: '8px', color: isSurplus ? '#00ff66' : '#ff3366', fontWeight: 'bold' }}>
           {isSurplus ? '黒字安全圏をキープ中' : '警告：赤字転落'}
         </div>
       </div>
@@ -33,5 +39,5 @@ export default function SummaryPanel({ currentMonth, monthlyIncome, monthlyExpen
   );
 }
 
-const cardStyle = { flex: 1, background: '#11141a', padding: '15px', borderRadius: '8px', border: '1px solid #252838' };
-const labelStyle = { color: '#aaa', fontSize: '12px', marginBottom: '5px' };
+const cardStyle = { flex: 1, padding: '16px', borderRadius: '12px' };
+const labelStyle = { color: '#888', fontSize: '12px', marginBottom: '6px', fontWeight: 'bold' };

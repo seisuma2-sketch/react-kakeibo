@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { saveSettingBoth } from '../utils/cloudSync';
+import { useCountUp } from '../utils/animationUtils';
 
 export default function SavingsHub({ transactions = [], cyclePeriod, user, isMobile, themeColor = '#00bfff', isStealthMode = false }) {
   // 🌟 1. 月間目標予算（デフォルト 120,000円）
@@ -181,12 +182,15 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
   }
 
   const isSafePositive = dailyMetrics.safeToSpend >= 0;
+  const animatedSafeToSpend = useCountUp(dailyMetrics.safeToSpend);
+  const animatedTsumoriMonth = useCountUp(tsumoriStats.monthTotal);
+  const animatedTsumoriAll = useCountUp(tsumoriStats.allTotal);
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', marginBottom: '20px' }}>
       
       {/* 🌟 左カード：【デイリー・セーフ・スペンド】今日あといくら使えるかメーター */}
-      <div style={{ flex: 1.2, background: '#11141a', border: '1px solid #252838', borderRadius: '10px', padding: '16px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div className="glass-panel" style={{ flex: 1.2, borderRadius: '14px', padding: '18px', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         
         <div>
           {/* ヘッダー */}
@@ -195,7 +199,7 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
               <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', letterSpacing: '0.5px' }}>
                 デイリー・セーフ・スペンド
               </span>
-              <span style={{ fontSize: '11px', color: '#888', background: '#050608', padding: '2px 8px', borderRadius: '4px', border: '1px solid #252838' }}>
+              <span style={{ fontSize: '11px', color: '#888', background: 'rgba(5, 6, 8, 0.6)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                 日割り予算
               </span>
             </div>
@@ -206,16 +210,16 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
                 setTempBudgetInput(String(monthlyBudget));
                 setIsEditingBudget(true);
               }}
-              style={{ background: 'transparent', border: '1px solid #333', color: '#888', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#aaa', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
               onMouseEnter={(e) => { e.currentTarget.style.color = themeColor; e.currentTarget.style.borderColor = themeColor; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#aaa'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'; }}
             >
               目標: ¥{monthlyBudget.toLocaleString()} ⚙
             </button>
           </div>
 
           {/* メイン数値表示：今日あと使える金額 */}
-          <div style={{ background: '#050608', border: `1px solid ${isSafePositive ? themeColor + '55' : '#ff336655'}`, borderRadius: '8px', padding: '14px', marginBottom: '12px', boxShadow: `inset 0 0 15px ${isSafePositive ? themeColor + '11' : 'rgba(255,51,102,0.1)'}` }}>
+          <div style={{ background: 'rgba(5, 6, 8, 0.75)', border: `1px solid ${isSafePositive ? themeColor + '55' : '#ff336655'}`, borderRadius: '10px', padding: '14px', marginBottom: '12px', boxShadow: `inset 0 0 20px ${isSafePositive ? themeColor + '11' : 'rgba(255,51,102,0.1)'}` }}>
             <div style={{ fontSize: '11px', color: isSafePositive ? themeColor : '#ff3366', fontWeight: 'bold', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
               <span>{isSafePositive ? '今日あと使える金額' : '本日の予算枠を超過中'}</span>
               <span>残り {dailyMetrics.remainingDays} 日</span>
@@ -223,8 +227,8 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
             
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
               <span style={{ fontSize: '18px', color: isSafePositive ? '#888' : '#ff3366', fontWeight: 'bold' }}>¥</span>
-              <span style={{ fontSize: isMobile ? '32px' : '38px', fontWeight: 'bold', fontFamily: 'monospace', color: isSafePositive ? '#fff' : '#ff3366', letterSpacing: '1px' }}>
-                {Math.abs(dailyMetrics.safeToSpend).toLocaleString()}
+              <span className="tabular-nums" style={{ fontSize: isMobile ? '32px' : '38px', fontWeight: 'bold', fontFamily: 'monospace', color: isSafePositive ? '#fff' : '#ff3366', letterSpacing: '1px' }}>
+                {Math.abs(animatedSafeToSpend).toLocaleString()}
               </span>
               {!isSafePositive && (
                 <span style={{ fontSize: '12px', color: '#ff3366', fontWeight: 'bold' }}>OVER</span>
@@ -232,12 +236,12 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
             </div>
 
             {/* 本日の支出と割当枠の内訳 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #252838', fontSize: '11px', color: '#aaa' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed rgba(255, 255, 255, 0.08)', fontSize: '11px', color: '#aaa' }}>
               <div>
-                本日の割当枠: <span style={{ color: '#fff', fontWeight: 'bold' }}>¥{dailyMetrics.dailyQuota.toLocaleString()}</span>
+                本日の割当枠: <span className="tabular-nums" style={{ color: '#fff', fontWeight: 'bold' }}>¥{dailyMetrics.dailyQuota.toLocaleString()}</span>
               </div>
               <div>
-                本日の出費: <span style={{ color: dailyMetrics.todayExpense > dailyMetrics.dailyQuota ? '#ff3366' : '#fff', fontWeight: 'bold' }}>¥{dailyMetrics.todayExpense.toLocaleString()}</span>
+                本日の出費: <span className="tabular-nums" style={{ color: dailyMetrics.todayExpense > dailyMetrics.dailyQuota ? '#ff3366' : '#fff', fontWeight: 'bold' }}>¥{dailyMetrics.todayExpense.toLocaleString()}</span>
               </div>
             </div>
 
@@ -262,7 +266,7 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
       </div>
 
       {/* 🌟 右カード：【つもり貯金・我慢カウンター】買い控えを成果に変える */}
-      <div style={{ flex: 1, background: '#11141a', border: '1px solid #252838', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div className="glass-panel" style={{ flex: 1, borderRadius: '14px', padding: '18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         
         <div>
           {/* ヘッダー */}
@@ -286,17 +290,17 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
           </div>
 
           {/* 成果サマリー表示 */}
-          <div style={{ background: '#050608', border: '1px solid rgba(255, 183, 0, 0.25)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+          <div style={{ background: 'rgba(5, 6, 8, 0.75)', border: '1px solid rgba(255, 183, 0, 0.25)', borderRadius: '10px', padding: '14px', marginBottom: '12px' }}>
             <div style={{ fontSize: '11px', color: '#ffb700', fontWeight: 'bold', marginBottom: '2px' }}>
               今月の買い控え節約成果
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
               <span style={{ fontSize: '16px', color: '#ffb700', fontWeight: 'bold' }}>+¥</span>
-              <span style={{ fontSize: isMobile ? '26px' : '30px', fontWeight: 'bold', fontFamily: 'monospace', color: '#ffb700' }}>
-                {tsumoriStats.monthTotal.toLocaleString()}
+              <span className="tabular-nums" style={{ fontSize: isMobile ? '26px' : '30px', fontWeight: 'bold', fontFamily: 'monospace', color: '#ffb700' }}>
+                {animatedTsumoriMonth.toLocaleString()}
               </span>
-              <span style={{ fontSize: '11px', color: '#888', marginLeft: 'auto' }}>
-                累計: ¥{tsumoriStats.allTotal.toLocaleString()}
+              <span className="tabular-nums" style={{ fontSize: '11px', color: '#888', marginLeft: 'auto' }}>
+                累計: ¥{animatedTsumoriAll.toLocaleString()}
               </span>
             </div>
           </div>
