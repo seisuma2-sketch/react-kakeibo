@@ -749,25 +749,7 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        <div 
-          onClick={toggleStealth}
-          className="clickable-item"
-          title={isStealthActive ? "ステルス中" : "通常表示"}
-          style={{ 
-            width: '38px', 
-            height: '38px', 
-            borderRadius: '10px', 
-            background: isStealthActive ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-            border: `1px solid ${isStealthActive ? 'rgba(0, 255, 102, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            fontSize: '15px',
-            cursor: 'pointer'
-          }}
-        >
-          {isStealthActive ? '🛡️' : '👁️'}
-        </div>
+        <div style={{ width: '38px', height: '38px' }} />
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -854,7 +836,8 @@ export default function MobileApp() {
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           display: 'flex', 
-          flexDirection: 'column' 
+          flexDirection: 'column',
+          paddingBottom: '60px'
         }}
       >
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
@@ -901,21 +884,21 @@ export default function MobileApp() {
         )}
       </div>
 
-      {/* 🚀 ハイブリッド・タブバーエリア（画面最下部に固定＆セーフエリア対応） */}
+      {/* 🚀 ハイブリッド・タブバーエリア（画面最下部に完全固定＆隙間ゼロ化） */}
       {uiMode === '2d' ? (
         <div style={{ 
-          position: 'sticky',
+          position: 'fixed',
           bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
           zIndex: 1000,
-          flexShrink: 0,
-          background: 'rgba(10, 12, 16, 0.94)', 
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderTop: `1px solid rgba(255, 255, 255, 0.08)`, 
-          boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.7)',
+          background: '#07090e', 
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)', 
+          boxShadow: '0 -4px 25px rgba(0, 0, 0, 0.9)',
           display: 'flex', 
           justifyContent: 'space-around', 
-          padding: '10px 0 calc(env(safe-area-inset-bottom, 20px) + 8px) 0', 
+          padding: '5px 0 max(env(safe-area-inset-bottom, 0px), 6px) 0', 
           alignItems: 'center'
         }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
@@ -945,13 +928,15 @@ export default function MobileApp() {
         </div>
       ) : (
         <div style={{ 
-          position: 'sticky', 
+          position: 'fixed', 
           bottom: 0, 
+          left: 0,
+          right: 0,
+          width: '100%',
           zIndex: 1000, 
-          flexShrink: 0, 
-          background: '#11141a', 
+          background: '#07090e', 
           borderTop: `1px solid ${activeThemeColor}44`, 
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 8px)' 
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' 
         }}>
           <div 
             onPointerDown={handle3DPointerDown}
@@ -1214,9 +1199,10 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
         alignItems: 'center', 
         cursor: 'pointer', 
         opacity: isActive ? 1 : 0.45, 
-        transform: isActive ? 'translateY(-2px)' : 'none',
-        transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)', 
+        transform: isActive ? 'translateY(-1px)' : 'none',
+        transition: 'all 0.15s ease', 
         width: '56px', 
+        padding: '2px 0',
         position: 'relative',
         WebkitTouchCallout: 'none', 
         WebkitUserSelect: 'none', 
@@ -1227,17 +1213,17 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
           src={icon} 
           alt={label} 
           style={{ 
-            width: '36px', 
-            height: '36px', 
+            width: '30px', 
+            height: '30px', 
             objectFit: 'contain', 
-            marginBottom: '3px', 
-            filter: isActive ? `drop-shadow(0 0 10px ${themeColor})` : 'grayscale(100%) opacity(60%)', 
+            marginBottom: '2px', 
+            filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(60%)', 
             pointerEvents: 'none',
-            transition: 'filter 0.2s ease'
+            transition: 'filter 0.15s ease'
           }} 
         />
       ) : (
-        <div style={{ fontSize: '24px', marginBottom: '3px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 10px ${themeColor})` : 'none' }}>
+        <div style={{ fontSize: '20px', marginBottom: '2px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'none' }}>
           {icon}
         </div>
       )}
@@ -1245,9 +1231,9 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
         fontSize: '10px', 
         color: isActive ? themeColor : '#777', 
         fontWeight: 'bold', 
-        textShadow: isActive ? `0 0 8px ${themeColor}66` : 'none', 
+        textShadow: isActive ? `0 0 6px ${themeColor}66` : 'none', 
         pointerEvents: 'none',
-        transition: 'color 0.2s ease'
+        lineHeight: 1.1
       }}>
         {label}
       </div>
@@ -1256,8 +1242,8 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       {isActive && (
         <div style={{
           position: 'absolute',
-          bottom: '-6px',
-          width: '16px',
+          bottom: '-3px',
+          width: '14px',
           height: '2px',
           borderRadius: '2px',
           background: themeColor,

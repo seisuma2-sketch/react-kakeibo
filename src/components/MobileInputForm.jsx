@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
@@ -74,6 +75,41 @@ export default function MobileInputForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [openDropdown, setOpenDropdown] = useState(null); 
+  const [isDropdownExpanded, setIsDropdownExpanded] = useState(false);
+  const touchStartYRef = useRef(0);
+
+  const handleSheetTouchStart = (e) => {
+    if (e.touches && e.touches[0]) {
+      touchStartYRef.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleSheetTouchEnd = (e) => {
+    if (e.changedTouches && e.changedTouches[0]) {
+      const endY = e.changedTouches[0].clientY;
+      const diffY = endY - touchStartYRef.current;
+      // 上に35px以上スワイプ -> 全画面表示に拡張
+      if (diffY < -35) {
+        setIsDropdownExpanded(true);
+        if (navigator.vibrate) navigator.vibrate(20);
+      }
+      // 下に45px以上スワイプ -> 縮小または閉じる
+      else if (diffY > 45) {
+        if (isDropdownExpanded) {
+          setIsDropdownExpanded(false);
+          if (navigator.vibrate) navigator.vibrate(15);
+        } else {
+          setOpenDropdown(null);
+          setIsDropdownExpanded(false);
+        }
+      }
+    }
+  };
+
+  const closeDropdown = () => {
+    setOpenDropdown(null);
+    setIsDropdownExpanded(false);
+  };
   const [scanLocation, setScanLocation] = useState(null);
   
   // 🌟 現在地連動・近隣スポット0秒サジェスト用State
@@ -1064,19 +1100,22 @@ export default function MobileInputForm({
     <div style={{ background: '#0a0c10', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '80px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
       {/* 🌟 モダン・ボトムシート・セレクター（口座・カテゴリ直感選択シート） */}
-      {openDropdown && (
+      {/* 🌟 モダン・ボトムシート・セレクター（全画面スライド＆React Portalによる最前面化） */}
+      {openDropdown && createPortal(
         <div 
-          onClick={() => setOpenDropdown(null)} 
+          onClick={closeDropdown} 
           style={{ 
             position: 'fixed', 
             top: 0, 
             left: 0, 
+            right: 0,
+            bottom: 0,
             width: '100vw', 
-            height: '100vh', 
-            background: 'rgba(0, 0, 0, 0.7)', 
+            height: '100dvh', 
+            background: 'rgba(0, 0, 0, 0.75)', 
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
-            zIndex: 99999, 
+            zIndex: 9999999, 
             display: 'flex', 
             flexDirection: 'column', 
             justifyContent: 'flex-end',
@@ -1086,45 +1125,85 @@ export default function MobileInputForm({
           <div 
             onClick={(e) => e.stopPropagation()} 
             style={{ 
-              background: '#11141a', 
-              borderTop: '1px solid rgba(255, 255, 255, 0.12)', 
-              borderRadius: '20px 20px 0 0', 
-              maxHeight: '75vh', 
+              background: '#0d1117', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.15)', 
+              borderRadius: '24px 24px 0 0', 
+              height: isDropdownExpanded ? '92dvh' : '72dvh',
+              maxHeight: isDropdownExpanded ? '92dvh' : '72dvh', 
               display: 'flex', 
               flexDirection: 'column', 
-              boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.8)',
+              boxShadow: '0 -15px 50px rgba(0, 0, 0, 0.95)',
+              transition: 'height 0.28s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
               animation: 'sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-              paddingBottom: '25px'
+              overflow: 'hidden'
             }}
           >
-            {/* つまみバー */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
-              <div style={{ width: '40px', height: '4px', background: 'rgba(255, 255, 255, 0.25)', borderRadius: '2px' }} />
+            {/* つまみバー（スワイプハンドル＆タップで全画面トグル） */}
+            <div 
+              onTouchStart={handleSheetTouchStart}
+              onTouchEnd={handleSheetTouchEnd}
+              onClick={() => setIsDropdownExpanded(prev => !prev)}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 0 6px', cursor: 'grab', userSelect: 'none' }}
+            >
+              <div style={{ width: '48px', height: '5px', background: isDropdownExpanded ? '#00bfff' : 'rgba(255, 255, 255, 0.35)', borderRadius: '3px', transition: 'background 0.2s' }} />
+              <div style={{ fontSize: '9px', color: isDropdownExpanded ? '#00bfff' : '#666', marginTop: '4px', letterSpacing: '1px', fontWeight: 'bold' }}>
+                {isDropdownExpanded ? '▼ 下スワイプで縮小' : '▲ 上スワイプで全画面表示'}
+              </div>
             </div>
 
             {/* ヘッダー */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px 14px', borderBottom: '1px solid #1f232e' }}>
+            <div 
+              onTouchStart={handleSheetTouchStart}
+              onTouchEnd={handleSheetTouchEnd}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 20px 14px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
+            >
               <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>
                 {openDropdown === 'payment' && '支払い・入金先口座を選択'}
                 {openDropdown === 'category' && 'カテゴリを選択'}
                 {openDropdown === 'transferFrom' && '出金元口座を選択'}
                 {openDropdown === 'transferTo' && '入金先口座を選択'}
               </div>
-              <button 
-                type="button"
-                onClick={() => setOpenDropdown(null)} 
-                style={{ background: 'rgba(255, 255, 255, 0.08)', border: 'none', color: '#aaa', borderRadius: '50%', width: '32px', height: '32px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* 🌟 全画面表示切替ボタン */}
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownExpanded(prev => !prev)}
+                  style={{
+                    background: isDropdownExpanded ? 'rgba(0, 191, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    border: isDropdownExpanded ? '1px solid #00bfff' : '1px solid rgba(255, 255, 255, 0.15)',
+                    color: isDropdownExpanded ? '#00bfff' : '#aaa',
+                    borderRadius: '16px',
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>{isDropdownExpanded ? '⬇️ 縮小' : '⬆️ 全画面'}</span>
+                </button>
+
+                {/* ✕ 閉じるボタン */}
+                <button 
+                  type="button"
+                  onClick={closeDropdown} 
+                  style={{ background: 'rgba(255, 255, 255, 0.08)', border: 'none', color: '#aaa', borderRadius: '50%', width: '32px', height: '32px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
-            {/* コンテンツエリア */}
+            {/* コンテンツエリア（全画面スクロール対応） */}
             <div 
               className="custom-dropdown-scroll"
               style={{ 
+                flex: 1,
                 overflowY: 'auto', 
-                padding: '16px 20px 20px', 
+                padding: '16px 20px calc(env(safe-area-inset-bottom, 20px) + 30px) 20px', 
                 WebkitOverflowScrolling: 'touch', 
                 overscrollBehavior: 'contain',
                 touchAction: 'pan-y'
@@ -1150,18 +1229,18 @@ export default function MobileInputForm({
                           } else if (openDropdown === 'transferTo') {
                             setCategory(acc);
                           }
-                          setOpenDropdown(null);
+                          closeDropdown();
                         }}
                         style={{
-                          background: isSelected ? 'rgba(0, 255, 102, 0.12)' : '#1a1d24',
-                          border: isSelected ? '2px solid #00ff66' : '1px solid #252838',
-                          borderRadius: '10px',
-                          padding: '12px',
+                          background: isSelected ? 'rgba(0, 255, 102, 0.14)' : '#161a22',
+                          border: isSelected ? '2px solid #00ff66' : '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '12px',
+                          padding: '14px 12px',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
                           cursor: 'pointer',
-                          boxShadow: isSelected ? '0 0 15px rgba(0, 255, 102, 0.2)' : 'none',
+                          boxShadow: isSelected ? '0 0 16px rgba(0, 255, 102, 0.25)' : 'none',
                           transition: 'all 0.12s'
                         }}
                       >
@@ -1184,18 +1263,18 @@ export default function MobileInputForm({
                           onClick={() => {
                             if (navigator.vibrate) navigator.vibrate(15);
                             setCategory(cat);
-                            setOpenDropdown(null);
+                            closeDropdown();
                           }}
                           style={{
-                            background: isSelected ? 'rgba(0, 191, 255, 0.15)' : '#1a1d24',
-                            border: isSelected ? '2px solid #00bfff' : '1px solid #252838',
-                            borderRadius: '10px',
-                            padding: '12px',
+                            background: isSelected ? 'rgba(0, 191, 255, 0.15)' : '#161a22',
+                            border: isSelected ? '2px solid #00bfff' : '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: '12px',
+                            padding: '14px 12px',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '8px',
                             cursor: 'pointer',
-                            boxShadow: isSelected ? '0 0 15px rgba(0, 191, 255, 0.2)' : 'none',
+                            boxShadow: isSelected ? '0 0 16px rgba(0, 191, 255, 0.2)' : 'none',
                             transition: 'all 0.12s'
                           }}
                         >
@@ -1204,11 +1283,11 @@ export default function MobileInputForm({
                       );
                     })}
                   </div>
-                  <div style={{ marginTop: '14px' }}>
+                  <div style={{ marginTop: '16px' }}>
                     <button 
                       type="button"
-                      onClick={() => { setOpenDropdown(null); handleAddCategory(); }}
-                      style={{ width: '100%', padding: '12px', background: 'rgba(0, 191, 255, 0.1)', color: '#00bfff', border: '1px dashed #00bfff', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
+                      onClick={() => { closeDropdown(); handleAddCategory(); }}
+                      style={{ width: '100%', padding: '14px', background: 'rgba(0, 191, 255, 0.1)', color: '#00bfff', border: '1px dashed #00bfff', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
                     >
                       + 新規カテゴリを追加
                     </button>
@@ -1217,7 +1296,8 @@ export default function MobileInputForm({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {isArModalOpen && (
