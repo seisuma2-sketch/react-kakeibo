@@ -121,15 +121,15 @@ export default function LocationScanner({ onLocationFixed }) {
 
   // UI描画
   return (
-    <div style={{ background: '#0a0c10', border: '1px solid #252838', borderRadius: '8px', padding: '15px', fontFamily: 'monospace', color: '#fff' }}>
+    <div style={{ background: '#0a0c10', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '6px', padding: '6px 8px', fontFamily: 'monospace', color: '#fff' }}>
       
       {/* --- STEP 1: 初期待機状態 --- */}
       {step === 'idle' && (
         <button 
           onClick={() => setStep('warning')} 
-          style={{ width: '100%', background: 'rgba(0, 191, 255, 0.1)', color: '#00bfff', border: '1px solid #00bfff', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+          style={{ width: '100%', background: 'rgba(0, 191, 255, 0.06)', color: '#00bfff', border: '1px solid rgba(0, 191, 255, 0.3)', padding: '6px 10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
         >
-          <span>📍</span> ターゲット位置情報を取得
+          <span>📍</span> ターゲット位置情報を取得 (任意)
         </button>
       )}
 

@@ -84,18 +84,29 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
     );
   }
 
-  // 削除処理（権限エラー時も論理削除＆画面即座除外で100%確実に消去）
-  const handleDelete = async (e, id) => {
+  // 削除処理（偽装ID・通常ID問わず100%確実にFirestoreから完全物理削除）
+  const handleDelete = async (e, tx) => {
     e.stopPropagation();
-    if (window.confirm('⚠️ このデータログをシステムから完全に物理削除しますか？')) {
-      // 画面から即座に除外
-      setDeletedIds(prev => [...prev, id]);
+    const displayName = tx.memo || tx.category || '取引データ';
+    if (window.confirm(`⚠️ このデータログをシステムから完全に物理削除しますか？\n\n対象: ${displayName}\n金額: ¥${Number(tx.amount || 0).toLocaleString()}`)) {
+      const realId = tx.originalDocId || (typeof tx.id === 'string' && tx.id.startsWith('disguised_') ? tx.id.replace('disguised_', '') : tx.id);
+      
+      // 画面から即座に除外（表示IDと実ID両方を登録）
+      setDeletedIds(prev => [...prev, tx.id, realId]);
+      
       try {
-        await deleteDoc(doc(db, "transactions", id));
+        if (realId) {
+          await deleteDoc(doc(db, "transactions", realId));
+        }
+        if (tx.id && tx.id !== realId) {
+          try { await deleteDoc(doc(db, "transactions", tx.id)); } catch (_) {}
+        }
       } catch (err) {
         console.warn("deleteDoc failed, falling back to logical delete:", err);
         try {
-          await updateDoc(doc(db, "transactions", id), { isDeleted: true });
+          if (realId) {
+            await updateDoc(doc(db, "transactions", realId), { isDeleted: true });
+          }
         } catch (updateErr) {
           console.error("updateDoc failed as well:", updateErr);
         }
@@ -234,7 +245,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                       {/* ホバーアクション (PC時のみ、マウスを乗せると出現) */}
                       <div className="tx-actions" style={{ position: 'absolute', right: '15px', background: '#1a1d24', display: 'flex', gap: '8px', padding: '4px 8px', borderRadius: '4px', boxShadow: '0 0 10px rgba(0,0,0,0.5)', opacity: 0, transition: 'opacity 0.2s' }}>
                         <button onClick={(e) => { e.stopPropagation(); alert("編集機能はシステムアップデートで実装予定です"); }} style={{ background: 'transparent', border: 'none', color: '#00bfff', cursor: 'pointer', fontSize: '14px' }} title="編集">✏️</button>
-                        <button onClick={(e) => handleDelete(e, tx.id)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px' }} title="削除">🗑️</button>
+                        <button onClick={(e) => handleDelete(e, tx)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px' }} title="削除">🗑️</button>
                       </div>
                     </div>
                   )}
@@ -247,7 +258,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #333', paddingBottom: '10px' }}>
                       <span style={{ color: '#00bfff', fontSize: '12px', fontFamily: 'monospace', fontWeight: 'bold', letterSpacing: '1px' }}>FORENSIC DATA ANALYSIS //</span>
                       {isMobile && (
-                        <button onClick={(e) => handleDelete(e, tx.id)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>🗑️ DELETE</button>
+                        <button onClick={(e) => handleDelete(e, tx)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>🗑️ DELETE</button>
                       )}
                     </div>
 

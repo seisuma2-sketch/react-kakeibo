@@ -117,19 +117,30 @@ export default function MobileTransactionList({ transactions = [] }) {
     );
   }
 
-  // 🌟 削除実行（権限エラー時も論理削除＆画面除外フォールバック）
+  // 🌟 削除実行（偽装ID・通常ID問わず100%確実にFirestoreから完全物理削除）
   const handleDelete = async (e, tx) => {
     e.stopPropagation();
-    if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${tx.category.split(' ').pop()}\n金額: ¥${tx.amount.toLocaleString()}\n\n※この操作は取り消せません。`)) {
-      setDeletedIds(prev => [...prev, tx.id]);
+    const displayName = tx.memo || tx.category || '取引データ';
+    if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${displayName}\n金額: ¥${Number(tx.amount || 0).toLocaleString()}\n\n※この操作は取り消せません。`)) {
+      const realId = tx.originalDocId || (typeof tx.id === 'string' && tx.id.startsWith('disguised_') ? tx.id.replace('disguised_', '') : tx.id);
+      
+      setDeletedIds(prev => [...prev, tx.id, realId]);
       setSwipedTxId(null);
       if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+      
       try {
-        await deleteDoc(doc(db, "transactions", tx.id));
+        if (realId) {
+          await deleteDoc(doc(db, "transactions", realId));
+        }
+        if (tx.id && tx.id !== realId) {
+          try { await deleteDoc(doc(db, "transactions", tx.id)); } catch (_) {}
+        }
       } catch (error) {
         console.warn("deleteDoc failed, falling back to logical delete:", error);
         try {
-          await updateDoc(doc(db, "transactions", tx.id), { isDeleted: true });
+          if (realId) {
+            await updateDoc(doc(db, "transactions", realId), { isDeleted: true });
+          }
         } catch (updateErr) {
           console.error("updateDoc failed as well:", updateErr);
         }

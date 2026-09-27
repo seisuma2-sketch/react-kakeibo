@@ -115,6 +115,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
           disguisedTransactions.push({
             ...outflow.origTx,
             id: `disguised_${outflow.origTx.id || Math.random()}`,
+            originalDocId: outflow.origTx?.id,
             type: 'transfer',
             paymentMethod: matchedInflow.rawSource || matchedInflow.source,
             category: outflow.rawDestination || outflow.destination,
@@ -130,6 +131,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
           disguisedTransactions.push({
             ...outflow.origTx,
             id: `disguised_${outflow.origTx.id || Math.random()}`,
+            originalDocId: outflow.origTx?.id,
             type: 'transfer',
             paymentMethod: matchedInflow.rawSource || matchedInflow.source,
             category: outflow.rawDestination || outflow.destination,
@@ -142,6 +144,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
           disguisedTransactions.push({
             ...outflow.origTx,
             id: `disguised_${outflow.origTx.id || Math.random()}`,
+            originalDocId: outflow.origTx?.id,
             type: 'expense',
             paymentMethod: matchedInflow.rawSource || matchedInflow.source,
             category: outflow.category,
@@ -158,6 +161,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
         disguisedTransactions.push({
           ...outflow.origTx,
           id: `disguised_${outflow.origTx.id || Math.random()}`,
+          originalDocId: outflow.origTx?.id,
           type: 'transfer',
           paymentMethod: '資金振替',
           category: outflow.rawDestination || outflow.destination,
@@ -175,6 +179,7 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
       disguisedTransactions.push({
         ...inflow.origTx,
         id: `disguised_${inflow.origTx.id || Math.random()}`,
+        originalDocId: inflow.origTx?.id,
         type: 'expense',
         paymentMethod: inflow.rawSource || inflow.source,
         category: '貯蓄・積立',

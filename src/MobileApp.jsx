@@ -703,10 +703,10 @@ export default function MobileApp() {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between', 
-        paddingTop: 'calc(env(safe-area-inset-top, 24px) + 12px)',
-        paddingBottom: '14px',
-        paddingLeft: '20px',
-        paddingRight: '20px',
+        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 6px)',
+        paddingBottom: '10px',
+        paddingLeft: '16px',
+        paddingRight: '16px',
         background: 'rgba(10, 12, 16, 0.94)', 
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
@@ -837,7 +837,7 @@ export default function MobileApp() {
           overscrollBehavior: 'contain',
           display: 'flex', 
           flexDirection: 'column',
-          paddingBottom: '48px'
+          paddingBottom: '80px'
         }}
       >
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
@@ -898,7 +898,7 @@ export default function MobileApp() {
           boxShadow: '0 -4px 25px rgba(0, 0, 0, 0.9)',
           display: 'flex', 
           justifyContent: 'space-around', 
-          padding: '2px 0 env(safe-area-inset-bottom, 2px) 0', 
+          padding: '2px 0 2px 0', 
           alignItems: 'center'
         }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
@@ -936,7 +936,7 @@ export default function MobileApp() {
           zIndex: 1000, 
           background: '#07090e', 
           borderTop: `1px solid ${activeThemeColor}44`, 
-          paddingBottom: 'env(safe-area-inset-bottom, 2px)' 
+          paddingBottom: '2px' 
         }}>
           <div 
             onPointerDown={handle3DPointerDown}
@@ -1201,8 +1201,8 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
         opacity: isActive ? 1 : 0.45, 
         transform: isActive ? 'translateY(-1px)' : 'none',
         transition: 'all 0.15s ease', 
-        width: '56px', 
-        padding: '1px 0 2px 0',
+        width: '54px', 
+        padding: '0 0 1px 0',
         position: 'relative',
         WebkitTouchCallout: 'none', 
         WebkitUserSelect: 'none', 
@@ -1213,8 +1213,8 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
           src={icon} 
           alt={label} 
           style={{ 
-            width: '24px', 
-            height: '24px', 
+            width: '22px', 
+            height: '22px', 
             objectFit: 'contain', 
             marginBottom: '1px', 
             filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(60%)', 
@@ -1228,7 +1228,7 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
         </div>
       )}
       <div style={{ 
-        fontSize: '9.5px', 
+        fontSize: '9px', 
         color: isActive ? themeColor : '#777', 
         fontWeight: 'bold', 
         textShadow: isActive ? `0 0 6px ${themeColor}66` : 'none', 
@@ -1242,8 +1242,8 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       {isActive && (
         <div style={{
           position: 'absolute',
-          bottom: '-1px',
-          width: '14px',
+          bottom: '0px',
+          width: '12px',
           height: '2px',
           borderRadius: '2px',
           background: themeColor,
