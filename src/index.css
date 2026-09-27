@@ -135,4 +135,25 @@ button:active:not(:disabled),
 .custom-dropdown-scroll::-webkit-scrollbar-thumb {
   background: rgba(0, 191, 255, 0.5) !important;
   border-radius: 4px;
+}
+
+/* 🌟 ボトムシート・セレクターのアニメーション */
+@keyframes sheetSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

@@ -3,7 +3,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
 import { saveSettingBoth } from '../utils/cloudSync';
-import { deduplicateAccounts } from '../utils/accountUtils';
+import { deduplicateAccounts, isSameAccount } from '../utils/accountUtils';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (!item) return '';
@@ -1041,8 +1041,161 @@ export default function MobileInputForm({
   return (
     <div style={{ background: '#0a0c10', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#fff', fontFamily: 'sans-serif', paddingBottom: '80px', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
+      {/* 🌟 モダン・ボトムシート・セレクター（口座・カテゴリ直感選択シート） */}
       {openDropdown && (
-        <div onClick={() => setOpenDropdown(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 90 }} />
+        <div 
+          onClick={() => setOpenDropdown(null)} 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            width: '100vw', 
+            height: '100vh', 
+            background: 'rgba(0, 0, 0, 0.7)', 
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 99999, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            justifyContent: 'flex-end',
+            animation: 'fadeInOverlay 0.2s ease-out'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              background: '#11141a', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.12)', 
+              borderRadius: '20px 20px 0 0', 
+              maxHeight: '75vh', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.8)',
+              animation: 'sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              paddingBottom: '25px'
+            }}
+          >
+            {/* つまみバー */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
+              <div style={{ width: '40px', height: '4px', background: 'rgba(255, 255, 255, 0.25)', borderRadius: '2px' }} />
+            </div>
+
+            {/* ヘッダー */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px 14px', borderBottom: '1px solid #1f232e' }}>
+              <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff' }}>
+                {openDropdown === 'payment' && '支払い・入金先口座を選択'}
+                {openDropdown === 'category' && 'カテゴリを選択'}
+                {openDropdown === 'transferFrom' && '出金元口座を選択'}
+                {openDropdown === 'transferTo' && '入金先口座を選択'}
+              </div>
+              <button 
+                type="button"
+                onClick={() => setOpenDropdown(null)} 
+                style={{ background: 'rgba(255, 255, 255, 0.08)', border: 'none', color: '#aaa', borderRadius: '50%', width: '32px', height: '32px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* コンテンツエリア */}
+            <div 
+              className="custom-dropdown-scroll"
+              style={{ 
+                overflowY: 'auto', 
+                padding: '16px 20px 20px', 
+                WebkitOverflowScrolling: 'touch', 
+                overscrollBehavior: 'contain',
+                touchAction: 'pan-y'
+              }}
+              onTouchMove={(e) => e.stopPropagation()}
+            >
+              {/* 口座選択（2列のカードグリッド） */}
+              {(openDropdown === 'payment' || openDropdown === 'transferFrom' || openDropdown === 'transferTo') && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                  {accounts.map(acc => {
+                    const currentVal = openDropdown === 'payment' ? paymentMethod : (openDropdown === 'transferFrom' ? paymentMethod : category);
+                    const isSelected = isSameAccount(acc, currentVal);
+                    return (
+                      <div 
+                        key={acc} 
+                        onClick={() => {
+                          if (navigator.vibrate) navigator.vibrate(15);
+                          if (openDropdown === 'payment') {
+                            setPaymentMethod(acc);
+                            if (!acc.includes('EVERING')) setIsEveringNfcActive(false);
+                          } else if (openDropdown === 'transferFrom') {
+                            setPaymentMethod(acc);
+                          } else if (openDropdown === 'transferTo') {
+                            setCategory(acc);
+                          }
+                          setOpenDropdown(null);
+                        }}
+                        style={{
+                          background: isSelected ? 'rgba(0, 255, 102, 0.12)' : '#1a1d24',
+                          border: isSelected ? '2px solid #00ff66' : '1px solid #252838',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? '0 0 15px rgba(0, 255, 102, 0.2)' : 'none',
+                          transition: 'all 0.12s'
+                        }}
+                      >
+                        {renderIconOrText(acc, '28px')}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* カテゴリ選択（2列のカードグリッド） */}
+              {openDropdown === 'category' && (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                    {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => {
+                      const isSelected = category === cat;
+                      return (
+                        <div 
+                          key={cat} 
+                          onClick={() => {
+                            if (navigator.vibrate) navigator.vibrate(15);
+                            setCategory(cat);
+                            setOpenDropdown(null);
+                          }}
+                          style={{
+                            background: isSelected ? 'rgba(0, 191, 255, 0.15)' : '#1a1d24',
+                            border: isSelected ? '2px solid #00bfff' : '1px solid #252838',
+                            borderRadius: '10px',
+                            padding: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            boxShadow: isSelected ? '0 0 15px rgba(0, 191, 255, 0.2)' : 'none',
+                            transition: 'all 0.12s'
+                          }}
+                        >
+                          {renderIconOrText(cat, '26px')}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: '14px' }}>
+                    <button 
+                      type="button"
+                      onClick={() => { setOpenDropdown(null); handleAddCategory(); }}
+                      style={{ width: '100%', padding: '12px', background: 'rgba(0, 191, 255, 0.1)', color: '#00bfff', border: '1px dashed #00bfff', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      + 新規カテゴリを追加
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {isArModalOpen && (
@@ -1699,51 +1852,17 @@ export default function MobileInputForm({
             <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
               <div style={{ marginBottom: '15px' }}>
                 <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
-                <div style={{ position: 'relative', zIndex: openDropdown === 'transferFrom' ? 100 : 1 }}>
-                  <div onClick={() => setOpenDropdown(openDropdown === 'transferFrom' ? null : 'transferFrom')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferFrom' ? '#b666ff' : '#252838' }}>
-                    <div>{renderIconOrText(paymentMethod, '24px')}</div>
-                    <div style={{ color: openDropdown === 'transferFrom' ? '#b666ff' : '#666', fontSize: '12px' }}>{openDropdown === 'transferFrom' ? '▲' : '▼'}</div>
-                  </div>
-                  {openDropdown === 'transferFrom' && (
-                    <div 
-                      className="custom-dropdown-scroll"
-                      style={customDropdownMenuStyle}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      onTouchMove={(e) => e.stopPropagation()}
-                      onWheel={(e) => e.stopPropagation()}
-                    >
-                      {accounts.map(acc => (
-                        <div key={`from-${acc}`} onClick={() => { setPaymentMethod(acc); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                          {renderIconOrText(acc, '20px')}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div onClick={() => setOpenDropdown('transferFrom')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferFrom' ? '#b666ff' : '#252838' }}>
+                  <div>{renderIconOrText(paymentMethod, '24px')}</div>
+                  <div style={{ color: openDropdown === 'transferFrom' ? '#b666ff' : '#666', fontSize: '12px' }}>▼</div>
                 </div>
               </div>
               <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '20px', marginBottom: '15px' }}>⬇️</div>
               <div>
                 <div style={{...labelStyle, color: '#00ff66'}}>📥 入金先 (増える口座)</div>
-                <div style={{ position: 'relative', zIndex: openDropdown === 'transferTo' ? 100 : 1 }}>
-                  <div onClick={() => setOpenDropdown(openDropdown === 'transferTo' ? null : 'transferTo')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferTo' ? '#b666ff' : '#252838' }}>
-                    <div>{renderIconOrText(category, '24px')}</div>
-                    <div style={{ color: openDropdown === 'transferTo' ? '#b666ff' : '#666', fontSize: '12px' }}>{openDropdown === 'transferTo' ? '▲' : '▼'}</div>
-                  </div>
-                  {openDropdown === 'transferTo' && (
-                    <div 
-                      className="custom-dropdown-scroll"
-                      style={customDropdownMenuStyle}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      onTouchMove={(e) => e.stopPropagation()}
-                      onWheel={(e) => e.stopPropagation()}
-                    >
-                      {accounts.map(acc => (
-                        <div key={`to-${acc}`} onClick={() => { setCategory(acc); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                          {renderIconOrText(acc, '20px')}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div onClick={() => setOpenDropdown('transferTo')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferTo' ? '#b666ff' : '#252838' }}>
+                  <div>{renderIconOrText(category, '24px')}</div>
+                  <div style={{ color: openDropdown === 'transferTo' ? '#b666ff' : '#666', fontSize: '12px' }}>▼</div>
                 </div>
               </div>
             </div>
@@ -1752,26 +1871,9 @@ export default function MobileInputForm({
               <div>
                 <div style={labelStyle}>カテゴリ</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ position: 'relative', flex: 1, zIndex: openDropdown === 'category' ? 100 : 1 }}>
-                    <div onClick={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'category' ? '#00bfff' : '#252838' }}>
-                      <div>{renderIconOrText(category, '24px')}</div>
-                      <div style={{ color: openDropdown === 'category' ? '#00bfff' : '#666', fontSize: '12px' }}>{openDropdown === 'category' ? '▲' : '▼'}</div>
-                    </div>
-                    {openDropdown === 'category' && (
-                      <div 
-                        className="custom-dropdown-scroll"
-                        style={{ ...customDropdownMenuStyle, borderColor: '#00bfff' }}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onTouchMove={(e) => e.stopPropagation()}
-                        onWheel={(e) => e.stopPropagation()}
-                      >
-                        {(type === 'expense' ? expenseCategories : incomeCategories).map(cat => (
-                          <div key={cat} onClick={() => { setCategory(cat); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                            {renderIconOrText(cat, '20px')}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  <div onClick={() => setOpenDropdown('category')} style={{ ...inputStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'category' ? '#00bfff' : '#252838' }}>
+                    <div>{renderIconOrText(category, '24px')}</div>
+                    <div style={{ color: openDropdown === 'category' ? '#00bfff' : '#666', fontSize: '12px' }}>▼</div>
                   </div>
                   <button onClick={handleAddCategory} style={addBtnStyle}>+ 追加</button>
                 </div>
@@ -1779,26 +1881,9 @@ export default function MobileInputForm({
               <div>
                 <div style={labelStyle}>支払い・入金先口座</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ position: 'relative', flex: 1, zIndex: openDropdown === 'payment' ? 100 : 1 }}>
-                    <div onClick={() => setOpenDropdown(openDropdown === 'payment' ? null : 'payment')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'payment' ? '#ff9900' : '#252838' }}>
-                      <div>{renderIconOrText(paymentMethod, '24px')}</div>
-                      <div style={{ color: openDropdown === 'payment' ? '#ff9900' : '#666', fontSize: '12px' }}>{openDropdown === 'payment' ? '▲' : '▼'}</div>
-                    </div>
-                    {openDropdown === 'payment' && (
-                      <div 
-                        className="custom-dropdown-scroll"
-                        style={{ ...customDropdownMenuStyle, borderColor: '#ff9900' }}
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onTouchMove={(e) => e.stopPropagation()}
-                        onWheel={(e) => e.stopPropagation()}
-                      >
-                        {accounts.map(acc => (
-                          <div key={acc} onClick={() => { setPaymentMethod(acc); if (!acc.includes('EVERING')) setIsEveringNfcActive(false); setOpenDropdown(null); }} style={customDropdownItemStyle} onMouseOver={(e) => e.currentTarget.style.background = '#1a1d24'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
-                            {renderIconOrText(acc, '20px')}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  <div onClick={() => setOpenDropdown('payment')} style={{ ...inputStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'payment' ? '#ff9900' : '#252838' }}>
+                    <div>{renderIconOrText(paymentMethod, '24px')}</div>
+                    <div style={{ color: openDropdown === 'payment' ? '#ff9900' : '#666', fontSize: '12px' }}>▼</div>
                   </div>
                   <button onClick={handleOpenAccountPanel} style={addBtnStyle}>⚙️ 追加/編集</button>
                 </div>
