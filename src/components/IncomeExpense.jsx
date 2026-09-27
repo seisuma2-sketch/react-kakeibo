@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
 
 export default function IncomeExpense({ transactions, isStealthMode }) {
   // 🌟 絞り込み用のState（最初は 'all' ＝ 全て表示）
@@ -56,8 +57,8 @@ export default function IncomeExpense({ transactions, isStealthMode }) {
                 <tr key={tx.id} style={{ borderBottom: '1px solid #1a1d24', transition: 'background 0.2s' }} onMouseOver={(e) => e.currentTarget.style.background = '#161922'} onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ padding: '15px 10px', color: '#ccc', fontSize: '14px' }}>{dateStr}</td>
                   <td style={{ padding: '15px 10px', color: typeColor, fontWeight: 'bold', fontSize: '14px' }}>[{typeLabel}]</td>
-                  <td style={{ padding: '15px 10px', color: '#fff', fontSize: '14px' }}>{tx.category || 'その他'}</td>
-                  <td style={{ padding: '15px 10px', color: '#00bfff', fontSize: '14px' }}>{tx.paymentMethod}</td>
+                  <td style={{ padding: '15px 10px', color: '#fff', fontSize: '14px' }}>{getCleanItemName(tx.category) || 'その他'}</td>
+                  <td style={{ padding: '15px 10px', color: '#00bfff', fontSize: '14px' }}>{getCleanAccountName(tx.paymentMethod) || '不明'}</td>
                   <td style={{ padding: '15px 10px', color: '#888', fontSize: '14px' }}>{tx.memo || '-'}</td>
                   <td style={{ padding: '15px 10px', color: typeColor, fontWeight: 'bold', textAlign: 'right', fontFamily: 'monospace', fontSize: '16px' }}>
                     {isStealthMode ? '¥***' : `${amountPrefix}¥${tx.amount ? tx.amount.toLocaleString() : 0}`}

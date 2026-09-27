@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, GeoJSON, useMap, CircleMarker, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { getCleanItemName } from '../utils/accountUtils';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl: null, iconUrl: null, shadowUrl: null });
@@ -106,7 +107,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
   // 🌟 フィルター適用
   const filteredTransactions = useMemo(() => {
     return preProcessedTransactions.filter(tx => {
-      if (filterCategory !== 'ALL' && tx.category !== filterCategory) return false;
+      if (filterCategory !== 'ALL' && getCleanItemName(tx.category) !== getCleanItemName(filterCategory)) return false;
       if (filterPeriod === 'MONTH') {
         const date = new Date(tx.time);
         const now = new Date();
@@ -303,7 +304,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
               {selectedCity.stat.txList.map(tx => (
                 <div key={tx.id} style={{ background: 'rgba(255,255,255,0.05)', borderLeft: `3px solid ${tx.type==='expense' ? '#ff3366' : '#00bfff'}`, padding: '8px 12px', fontSize: '11px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '4px' }}>
                   <div style={{ color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-                    {tx.date?.toDate ? tx.date.toDate().toLocaleDateString('ja-JP') : ''} // {tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ')+1) : tx.category}
+                    {tx.date?.toDate ? tx.date.toDate().toLocaleDateString('ja-JP') : ''} // {getCleanItemName(tx.category) || 'その他'}
                   </div>
                   <div style={{ color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>¥{Number(tx.amount).toLocaleString()}</div>
                 </div>

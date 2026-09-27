@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
+import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
 
 export default function BSPLStatement({ transactions, isStealthMode }) {
   const chartRef = useRef(null);
@@ -14,8 +15,8 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
 
   transactions.forEach(tx => {
     const amount = Number(tx.amount) || 0;
-    const method = tx.paymentMethod || '不明';
-    const category = tx.category || '不明';
+    const method = getCleanAccountName(tx.paymentMethod) || '不明';
+    const category = getCleanAccountName(tx.category) || '不明';
 
     if (!balances[method]) balances[method] = 0;
 
@@ -44,7 +45,7 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
 
   transactions.forEach(tx => {
     const amount = Number(tx.amount) || 0;
-    const cat = tx.category || '不明';
+    const cat = getCleanItemName(tx.category) || 'その他';
 
     if (tx.type === 'income') {
       totalIncome += amount;
@@ -74,9 +75,11 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
       const amount = Number(tx.amount) || 0;
       if (amount <= 0) return;
 
-      const inId = `IN_${tx.category}`;
-      const accId = `ACC_${tx.paymentMethod}`;
-      const outId = `OUT_${tx.category}`;
+      const cleanCat = getCleanItemName(tx.category) || 'その他';
+      const cleanMethod = getCleanAccountName(tx.paymentMethod) || '不明';
+      const inId = `IN_${cleanCat}`;
+      const accId = `ACC_${cleanMethod}`;
+      const outId = `OUT_${cleanCat}`;
 
       if (tx.type === 'income') {
         incomes.add(inId); accounts.add(accId);
@@ -129,11 +132,13 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
       const amount = Number(tx.amount) || 0;
       if (amount <= 0) return;
 
+      const cleanCat = getCleanItemName(tx.category) || 'その他';
+      const cleanMethod = getCleanAccountName(tx.paymentMethod) || '不明';
       let source, target, lineColor;
       if (tx.type === 'income') {
-        source = `IN_${tx.category}`; target = `ACC_${tx.paymentMethod}`; lineColor = '#00bfff';
+        source = `IN_${cleanCat}`; target = `ACC_${cleanMethod}`; lineColor = '#00bfff';
       } else if (tx.type === 'expense') {
-        source = `ACC_${tx.paymentMethod}`; target = `OUT_${tx.category}`; lineColor = '#ff3366';
+        source = `ACC_${cleanMethod}`; target = `OUT_${cleanCat}`; lineColor = '#ff3366';
       }
 
       if (source && target && nodeCoords[source] && nodeCoords[target]) {
@@ -141,7 +146,7 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
         linesData.push({
           coords: [ nodeCoords[source], nodeCoords[target] ],
           lineStyle: { color: lineColor, width: lineWidth, opacity: 0.15 },
-          data: { sourceName: tx.category, targetName: tx.paymentMethod, amount: amount, type: tx.type }
+          data: { sourceName: cleanCat, targetName: cleanMethod, amount: amount, type: tx.type }
         });
       }
     });

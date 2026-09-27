@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
-import { isGhostAccount, getCleanAccountName } from '../utils/accountUtils';
+import { isGhostAccount, getCleanAccountName, getCleanItemName } from '../utils/accountUtils';
 
 export default function DesktopCockpitOS({ transactions = [], ghostAccounts = [], onSwitchMode }) {
   const [panels, setPanels] = useState(() => {
@@ -67,11 +67,12 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
       const amt = Number(tx.amount) || 0;
       const rawMethod = tx.paymentMethod || '不明';
       const cleanMethod = getCleanAccountName(rawMethod);
-      const cat = tx.category || '不明';
+      const rawCategory = tx.category || '不明';
+      const cleanCat = getCleanItemName(rawCategory) || 'その他';
 
       // 🌟 隠し口座が関わる取引は総収入・総支出・残高・グラフから完全に100%遮断
       const isFromGhost = isGhostAccount(rawMethod, ghostAccounts);
-      const isToGhost = isGhostAccount(cat, ghostAccounts);
+      const isToGhost = isGhostAccount(rawCategory, ghostAccounts);
       if (isFromGhost || isToGhost || tx.isGhostBridge) {
         return;
       }
@@ -89,7 +90,7 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
         methodBal[cleanMethod] -= amt; 
         if (isCurrentCycle) { 
           totalOut += amt; // 期間内のみ支出加算
-          catOut[cat] = (catOut[cat] || 0) + amt; // レーダーチャートも期間内に限定
+          catOut[cleanCat] = (catOut[cleanCat] || 0) + amt; // レーダーチャートも期間内に限定
         } 
       }
       let currentTot = 0; Object.values(methodBal).forEach(v => currentTot += v);
@@ -251,7 +252,7 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
                     const isEx = tx.type === 'expense';
                     return (
                       <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255, 255, 255, 0.02)', borderLeft: `3px solid ${isEx ? '#ff3366' : '#00bfff'}`, borderRadius: '4px', flexShrink: 0 }}>
-                        <span style={{ fontSize: '12px', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{tx.category}</span>
+                        <span style={{ fontSize: '12px', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{getCleanItemName(tx.category) || 'その他'}</span>
                         <span style={{ fontSize: '12px', fontFamily: 'monospace', color: isEx ? '#ff3366' : '#00bfff', fontWeight: 'bold' }}>{isEx ? '-' : '+'}¥{Number(tx.amount).toLocaleString()}</span>
                       </div>
                     );

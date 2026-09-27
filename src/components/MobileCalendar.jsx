@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
 
 export default function MobileCalendar({ transactions, themeColor }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -119,7 +120,7 @@ export default function MobileCalendar({ transactions, themeColor }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {selectedDayTxs.map(tx => (
                 <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', background: '#11141a', padding: '8px 12px', borderRadius: '6px', borderLeft: `3px solid ${tx.type === 'expense' ? '#ff3366' : '#00bfff'}`, fontFamily: 'monospace' }}>
-                  <span>{tx.category} <span style={{ color: '#555', fontSize: '10px' }}>({tx.paymentMethod})</span></span>
+                  <span>{getCleanItemName(tx.category) || 'その他'} <span style={{ color: '#555', fontSize: '10px' }}>({getCleanAccountName(tx.paymentMethod) || '現金'})</span></span>
                   <span style={{ fontWeight: 'bold', color: tx.type === 'expense' ? '#ff3366' : '#00bfff' }}>
                     {tx.type === 'expense' ? '-' : '+'}¥{tx.amount.toLocaleString()}
                   </span>

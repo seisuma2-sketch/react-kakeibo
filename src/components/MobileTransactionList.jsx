@@ -1,15 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { doc, deleteDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
 
 // 🌟 アイコンとテキストを綺麗に表示するヘルパー
 function cleanText(str) {
-  if (!str || typeof str !== 'string') return '';
-  if (str.startsWith('/')) {
-    const spaceIdx = str.indexOf(' ');
-    if (spaceIdx !== -1) return str.slice(spaceIdx + 1);
-  }
-  return str;
+  return getCleanItemName(str);
 }
 
 function renderIconOrText(item, imgSize = '16px') {
@@ -161,8 +157,8 @@ export default function MobileTransactionList({ transactions = [] }) {
       const txRef = doc(db, "transactions", editingTx.id);
       await updateDoc(txRef, {
         amount: Number(editAmount),
-        category: editCategory,
-        paymentMethod: editPaymentMethod,
+        category: getCleanItemName(editCategory) || 'その他',
+        paymentMethod: getCleanAccountName(editPaymentMethod) || '現金',
         memo: editMemo,
         date: Timestamp.fromDate(new Date(editDate))
       });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { isGhostAccount } from '../utils/accountUtils';
+import { isGhostAccount, getCleanItemName } from '../utils/accountUtils';
 
 export default function DailyBriefingOverlay({ transactions = [], ghostAccounts = [], onComplete, dbMode = 'main', onOpenReset }) {
   const [displayedText, setDisplayedText] = useState([]);
@@ -36,7 +36,7 @@ export default function DailyBriefingOverlay({ transactions = [], ghostAccounts 
       // 昨日の支出
       if (txDate >= yesterdayStart && txDate <= yesterdayEnd && tx.type === 'expense') {
         yesterdayTotal += amt;
-        const cat = tx.category || 'その他';
+        const cat = getCleanItemName(tx.category) || 'その他';
         yesterdayCats[cat] = (yesterdayCats[cat] || 0) + amt;
       }
 

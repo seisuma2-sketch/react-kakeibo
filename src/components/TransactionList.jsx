@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getCleanItemName } from '../utils/accountUtils';
 
 // アイコンとテキストを綺麗に表示するヘルパー
 function cleanText(str) {
-  if (!str || typeof str !== 'string') return '';
-  if (str.startsWith('/')) {
-    const spaceIdx = str.indexOf(' ');
-    if (spaceIdx !== -1) return str.slice(spaceIdx + 1);
-  }
-  return str;
+  return getCleanItemName(str);
 }
 
 function renderIconOrText(item, imgSize = '16px') {

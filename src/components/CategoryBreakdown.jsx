@@ -1,16 +1,18 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
+import { getCleanItemName } from '../utils/accountUtils';
 
 export default function CategoryBreakdown({ transactions, isStealthMode }) {
   const chartRef = useRef(null);
 
-  // 1️⃣ カテゴリごとの「支出」の合計と、全体の総支出を計算する
+  // 1️⃣ カテゴリごとの「支出」の合計と、全体の総支出を計算する（アイコンパスや表記揺れを完全正規化）
   const categoryData = {};
   let totalExpense = 0;
 
   transactions.forEach(tx => {
     if (tx.type === 'expense') {
-      const cat = tx.category || 'その他';
+      const rawCat = tx.category || 'その他';
+      const cat = getCleanItemName(rawCat) || 'その他';
       const amount = Number(tx.amount) || 0;
       categoryData[cat] = (categoryData[cat] || 0) + amount;
       totalExpense += amount;

@@ -1,20 +1,27 @@
 // 口座・カード名の正規化・重複排除ユーティリティ
 
 /**
- * 口座・カード名から先頭のアイコンパスを除去した純粋な名前を返す
+ * カテゴリ名・口座名から先頭の画像パス（/xxx.png や /xxx.jpg 等）や絵文字を除去した純粋な日本語名称を返す
+ * 例: "/icon-hobby.png 趣味" -> "趣味"
+ * 例: "/icon-other.png その他" -> "その他"
  * 例: "/S__32391170.jpg リクルートカード" -> "リクルートカード"
- * 例: "リクルートカード" -> "リクルートカード"
+ * 例: "趣味" -> "趣味"
+ */
+export function getCleanItemName(str) {
+  if (!str || typeof str !== 'string') return '';
+  let cleaned = str.trim();
+  // 1. 先頭が / で始まる画像パスを除去（半角スペース、全角スペース、タブ対応）
+  cleaned = cleaned.replace(/^\/[^\s　]+[\s　]*/, '');
+  // 2. 先頭の絵文字・特殊記号を除去
+  cleaned = cleaned.replace(/^[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]\s?/g, '');
+  return cleaned.trim();
+}
+
+/**
+ * 口座・カード名から先頭のアイコンパスを除去した純粋な名前を返す（getCleanItemNameと互換）
  */
 export function getCleanAccountName(str) {
-  if (!str || typeof str !== 'string') return '';
-  const trimmed = str.trim();
-  if (trimmed.startsWith('/')) {
-    const spaceIdx = trimmed.indexOf(' ');
-    if (spaceIdx !== -1) {
-      return trimmed.slice(spaceIdx + 1).trim();
-    }
-  }
-  return trimmed;
+  return getCleanItemName(str);
 }
 
 /**

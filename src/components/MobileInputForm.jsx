@@ -3,7 +3,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
 import { saveSettingBoth } from '../utils/cloudSync';
-import { deduplicateAccounts, isSameAccount } from '../utils/accountUtils';
+import { deduplicateAccounts, isSameAccount, getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (!item) return '';
@@ -139,9 +139,9 @@ export default function MobileInputForm({
   const defaultAccountsSync = ['/icon-cash.png 共通財布', '/icon-other.png 家族用カード'];
 
   const defaultRecurring = [
-    { id: '1', name: '家賃', amount: 70000, category: '/icon-other.png その他', paymentMethod: '/icon-smbc.png 三井住友銀行' },
-    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: '/icon-other.png その他', paymentMethod: '/S__32391170.jpg リクルートカード' },
-    { id: '3', name: 'サブスク', amount: 1490, category: '/icon-hobby.png 趣味', paymentMethod: '/S__32391170.jpg リクルートカード' }
+    { id: '1', name: '家賃', amount: 70000, category: 'その他', paymentMethod: '三井住友銀行' },
+    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: 'その他', paymentMethod: 'リクルートカード' },
+    { id: '3', name: 'サブスク', amount: 1490, category: '趣味', paymentMethod: 'リクルートカード' }
   ];
 
   const [expenseCategories, setExpenseCategories] = useState([]);
@@ -219,7 +219,13 @@ export default function MobileInputForm({
     setSavedCards(savedCrd ? JSON.parse(savedCrd) : {});
 
     const savedRec = localStorage.getItem(recKey);
-    setRecurringList(savedRec ? JSON.parse(savedRec) : defaultRecurring);
+    const rawRec = savedRec ? JSON.parse(savedRec) : defaultRecurring;
+    const cleanRec = (Array.isArray(rawRec) ? rawRec : []).map(item => ({
+      ...item,
+      category: getCleanItemName(item.category) || 'その他',
+      paymentMethod: getCleanAccountName(item.paymentMethod) || '現金'
+    }));
+    setRecurringList(cleanRec);
 
     setExpenseCategories(newExpCats);
     setIncomeCategories(newIncCats);
@@ -593,8 +599,8 @@ export default function MobileInputForm({
               userId: auth.currentUser.uid,
               type: 'expense',
               amount: Number(item.amount) || 0,
-              category: item.category,
-              paymentMethod: item.paymentMethod,
+              category: getCleanItemName(item.category) || 'その他',
+              paymentMethod: getCleanAccountName(item.paymentMethod) || '現金',
               memo: `[固定費自動計上] ${item.name}`,
               date: Timestamp.now(),
               createdAt: Timestamp.now(),
@@ -625,8 +631,8 @@ export default function MobileInputForm({
       id: Date.now().toString(),
       name: newRecName.trim(),
       amount: Number(newRecAmount) || 0,
-      category: newRecCategory || expenseCategories[0] || 'その他',
-      paymentMethod: newRecPaymentMethod || accounts[0] || '現金',
+      category: getCleanItemName(newRecCategory || expenseCategories[0] || 'その他'),
+      paymentMethod: getCleanAccountName(newRecPaymentMethod || accounts[0] || '現金'),
       billingDay: Number(newRecBillingDay) || 27,
       autoPost: newRecAutoPost
     };
@@ -654,8 +660,8 @@ export default function MobileInputForm({
         userId: auth.currentUser.uid,
         type: 'expense',
         amount: Number(item.amount) || 0,
-        category: item.category,
-        paymentMethod: item.paymentMethod,
+        category: getCleanItemName(item.category) || 'その他',
+        paymentMethod: getCleanAccountName(item.paymentMethod) || '現金',
         memo: `[固定費] ${item.name}`,
         date: Timestamp.now(),
         createdAt: Timestamp.now(),
@@ -691,8 +697,8 @@ export default function MobileInputForm({
               userId: auth.currentUser.uid,
               type: 'expense',
               amount: Number(item.amount) || 0,
-              category: item.category,
-              paymentMethod: item.paymentMethod,
+              category: getCleanItemName(item.category) || 'その他',
+              paymentMethod: getCleanAccountName(item.paymentMethod) || '現金',
               memo: `[固定費一括] ${item.name}`,
               date: Timestamp.now(),
               createdAt: Timestamp.now(),
@@ -953,8 +959,8 @@ export default function MobileInputForm({
 
     setIsSubmitting(true);
     try {
-      const cleanCategory = getCleanName(category);
-      const cleanPaymentMethod = getCleanName(paymentMethod);
+      const cleanCategory = getCleanItemName(category) || 'その他';
+      const cleanPaymentMethod = getCleanAccountName(paymentMethod) || '現金';
 
       const txData = {
         userId: auth.currentUser.uid, 

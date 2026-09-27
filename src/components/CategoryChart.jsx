@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
+import { getCleanItemName } from '../utils/accountUtils';
 
 export default function CategoryChart({ transactions }) {
   // 💡 React公認の裏口（グラフを描画するキャンバスの場所を確保する魔法）
   const chartRef = useRef(null);
 
   useEffect(() => {
-    // 1️⃣ 渡された履歴データから、カテゴリごとの「支出」だけを計算する
+    // 1️⃣ 渡された履歴データから、カテゴリごとの「支出」だけを計算する（アイコンパスや表記揺れを完全正規化）
     const categories = {};
     transactions.forEach(tx => {
       if (tx.type === 'expense') {
-        const cat = tx.category || 'その他';
-        categories[cat] = (categories[cat] || 0) + (tx.amount || 0);
+        const rawCat = tx.category || 'その他';
+        const cat = getCleanItemName(rawCat) || 'その他';
+        categories[cat] = (categories[cat] || 0) + (Number(tx.amount) || 0);
       }
     });
 

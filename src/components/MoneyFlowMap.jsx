@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { db, auth } from '../firebase';
+import { getCleanItemName } from '../utils/accountUtils';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl: null, iconUrl: null, shadowUrl: null });
@@ -243,7 +244,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
         const exactLat = tx.lat.toFixed(5);
         const exactLng = tx.lng.toFixed(5);
         clusterKey = `exact_${exactLat}_${exactLng}`;
-        const cleanCat = tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ') + 1) : tx.category;
+        const cleanCat = getCleanItemName(tx.category) || 'その他';
         clusterName = tx.memo || cleanCat || tx.city || '購入地点';
       }
 
@@ -599,7 +600,7 @@ export default function MoneyFlowMap({ transactions = [] }) {
                 <div key={tx.id} style={{ background: '#ffffff', border: '2px solid #e2e8f0', borderLeft: `5px solid ${tx.type==='expense' ? '#ef4444' : '#3b82f6'}`, padding: '8px 10px', fontSize: '12px', borderRadius: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
                     <span style={{ color: '#334155', fontWeight: 'bold' }}>
-                      {tx.date?.toDate ? `${tx.date.toDate().getMonth()+1}/${tx.date.toDate().getDate()}` : ''} · {tx.category.startsWith('/') ? tx.category.slice(tx.category.indexOf(' ')+1) : tx.category}
+                      {tx.date?.toDate ? `${tx.date.toDate().getMonth()+1}/${tx.date.toDate().getDate()}` : ''} · {getCleanItemName(tx.category) || 'その他'}
                     </span>
                     <span style={{ color: '#ef4444', fontWeight: '900', fontSize: '14px' }}>¥{Number(tx.amount).toLocaleString()}</span>
                   </div>

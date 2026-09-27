@@ -3,7 +3,7 @@ import * as echarts from 'echarts';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { saveSettingBoth } from '../utils/cloudSync';
-import { getCleanAccountName, isSameAccount, normalizeCreditCardSettings, deduplicateAccounts, isGhostAccount } from '../utils/accountUtils';
+import { getCleanAccountName, getCleanItemName, isSameAccount, normalizeCreditCardSettings, deduplicateAccounts, isGhostAccount } from '../utils/accountUtils';
 
 const getCycleBounds = (resetDay, currentDate = new Date()) => {
   const rd = parseInt(resetDay, 10);
@@ -581,7 +581,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
   const getOneMonthHistory = (accName) => {
     const oneMonthAgo = new Date(); oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
     return transactions.filter(tx => {
-      const isMatch = tx.paymentMethod === accName || tx.category === accName;
+      const isMatch = isSameAccount(tx.paymentMethod, accName) || (tx.type === 'transfer' && isSameAccount(tx.category, accName));
       const txDate = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
       return isMatch && txDate >= oneMonthAgo;
     }).sort((a, b) => b.date - a.date);
@@ -594,10 +594,11 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       let totalOutflow = 0; let totalInflow = 0; let maxHit = { amount: 0, category: 'N/A' }; const catCount = {};
       history.forEach(tx => {
         const amt = Number(tx.amount) || 0;
-        const isExpense = tx.type === 'expense' || (tx.type === 'transfer' && tx.paymentMethod === selectedAccHistory);
+        const isExpense = tx.type === 'expense' || (tx.type === 'transfer' && isSameAccount(tx.paymentMethod, selectedAccHistory));
         if (isExpense) {
           totalOutflow += amt;
-          const catName = tx.type === 'transfer' ? `振替: ${tx.category}` : tx.category;
+          const cleanCat = getCleanItemName(tx.category) || 'その他';
+          const catName = tx.type === 'transfer' ? `振替: ${cleanCat}` : cleanCat;
           catCount[catName] = (catCount[catName] || 0) + 1;
           if (amt > maxHit.amount) { maxHit = { amount: amt, category: catName }; }
         } else { totalInflow += amt; }
@@ -1427,7 +1428,7 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
                         const isExpense = tx.type === 'expense' || (tx.type === 'transfer' && tx.paymentMethod === selectedAccHistory);
                         return (
                           <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', background: '#11141a', padding: '12px', borderRadius: '6px', borderLeft: `3px solid ${isExpense ? '#ff3366' : '#00bfff'}` }}>
-                            <div><div style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>{txDate.toLocaleDateString()}</div><div style={{ fontSize: '14px', color: '#ccc' }}>{tx.type === 'transfer' ? (isExpense ? `▶ ${tx.category}へ` : `◀ ${tx.paymentMethod}から`) : tx.category}</div></div>
+                            <div><div style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>{txDate.toLocaleDateString()}</div><div style={{ fontSize: '14px', color: '#ccc' }}>{tx.type === 'transfer' ? (isExpense ? `▶ ${getCleanItemName(tx.category)}へ` : `◀ ${getCleanAccountName(tx.paymentMethod)}から`) : (getCleanItemName(tx.category) || 'その他')}</div></div>
                             <div style={{ fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace', color: isExpense ? '#ff3366' : '#00bfff' }}>{isExpense ? '-' : '+'}¥{Number(tx.amount).toLocaleString()}</div>
                           </div>
                         );
