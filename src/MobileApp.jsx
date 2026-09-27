@@ -837,7 +837,7 @@ export default function MobileApp() {
           overscrollBehavior: 'contain',
           display: 'flex', 
           flexDirection: 'column',
-          paddingBottom: '60px'
+          paddingBottom: '48px'
         }}
       >
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
@@ -898,7 +898,7 @@ export default function MobileApp() {
           boxShadow: '0 -4px 25px rgba(0, 0, 0, 0.9)',
           display: 'flex', 
           justifyContent: 'space-around', 
-          padding: '5px 0 max(env(safe-area-inset-bottom, 0px), 6px) 0', 
+          padding: '2px 0 env(safe-area-inset-bottom, 2px) 0', 
           alignItems: 'center'
         }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
@@ -936,7 +936,7 @@ export default function MobileApp() {
           zIndex: 1000, 
           background: '#07090e', 
           borderTop: `1px solid ${activeThemeColor}44`, 
-          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' 
+          paddingBottom: 'env(safe-area-inset-bottom, 2px)' 
         }}>
           <div 
             onPointerDown={handle3DPointerDown}
@@ -1202,7 +1202,7 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
         transform: isActive ? 'translateY(-1px)' : 'none',
         transition: 'all 0.15s ease', 
         width: '56px', 
-        padding: '2px 0',
+        padding: '1px 0 2px 0',
         position: 'relative',
         WebkitTouchCallout: 'none', 
         WebkitUserSelect: 'none', 
@@ -1213,22 +1213,22 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
           src={icon} 
           alt={label} 
           style={{ 
-            width: '30px', 
-            height: '30px', 
+            width: '24px', 
+            height: '24px', 
             objectFit: 'contain', 
-            marginBottom: '2px', 
+            marginBottom: '1px', 
             filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'grayscale(100%) opacity(60%)', 
             pointerEvents: 'none',
             transition: 'filter 0.15s ease'
           }} 
         />
       ) : (
-        <div style={{ fontSize: '20px', marginBottom: '2px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'none' }}>
+        <div style={{ fontSize: '18px', marginBottom: '1px', pointerEvents: 'none', filter: isActive ? `drop-shadow(0 0 8px ${themeColor})` : 'none' }}>
           {icon}
         </div>
       )}
       <div style={{ 
-        fontSize: '10px', 
+        fontSize: '9.5px', 
         color: isActive ? themeColor : '#777', 
         fontWeight: 'bold', 
         textShadow: isActive ? `0 0 6px ${themeColor}66` : 'none', 
@@ -1242,7 +1242,7 @@ function BottomTab({ icon, label, isActive, onClick, themeColor, onPointerDown, 
       {isActive && (
         <div style={{
           position: 'absolute',
-          bottom: '-3px',
+          bottom: '-1px',
           width: '14px',
           height: '2px',
           borderRadius: '2px',

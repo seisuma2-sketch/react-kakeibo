@@ -1841,10 +1841,10 @@ export default function MobileInputForm({
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '16px 16px 40px 16px' }}>
-        <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', borderRadius: '16px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '6px 12px 14px 12px' }}>
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', borderRadius: '14px', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           
-          <div style={{ display: 'flex', background: 'rgba(5, 6, 8, 0.7)', borderRadius: '10px', padding: '4px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+          <div style={{ display: 'flex', background: 'rgba(5, 6, 8, 0.7)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
             <button onClick={() => handleTypeChange('expense')} style={tabStyle(type === 'expense', '#ff3366', '#fff')}>支出</button>
             <button onClick={() => handleTypeChange('income')} style={tabStyle(type === 'income', '#00bfff', '#aaa')}>収入</button>
             <button onClick={() => handleTypeChange('transfer')} style={tabStyle(type === 'transfer', '#b666ff', '#aaa')}>振替</button>
@@ -1861,18 +1861,20 @@ export default function MobileInputForm({
                 width: '100%', 
                 textAlign: 'center', 
                 letterSpacing: '0.5px',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
+                padding: '7px 10px',
+                fontSize: '14px'
               }} 
             />
           </div>
 
           {/* 🌟 NFCでEVERING読み込み時のみ表示：付近のスポット（絵文字・アイコンなし） */}
           {isEveringNfcActive && nearbySpots.length > 0 && (
-            <div style={{ background: '#0a0c10', border: '1px solid rgba(0, 255, 102, 0.3)', borderRadius: '8px', padding: '10px 12px' }}>
-              <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', marginBottom: '8px' }}>
+            <div style={{ background: '#0a0c10', border: '1px solid rgba(0, 255, 102, 0.3)', borderRadius: '8px', padding: '8px 10px' }}>
+              <div style={{ fontSize: '11px', color: '#00ff66', fontWeight: 'bold', marginBottom: '6px' }}>
                 EVERING 付近のスポット
               </div>
-              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
+              <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
                 {nearbySpots.map((spot, idx) => (
                   <button
                     key={`nearby-${idx}`}
@@ -1883,8 +1885,8 @@ export default function MobileInputForm({
                       border: '1px solid #00ff66',
                       borderRadius: '20px',
                       color: '#fff',
-                      padding: '6px 14px',
-                      fontSize: '12px',
+                      padding: '5px 12px',
+                      fontSize: '11px',
                       fontWeight: 'bold',
                       whiteSpace: 'nowrap',
                       cursor: 'pointer',
@@ -1905,7 +1907,7 @@ export default function MobileInputForm({
 
           {/* 🌟 過去履歴連動：金額0秒サジェストチップ */}
           {spotSuggestedAmounts.length > 0 && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
               <span style={{ fontSize: '11px', color: '#00bfff', fontWeight: 'bold' }}>よく使う金額:</span>
               {spotSuggestedAmounts.map((sAmt, sIdx) => (
                 <button
@@ -1921,13 +1923,13 @@ export default function MobileInputForm({
                     border: '1px solid #00bfff',
                     borderRadius: '16px',
                     color: '#fff',
-                    padding: '4px 12px',
-                    fontSize: '12px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
                     fontWeight: 'bold',
                     cursor: 'pointer'
                   }}
                 >
-                  <span style={{ color: '#00bfff', marginRight: '4px' }}>{sAmt.label}</span>
+                  <span style={{ color: '#00bfff', marginRight: '3px' }}>{sAmt.label}</span>
                   ¥{Number(sAmt.value).toLocaleString()}
                 </button>
               ))}
@@ -1936,16 +1938,16 @@ export default function MobileInputForm({
 
           <div>
             <div style={labelStyle}>金額 (数式入力可)</div>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleOpenArScanner} style={{ display: 'none' }} />
-              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00ff66', padding: '0 12px', boxShadow: '0 0 10px rgba(0,255,102,0.2)' }}>
-                <img src="/icon-camera.png" alt="scan" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
+              <button onClick={() => fileInputRef.current.click()} style={{ ...iconBtnStyle, borderColor: '#00ff66', padding: '0 10px', boxShadow: '0 0 10px rgba(0,255,102,0.2)' }}>
+                <img src="/icon-camera.png" alt="scan" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
               </button>
               
-              <div onClick={() => setIsKeypadOpen(true)} style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text' }}>
-                <div style={{ fontSize: '12px', color: '#888', height: '14px', fontFamily: 'monospace' }}>{calcStr || '0'}</div>
-                <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold', fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
-                  <span style={{ color: '#555', marginRight: '4px', fontSize: '20px' }}>¥</span>
+              <div onClick={() => setIsKeypadOpen(true)} style={{ ...inputStyle, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', background: '#0a0c10', cursor: 'text', padding: '6px 12px' }}>
+                <div style={{ fontSize: '11px', color: '#888', height: '13px', fontFamily: 'monospace' }}>{calcStr || '0'}</div>
+                <div style={{ color: '#fff', fontSize: '24px', fontWeight: 'bold', fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
+                  <span style={{ color: '#555', marginRight: '4px', fontSize: '18px' }}>¥</span>
                   {livePreview ? Number(livePreview).toLocaleString() : '0'}
                 </div>
               </div>
@@ -1953,19 +1955,19 @@ export default function MobileInputForm({
           </div>
 
           {type === 'transfer' ? (
-            <div style={{ padding: '15px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
-              <div style={{ marginBottom: '15px' }}>
+            <div style={{ padding: '10px', background: '#1a1d24', borderRadius: '8px', border: '1px dashed #b666ff' }}>
+              <div style={{ marginBottom: '8px' }}>
                 <div style={{...labelStyle, color: '#ff3366'}}>📤 出金元 (減る口座)</div>
                 <div onClick={() => setOpenDropdown('transferFrom')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferFrom' ? '#b666ff' : '#252838' }}>
-                  <div>{renderIconOrText(paymentMethod, '24px')}</div>
+                  <div>{renderIconOrText(paymentMethod, '22px')}</div>
                   <div style={{ color: openDropdown === 'transferFrom' ? '#b666ff' : '#666', fontSize: '12px' }}>▼</div>
                 </div>
               </div>
-              <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '20px', marginBottom: '15px' }}>⬇️</div>
+              <div style={{ textAlign: 'center', color: '#b666ff', fontSize: '16px', marginBottom: '8px' }}>⬇️</div>
               <div>
                 <div style={{...labelStyle, color: '#00ff66'}}>📥 入金先 (増える口座)</div>
                 <div onClick={() => setOpenDropdown('transferTo')} style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'transferTo' ? '#b666ff' : '#252838' }}>
-                  <div>{renderIconOrText(category, '24px')}</div>
+                  <div>{renderIconOrText(category, '22px')}</div>
                   <div style={{ color: openDropdown === 'transferTo' ? '#b666ff' : '#666', fontSize: '12px' }}>▼</div>
                 </div>
               </div>
@@ -1974,9 +1976,9 @@ export default function MobileInputForm({
             <>
               <div>
                 <div style={labelStyle}>カテゴリ</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <div onClick={() => setOpenDropdown('category')} style={{ ...inputStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'category' ? '#00bfff' : '#252838' }}>
-                    <div>{renderIconOrText(category, '24px')}</div>
+                    <div>{renderIconOrText(category, '22px')}</div>
                     <div style={{ color: openDropdown === 'category' ? '#00bfff' : '#666', fontSize: '12px' }}>▼</div>
                   </div>
                   <button onClick={handleAddCategory} style={addBtnStyle}>+ 追加</button>
@@ -1984,9 +1986,9 @@ export default function MobileInputForm({
               </div>
               <div>
                 <div style={labelStyle}>支払い・入金先口座</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <div onClick={() => setOpenDropdown('payment')} style={{ ...inputStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', borderColor: openDropdown === 'payment' ? '#ff9900' : '#252838' }}>
-                    <div>{renderIconOrText(paymentMethod, '24px')}</div>
+                    <div>{renderIconOrText(paymentMethod, '22px')}</div>
                     <div style={{ color: openDropdown === 'payment' ? '#ff9900' : '#666', fontSize: '12px' }}>▼</div>
                   </div>
                   <button onClick={handleOpenAccountPanel} style={addBtnStyle}>⚙️ 追加/編集</button>
@@ -1997,10 +1999,10 @@ export default function MobileInputForm({
 
           <div>
             <div style={labelStyle}>メモ (任意)</div>
-            <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={type === 'transfer' ? "口座間移動" : "コンビニコーヒー"} style={{...inputStyle, padding: '12px'}} />
+            <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={type === 'transfer' ? "口座間移動" : "コンビニコーヒー"} style={{...inputStyle, padding: '9px 12px'}} />
           </div>
 
-          <div style={{ marginTop: '5px' }}>
+          <div style={{ marginTop: '2px' }}>
             <LocationScanner onLocationFixed={(loc) => setScanLocation(loc)} />
           </div>
 
@@ -2010,12 +2012,12 @@ export default function MobileInputForm({
             style={{ 
               background: isSubmitting ? '#555' : '#00bfff', 
               color: '#000', 
-              padding: '15px', 
+              padding: '12px', 
               borderRadius: '8px', 
               border: 'none', 
-              fontSize: '18px', 
+              fontSize: '16px', 
               fontWeight: 'bold', 
-              marginTop: '10px', 
+              marginTop: '4px', 
               cursor: isSubmitting ? 'not-allowed' : 'pointer', 
               boxShadow: isSubmitting ? 'none' : '0 0 20px rgba(0, 191, 255, 0.4)', 
               transition: 'all 0.2s' 
@@ -2151,11 +2153,11 @@ export default function MobileInputForm({
   );
 }
 
-const tabStyle = (isActive, activeColor, textColor) => ({ flex: 1, padding: '10px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', background: isActive ? activeColor : 'transparent', color: isActive ? (activeColor === '#ff3366' ? '#fff' : '#000') : textColor });
-const labelStyle = { color: '#aaa', fontSize: '12px', marginBottom: '8px', fontWeight: 'bold' };
-const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '16px', outline: 'none' };
-const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 15px', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const addBtnStyle = { background: 'transparent', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 15px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
+const tabStyle = (isActive, activeColor, textColor) => ({ flex: 1, padding: '7px 8px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', background: isActive ? activeColor : 'transparent', color: isActive ? (activeColor === '#ff3366' ? '#fff' : '#000') : textColor, fontSize: '13px' });
+const labelStyle = { color: '#aaa', fontSize: '11px', marginBottom: '3px', fontWeight: 'bold' };
+const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: '#1a1d24', color: '#fff', border: '1px solid #252838', borderRadius: '6px', fontSize: '15px', outline: 'none' };
+const iconBtnStyle = { background: '#0a0c10', border: '1px solid', borderRadius: '6px', padding: '0 12px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const addBtnStyle = { background: 'transparent', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
 const keyBtnStyle = { borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', transition: 'all 0.1s active:scale-95' };
 const memBtnStyle = { background: '#11141a', border: '1px solid #333', color: '#aaa', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' };
 
