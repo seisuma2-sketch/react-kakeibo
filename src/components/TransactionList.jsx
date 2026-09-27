@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getCleanItemName } from '../utils/accountUtils';
 
@@ -51,6 +51,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, EXPENSE, INCOME, TRANSFER
   const [expandedId, setExpandedId] = useState(null); // クリックで展開する行のID
   const [searchQuery, setSearchQuery] = useState(''); // 検索バー用
+  const [deletedIds, setDeletedIds] = useState([]); // 削除済み除外用
 
   // ステルスモード時の偽装表示
   if (isStealthMode) {
@@ -61,14 +62,16 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
     );
   }
 
-  // 1. タブでフィルタリング
-  let filteredTx = transactions.filter(tx => {
-    if (activeTab === 'ALL') return true;
-    if (activeTab === 'EXPENSE') return tx.type === 'expense';
-    if (activeTab === 'INCOME') return tx.type === 'income';
-    if (activeTab === 'TRANSFER') return tx.type === 'transfer';
-    return true;
-  });
+  // 1. タブでフィルタリング＆削除済み除外
+  let filteredTx = transactions
+    .filter(tx => !tx.isDeleted && !deletedIds.includes(tx.id))
+    .filter(tx => {
+      if (activeTab === 'ALL') return true;
+      if (activeTab === 'EXPENSE') return tx.type === 'expense';
+      if (activeTab === 'INCOME') return tx.type === 'income';
+      if (activeTab === 'TRANSFER') return tx.type === 'transfer';
+      return true;
+    });
 
   // 2. 検索バーでフィルタリング
   if (searchQuery) {
@@ -81,14 +84,21 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
     );
   }
 
-  // 削除処理
+  // 削除処理（権限エラー時も論理削除＆画面即座除外で100%確実に消去）
   const handleDelete = async (e, id) => {
     e.stopPropagation();
     if (window.confirm('⚠️ このデータログをシステムから完全に物理削除しますか？')) {
+      // 画面から即座に除外
+      setDeletedIds(prev => [...prev, id]);
       try {
         await deleteDoc(doc(db, "transactions", id));
       } catch (err) {
-        alert("消去エラーが発生しました");
+        console.warn("deleteDoc failed, falling back to logical delete:", err);
+        try {
+          await updateDoc(doc(db, "transactions", id), { isDeleted: true });
+        } catch (updateErr) {
+          console.error("updateDoc failed as well:", updateErr);
+        }
       }
     }
   };

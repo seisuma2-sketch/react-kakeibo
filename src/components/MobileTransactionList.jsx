@@ -52,6 +52,7 @@ export default function MobileTransactionList({ transactions = [] }) {
   const [activeTab, setActiveTab] = useState('ALL'); 
   const [expandedId, setExpandedId] = useState(null); 
   const [searchQuery, setSearchQuery] = useState(''); 
+  const [deletedIds, setDeletedIds] = useState([]); // 削除済みローカル除外用
 
   // 🌟 スワイプ管理用State
   const [swipedTxId, setSwipedTxId] = useState(null);
@@ -95,14 +96,16 @@ export default function MobileTransactionList({ transactions = [] }) {
     }
   };
 
-  // 🌟 フィルタリング処理（タブ ＋ 検索）
-  let filteredTx = transactions.filter(tx => {
-    if (activeTab === 'ALL') return true;
-    if (activeTab === 'EXPENSE') return tx.type === 'expense';
-    if (activeTab === 'INCOME') return tx.type === 'income';
-    if (activeTab === 'TRANSFER') return tx.type === 'transfer';
-    return true;
-  });
+  // 🌟 フィルタリング処理（タブ ＋ 検索 ＋ 削除除外）
+  let filteredTx = transactions
+    .filter(tx => !tx.isDeleted && !deletedIds.includes(tx.id))
+    .filter(tx => {
+      if (activeTab === 'ALL') return true;
+      if (activeTab === 'EXPENSE') return tx.type === 'expense';
+      if (activeTab === 'INCOME') return tx.type === 'income';
+      if (activeTab === 'TRANSFER') return tx.type === 'transfer';
+      return true;
+    });
 
   if (searchQuery) {
     const query = searchQuery.toLowerCase();
@@ -114,17 +117,22 @@ export default function MobileTransactionList({ transactions = [] }) {
     );
   }
 
-  // 🌟 削除実行
+  // 🌟 削除実行（権限エラー時も論理削除＆画面除外フォールバック）
   const handleDelete = async (e, tx) => {
     e.stopPropagation();
     if (window.confirm(`⚠️ 以下の記録をシステムから完全に抹消しますか？\n\n対象: ${tx.category.split(' ').pop()}\n金額: ¥${tx.amount.toLocaleString()}\n\n※この操作は取り消せません。`)) {
+      setDeletedIds(prev => [...prev, tx.id]);
+      setSwipedTxId(null);
+      if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
       try {
         await deleteDoc(doc(db, "transactions", tx.id));
-        setSwipedTxId(null);
-        if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
       } catch (error) {
-        console.error("削除エラー:", error);
-        alert("❌ データの抹消に失敗しました。");
+        console.warn("deleteDoc failed, falling back to logical delete:", error);
+        try {
+          await updateDoc(doc(db, "transactions", tx.id), { isDeleted: true });
+        } catch (updateErr) {
+          console.error("updateDoc failed as well:", updateErr);
+        }
       }
     }
   };

@@ -116,7 +116,7 @@ export default function MobileInputForm({
   const [newRecCategory, setNewRecCategory] = useState('');
   const [newRecPaymentMethod, setNewRecPaymentMethod] = useState('');
   const [newRecBillingDay, setNewRecBillingDay] = useState('27');
-  const [newRecAutoPost, setNewRecAutoPost] = useState(true);
+  const [newRecAutoPost, setNewRecAutoPost] = useState(false);
   const [isRegisteringRecurring, setIsRegisteringRecurring] = useState(false);
   const [upcomingReminders, setUpcomingReminders] = useState([]);
 
@@ -138,11 +138,8 @@ export default function MobileInputForm({
   const defaultIncomeSync = ['/icon-money.png 家族への入金', '/icon-other.png その他'];
   const defaultAccountsSync = ['/icon-cash.png 共通財布', '/icon-other.png 家族用カード'];
 
-  const defaultRecurring = [
-    { id: '1', name: '家賃', amount: 70000, category: 'その他', paymentMethod: '三井住友銀行' },
-    { id: '2', name: '通信費(Wi-Fi・スマホ)', amount: 6500, category: 'その他', paymentMethod: 'リクルートカード' },
-    { id: '3', name: 'サブスク', amount: 1490, category: '趣味', paymentMethod: 'リクルートカード' }
-  ];
+  // 🌟 固定費・サブスクはユーザーが登録するまでは空（初期ダミーを勝手に計上させない）
+  const defaultRecurring = [];
 
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [incomeCategories, setIncomeCategories] = useState([]);
@@ -219,7 +216,13 @@ export default function MobileInputForm({
     setSavedCards(savedCrd ? JSON.parse(savedCrd) : {});
 
     const savedRec = localStorage.getItem(recKey);
-    const rawRec = savedRec ? JSON.parse(savedRec) : defaultRecurring;
+    let rawRec = savedRec ? JSON.parse(savedRec) : [];
+    // 🌟 過去の初期ダミー（id: 1, 2, 3 の家賃・通信費・サブスク）が勝手に残っている場合は一掃
+    if (Array.isArray(rawRec) && rawRec.length === 3 && rawRec.some(r => r.name === '家賃' && r.id === '1') && rawRec.some(r => r.name.includes('通信費') && r.id === '2')) {
+      rawRec = [];
+      localStorage.setItem(recKey, JSON.stringify([]));
+      saveSettingBoth(auth.currentUser?.uid, 'recurringItems', recKey, []);
+    }
     const cleanRec = (Array.isArray(rawRec) ? rawRec : []).map(item => ({
       ...item,
       category: getCleanItemName(item.category) || 'その他',
@@ -578,16 +581,29 @@ export default function MobileInputForm({
     });
     setUpcomingReminders(reminders);
 
-    // 2. 毎月の自動計上処理（autoPostがONで、今日が引き落とし日以降、かつ今月まだ自動計上されていないもの）
+    // 2. 毎月の自動計上処理（ユーザーが明示的にautoPost===trueを設定し、引き落とし日以降で、今月未計上のもの）
     const autoPostKey = `m402_autopost_${auth.currentUser.uid}_${currentYear}_${currentMonth}`;
     const postedIds = JSON.parse(localStorage.getItem(autoPostKey) || '[]');
 
     const toPost = recurringList.filter(item => {
-      const isAuto = item.autoPost !== false; // デフォルトtrue
+      // ユーザーが明示的に自動計上ONにしたものだけを対象にする
+      if (!item.autoPost) return false;
       const bDay = Number(item.billingDay) || 1;
       const reachedDay = currentDay >= bDay;
-      const alreadyPosted = postedIds.includes(item.id);
-      return isAuto && reachedDay && !alreadyPosted;
+      if (!reachedDay) return false;
+
+      // 🌟 最重要：当月の実データ（transactions）にすでに同一の固定費が存在するか直接照合
+      const isAlreadyInDb = (transactions || []).some(tx => {
+        if (!tx.date || tx.type !== 'expense') return false;
+        const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
+        const isSameMonth = txDate.getFullYear() === currentYear && (txDate.getMonth() + 1) === currentMonth;
+        if (!isSameMonth) return false;
+        const memoStr = tx.memo || '';
+        return memoStr.includes(item.name) && (memoStr.includes('[固定費') || memoStr.includes('[固定費自動計上]'));
+      });
+
+      const alreadyPostedInStorage = postedIds.includes(item.id);
+      return !isAlreadyInDb && !alreadyPostedInStorage;
     });
 
     if (toPost.length > 0) {
@@ -618,7 +634,7 @@ export default function MobileInputForm({
       };
       executeAutoPost();
     }
-  }, [recurringList, familyId]);
+  }, [recurringList, familyId, transactions]);
 
   // 🌟 固定費・サブスクの操作ハンドラー（完全クラウド同期）
   const handleAddRecurring = () => {
@@ -1684,30 +1700,32 @@ export default function MobileInputForm({
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', borderBottom: '1px solid #1a1d24' }}>
-        <h2 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <img src="/icon-input-title.png" alt="" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
-          支出・収入入力
-        </h2>    
+      {/* 🌟 サブコントロールバー（固定費・サブスクへのアクセスと洗練されたバッジ） */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#888', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <img src="/icon-input-title.png" alt="" style={{ width: '16px', height: '16px', objectFit: 'contain', opacity: 0.7 }} />
+          <span>クイック記帳</span>
+        </div>    
         <button
+          type="button"
           onClick={() => setShowRecurringModal(true)}
           style={{
             position: 'relative',
-            background: 'rgba(0, 191, 255, 0.15)',
+            background: 'rgba(0, 191, 255, 0.1)',
             color: '#00bfff',
-            border: '1px solid #00bfff',
-            borderRadius: '6px',
-            padding: '6px 12px',
-            fontSize: '12px',
+            border: '1px solid rgba(0, 191, 255, 0.35)',
+            borderRadius: '20px',
+            padding: '6px 14px',
+            fontSize: '11px',
             fontWeight: 'bold',
             cursor: 'pointer',
-            boxShadow: '0 0 10px rgba(0,191,255,0.2)',
+            boxShadow: '0 0 12px rgba(0,191,255,0.15)',
             display: 'flex',
             alignItems: 'center',
             gap: '6px'
           }}
         >
-          <span>固定費・サブスク</span>
+          <span>📅 固定費・サブスク</span>
           {upcomingReminders.length > 0 && (
             <span style={{ background: '#f59e0b', color: '#000', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900' }}>
               {upcomingReminders.length}
@@ -1743,7 +1761,7 @@ export default function MobileInputForm({
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '15px' }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '16px 16px 40px 16px' }}>
         <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', borderRadius: '16px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           <div style={{ display: 'flex', background: 'rgba(5, 6, 8, 0.7)', borderRadius: '10px', padding: '4px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>

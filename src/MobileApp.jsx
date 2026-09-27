@@ -694,23 +694,80 @@ export default function MobileApp() {
         />
       )}
 
-      {/* 🚀 ヘッダーバー */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: '#11141a', borderBottom: `1px solid ${activeThemeColor}44`, zIndex: 10 }}>
-        <div onClick={() => setIsMenuOpen(true)} style={{ fontSize: '24px', cursor: 'pointer', color: activeThemeColor, textShadow: `0 0 10px ${activeThemeColor}` }}>
+      {/* 🚀 ヘッダーバー（画面最上部に固定＆セーフエリア対応で全体を下げて余白を確保） */}
+      <div style={{ 
+        position: 'sticky',
+        top: 0,
+        zIndex: 1000,
+        flexShrink: 0,
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        paddingTop: 'calc(env(safe-area-inset-top, 24px) + 12px)',
+        paddingBottom: '14px',
+        paddingLeft: '20px',
+        paddingRight: '20px',
+        background: 'rgba(10, 12, 16, 0.94)', 
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: `1px solid ${activeThemeColor}33`,
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)'
+      }}>
+        <div 
+          onClick={() => setIsMenuOpen(true)} 
+          className="clickable-item"
+          style={{ 
+            fontSize: '22px', 
+            cursor: 'pointer', 
+            color: activeThemeColor, 
+            textShadow: `0 0 10px ${activeThemeColor}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '38px',
+            height: '38px',
+            borderRadius: '10px',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.08)'
+          }}
+        >
           ☰
         </div>
         
         <div 
           onClick={handleBalanceQuadTap}
           style={{ 
-            fontWeight: 'bold', letterSpacing: '3px', color: '#fff', fontSize: '15px', 
-            cursor: 'default', userSelect: 'none'
+            fontWeight: 'bold', 
+            letterSpacing: '3px', 
+            color: '#fff', 
+            fontSize: '15px', 
+            cursor: 'default', 
+            userSelect: 'none',
+            textAlign: 'center'
           }}
         >
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        <div style={{ width: '40px' }} />
+        <div 
+          onClick={toggleStealth}
+          className="clickable-item"
+          title={isStealthActive ? "ステルス中" : "通常表示"}
+          style={{ 
+            width: '38px', 
+            height: '38px', 
+            borderRadius: '10px', 
+            background: isStealthActive ? 'rgba(0, 255, 102, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+            border: `1px solid ${isStealthActive ? 'rgba(0, 255, 102, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            fontSize: '15px',
+            cursor: 'pointer'
+          }}
+        >
+          {isStealthActive ? '🛡️' : '👁️'}
+        </div>
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -788,8 +845,18 @@ export default function MobileApp() {
         </>
       )}
 
-      {/* メインコンテンツ */}
-      <div style={{ flex: 1, overflowY: currentTab === 'feed' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
+      {/* メインコンテンツ（独立スクロールエリア） */}
+      <div 
+        style={{ 
+          flex: 1, 
+          minHeight: 0, 
+          overflowY: currentTab === 'feed' ? 'hidden' : 'auto', 
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          display: 'flex', 
+          flexDirection: 'column' 
+        }}
+      >
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
@@ -802,7 +869,7 @@ export default function MobileApp() {
           />
         )}
         {currentTab === 'balance' && (
-          <div style={{ padding: '20px' }}>
+          <div style={{ padding: '20px 20px 90px 20px' }}>
             <div 
               onClick={handleBalanceQuadTap}
               style={{ borderBottom: '1px solid #252838', paddingBottom: '10px', marginBottom: '15px', marginTop: 0, cursor: 'pointer' }}
@@ -821,7 +888,11 @@ export default function MobileApp() {
             />
           </div>
         )}
-        {currentTab === 'calendar' && <MobileCalendar transactions={safeTransactions} themeColor={activeThemeColor} />}
+        {currentTab === 'calendar' && (
+          <div style={{ flex: 1, paddingBottom: '80px' }}>
+            <MobileCalendar transactions={safeTransactions} themeColor={activeThemeColor} />
+          </div>
+        )}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
         {currentTab === 'feed' && (
           <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
@@ -830,20 +901,22 @@ export default function MobileApp() {
         )}
       </div>
 
-      {/* 🚀 ハイブリッド・タブバーエリア（グラスモフィズム＆セーフエリア対応） */}
+      {/* 🚀 ハイブリッド・タブバーエリア（画面最下部に固定＆セーフエリア対応） */}
       {uiMode === '2d' ? (
         <div style={{ 
-          background: 'rgba(10, 12, 16, 0.88)', 
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 1000,
+          flexShrink: 0,
+          background: 'rgba(10, 12, 16, 0.94)', 
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderTop: `1px solid rgba(255, 255, 255, 0.1)`, 
-          boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.6)',
+          borderTop: `1px solid rgba(255, 255, 255, 0.08)`, 
+          boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.7)',
           display: 'flex', 
           justifyContent: 'space-around', 
-          padding: '8px 0 calc(env(safe-area-inset-bottom, 15px) + 8px) 0', 
-          alignItems: 'center', 
-          position: 'relative',
-          zIndex: 100
+          padding: '10px 0 calc(env(safe-area-inset-bottom, 20px) + 8px) 0', 
+          alignItems: 'center'
         }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
           <BottomTab 
@@ -871,7 +944,15 @@ export default function MobileApp() {
           <BottomTab icon="/S__32194592.jpg" label="マップ" isActive={currentTab === 'feed'} onClick={() => setCurrentTab('feed')} themeColor={activeThemeColor} />
         </div>
       ) : (
-        <div style={{ background: '#11141a', borderTop: `1px solid ${activeThemeColor}44`, paddingBottom: '20px', zIndex: 100, position: 'relative' }}>
+        <div style={{ 
+          position: 'sticky', 
+          bottom: 0, 
+          zIndex: 1000, 
+          flexShrink: 0, 
+          background: '#11141a', 
+          borderTop: `1px solid ${activeThemeColor}44`, 
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 8px)' 
+        }}>
           <div 
             onPointerDown={handle3DPointerDown}
             onPointerMove={handle3DPointerMove}
