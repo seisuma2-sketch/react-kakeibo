@@ -749,7 +749,27 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        <div style={{ width: '38px', height: '38px' }} />
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('open-recurring-modal'))}
+          className="clickable-item"
+          style={{ 
+            width: '38px', 
+            height: '38px', 
+            borderRadius: '10px', 
+            background: 'rgba(0, 191, 255, 0.1)', 
+            border: '1px solid rgba(0, 191, 255, 0.3)', 
+            color: '#00bfff', 
+            fontSize: '17px', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            cursor: 'pointer'
+          }}
+          title="固定費・サブスク"
+        >
+          <span>📅</span>
+        </button>
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -832,12 +852,12 @@ export default function MobileApp() {
         style={{ 
           flex: 1, 
           minHeight: 0, 
-          overflowY: currentTab === 'feed' ? 'hidden' : 'auto', 
+          overflowY: currentTab === 'input' ? 'hidden' : (currentTab === 'feed' ? 'hidden' : 'auto'), 
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           display: 'flex', 
           flexDirection: 'column',
-          paddingBottom: '70px'
+          paddingBottom: currentTab === 'input' ? '0px' : '70px'
         }}
       >
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
@@ -898,7 +918,7 @@ export default function MobileApp() {
           boxShadow: '0 -4px 25px rgba(0, 0, 0, 0.9)',
           display: 'flex', 
           justifyContent: 'space-around', 
-          padding: '6px 0 max(env(safe-area-inset-bottom, 0px), 8px) 0', 
+          padding: '4px 0 max(env(safe-area-inset-bottom, 0px), 6px) 0', 
           alignItems: 'center'
         }}>
           <BottomTab icon="/S__32194589.jpg" label="入力" isActive={currentTab === 'input'} onClick={() => setCurrentTab('input')} themeColor={activeThemeColor} />        
