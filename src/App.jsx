@@ -21,7 +21,7 @@ import TopNewsWidget from './components/TopNewsWidget';
 import DesktopCockpitOS from './components/DesktopCockpitOS';
 import SavingsHub from './components/SavingsHub';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
-import { getStealthDisguisedTransactions } from './utils/stealthHelper';
+import { getStealthDisguisedTransactions, getPureStealthTransactions } from './utils/stealthHelper';
 import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName, getCleanItemName, isGhostAccount } from './utils/accountUtils';
 
 function App() {
@@ -367,7 +367,7 @@ function App() {
   };
 
   const displayTransactions = useMemo(() => {
-    return getStealthDisguisedTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
+    return getPureStealthTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
   }, [transactions, stealthConfig.ghostAccounts, stealthConfig.active]); 
 
   // 🌟 口座やカード設定の重複（リクルートカード等の2重化）を自動クリーンアップ
@@ -597,6 +597,28 @@ function App() {
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {!stealthConfig.active && (
+              <button 
+                onClick={() => updateStealthActive(true)}
+                style={{
+                  background: 'rgba(255, 51, 102, 0.2)',
+                  border: '1.5px solid #ff3366',
+                  borderRadius: '20px',
+                  color: '#ff3366',
+                  padding: '5px 12px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 12px rgba(255, 51, 102, 0.45)',
+                  animation: 'pulse 1.8s infinite'
+                }}
+              >
+                <span>🔓</span> 隔離解除中 (クリックで施錠)
+              </button>
+            )}
             <button onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }} style={{ background: `${themeColor}15`, border: `1px solid ${themeColor}55`, color: themeColor, padding: '5px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', fontFamily: 'monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: `0 0 10px ${themeColor}22` }} title="集計期間を変更">
               <span>🗓️</span> サイクル ({cyclePeriod.label})
             </button>
@@ -656,7 +678,12 @@ function App() {
           {currentTab === 'input' && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '600px' }}>
               <div style={{ width: '100%', maxWidth: '400px', border: `1px solid ${themeColor}`, borderRadius: '12px', boxShadow: `0 0 30px ${themeColor}22` }}>
-                <MobileInputForm key={`inp_${settingsVersion}`} familyId={familyId} />
+                <MobileInputForm 
+                  key={`inp_${settingsVersion}_${stealthConfig.active}`} 
+                  familyId={familyId} 
+                  isStealthActive={stealthConfig.active}
+                  ghostAccounts={stealthConfig.ghostAccounts}
+                />
               </div>
             </div>
           )}

@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import LocationScanner from './LocationScanner';
 import { saveSettingBoth } from '../utils/cloudSync';
-import { deduplicateAccounts, isSameAccount, getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
+import { deduplicateAccounts, isSameAccount, getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
 function renderIconOrText(item, imgSize = '20px') {
   if (!item) return '';
@@ -63,7 +63,9 @@ export default function MobileInputForm({
   initialAccount = null, 
   autoOpenKeypad = false,
   onKeypadConsumed = null,
-  transactions = []
+  transactions = [],
+  isStealthActive = undefined,
+  ghostAccounts = []
 }) {
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -187,6 +189,46 @@ export default function MobileInputForm({
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [incomeCategories, setIncomeCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
+
+  // 🌟 隔離モード（プライベート金庫）の判定と口座の完全遮断
+  const effectiveIsStealthActive = isStealthActive !== undefined 
+    ? isStealthActive 
+    : (localStorage.getItem('stealthActiveMobile') === 'true');
+
+  const effectiveGhostAccounts = useMemo(() => {
+    if (Array.isArray(ghostAccounts) && ghostAccounts.length > 0) return ghostAccounts;
+    try {
+      const saved = localStorage.getItem('m402_stealth_accounts');
+      if (saved) return JSON.parse(saved);
+      const conf = localStorage.getItem('stealthConfig');
+      if (conf) {
+        const parsed = JSON.parse(conf);
+        if (Array.isArray(parsed.ghostAccounts)) return parsed.ghostAccounts;
+      }
+    } catch (e) {}
+    return [];
+  }, [ghostAccounts]);
+
+  // ロック中は隠し口座を完全に遮断した可視口座リスト
+  const visibleAccounts = useMemo(() => {
+    if (!effectiveIsStealthActive || !Array.isArray(effectiveGhostAccounts) || effectiveGhostAccounts.length === 0) {
+      return accounts;
+    }
+    return accounts.filter(acc => !isGhostAccount(acc, effectiveGhostAccounts));
+  }, [accounts, effectiveIsStealthActive, effectiveGhostAccounts]);
+
+  // 施錠時（隔離中）に選択中の口座が隠し口座だった場合は安全な通常口座に即座にフォールバック
+  useEffect(() => {
+    if (effectiveIsStealthActive && visibleAccounts.length > 0) {
+      if (paymentMethod && isGhostAccount(paymentMethod, effectiveGhostAccounts)) {
+        setPaymentMethod(visibleAccounts[0] || '');
+      }
+      if (type === 'transfer' && category && isGhostAccount(category, effectiveGhostAccounts)) {
+        const safeTo = visibleAccounts.find(acc => acc !== (visibleAccounts[0] || '')) || visibleAccounts[0] || '';
+        setCategory(safeTo);
+      }
+    }
+  }, [effectiveIsStealthActive, effectiveGhostAccounts, visibleAccounts, paymentMethod, category, type]);
 
   // 🌟 単一金庫の初期読み込み＆自動同期
   useEffect(() => {
@@ -1184,7 +1226,7 @@ export default function MobileInputForm({
               {/* 口座選択（2列のカードグリッド） */}
               {(openDropdown === 'payment' || openDropdown === 'transferFrom' || openDropdown === 'transferTo') && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                  {accounts.map(acc => {
+                  {visibleAccounts.map(acc => {
                     const currentVal = openDropdown === 'payment' ? paymentMethod : (openDropdown === 'transferFrom' ? paymentMethod : category);
                     const isSelected = isSameAccount(acc, currentVal);
                     return (
@@ -1640,7 +1682,7 @@ export default function MobileInputForm({
                   onChange={e => setNewRecPaymentMethod(e.target.value)}
                   style={{ ...inputStyle, flex: 1, padding: '8px', fontSize: '12px' }}
                 >
-                  {accounts.map(acc => (
+                  {visibleAccounts.map(acc => (
                     <option key={acc} value={acc}>{getCleanName(acc)}</option>
                   ))}
                 </select>
@@ -1730,7 +1772,7 @@ export default function MobileInputForm({
                 <div style={{ position: 'relative' }}>
                   <select value={editTargetCard} onChange={handleSelectEditCard} style={{ ...inputStyle, appearance: 'none', cursor: 'pointer' }}>
                     <option value="">-- 選択してください --</option>
-                    {accounts.map(acc => {
+                    {visibleAccounts.map(acc => {
                       const cleanName = getCleanName(acc);
                       return <option key={cleanName} value={cleanName}>{cleanName}</option>;
                     })}

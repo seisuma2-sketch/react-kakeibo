@@ -13,7 +13,8 @@ import AuthScreen from './components/AuthScreen';
 import DailyBriefingOverlay from './components/DailyBriefingOverlay';
 import NfcSettingsModal from './components/NfcSettingsModal';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
-import { getStealthDisguisedTransactions } from './utils/stealthHelper';
+import { getStealthDisguisedTransactions, getPureStealthTransactions } from './utils/stealthHelper';
+import { deduplicateAccounts, getCleanAccountName, isGhostAccount } from './utils/accountUtils';
 
 const THEMES = {
   neon: { name: 'NEON GREEN', color: '#00ff66' },
@@ -93,6 +94,66 @@ export default function MobileApp() {
     }
   }, [stealthAccounts]);
   const [newGhostBank, setNewGhostBank] = useState('');
+
+  // 🌟 プライベート金庫（隔離口座管理）用State
+  const [isVaultAuthModalOpen, setIsVaultAuthModalOpen] = useState(false);
+  const [isVaultManagerModalOpen, setIsVaultManagerModalOpen] = useState(false);
+  const [vaultPinInput, setVaultPinInput] = useState('');
+  const [vaultPinError, setVaultPinError] = useState('');
+
+  const allAccountsToDisplay = useMemo(() => {
+    let storedAccounts = [];
+    try {
+      const saved = localStorage.getItem('m402_accounts');
+      if (saved) storedAccounts = JSON.parse(saved);
+    } catch (e) {}
+    const fromTx = transactions.map(tx => tx.paymentMethod).filter(Boolean);
+    const defaultAvailableAccounts = ['現金', '三井住友銀行', '三菱UFJ銀行', 'みずほ銀行', 'ゆうちょ銀行', 'PayPay', 'EVERING', 'リクルートカード'];
+    const merged = [...storedAccounts, ...fromTx, ...defaultAvailableAccounts, ...stealthAccounts];
+    return deduplicateAccounts(merged).map(getCleanAccountName);
+  }, [transactions, stealthAccounts]);
+
+  const handleVaultAuthSubmit = (pin = vaultPinInput) => {
+    if (pin === '0000' || pin === 'cyber') {
+      updateStealthActive(false);
+      setIsVaultAuthModalOpen(false);
+      setVaultPinInput('');
+      setVaultPinError('');
+      setIsVaultManagerModalOpen(true);
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    } else {
+      setVaultPinError('暗証番号が違います (初期値: 0000)');
+      if (navigator.vibrate) navigator.vibrate(200);
+      setVaultPinInput('');
+    }
+  };
+
+  const toggleStealthAccount = async (accountName, shouldAdd) => {
+    const clean = getCleanAccountName(accountName);
+    let updated;
+    if (shouldAdd) {
+      updated = [...new Set([...stealthAccounts, clean])];
+    } else {
+      updated = stealthAccounts.filter(acc => getCleanAccountName(acc) !== clean);
+    }
+    setStealthAccounts(updated);
+    localStorage.setItem('m402_stealth_accounts', JSON.stringify(updated));
+    if (user) {
+      try {
+        await setDoc(doc(db, "user_settings", user.uid), { stealthAccounts: updated }, { merge: true });
+      } catch (e) {
+        console.error("隔離口座設定の同期エラー:", e);
+      }
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+
+  const handleAddCustomGhostMobile = async () => {
+    if (!newGhostBank.trim()) return;
+    const clean = getCleanAccountName(newGhostBank.trim());
+    await toggleStealthAccount(clean, true);
+    setNewGhostBank('');
+  };
 
   const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
   const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'desc');
@@ -692,7 +753,7 @@ export default function MobileApp() {
   };
 
   const safeTransactions = useMemo(() => {
-    return getStealthDisguisedTransactions(transactions, stealthAccounts, isStealthActive);
+    return getPureStealthTransactions(transactions, stealthAccounts, isStealthActive);
   }, [transactions, stealthAccounts, isStealthActive]);
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
@@ -771,7 +832,37 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        <div style={{ width: '38px', height: '38px' }} />
+        {/* 🌟 右側：アンロック中（隔離解除中）は即時再ロックボタンを表示 */}
+        {!isStealthActive ? (
+          <button 
+            type="button"
+            onClick={() => {
+              updateStealthActive(true);
+              if (navigator.vibrate) navigator.vibrate([40, 40]);
+            }}
+            style={{
+              background: 'rgba(255, 51, 102, 0.2)',
+              border: '1.5px solid #ff3366',
+              borderRadius: '20px',
+              color: '#ff3366',
+              padding: '5px 10px',
+              fontSize: '10.5px',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer',
+              boxShadow: '0 0 12px rgba(255, 51, 102, 0.45)',
+              animation: 'pulse 1.8s infinite',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <span style={{ fontSize: '12px' }}>🔓</span>
+            <span>施錠する</span>
+          </button>
+        ) : (
+          <div style={{ width: '38px', height: '38px' }} />
+        )}
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -784,6 +875,39 @@ export default function MobileApp() {
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${activeThemeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+              {/* 🌟 プライベート金庫（口座の隔離設定） */}
+              <button 
+                type="button"
+                onClick={() => { 
+                  setIsMenuOpen(false); 
+                  if (isStealthActive) {
+                    setIsVaultAuthModalOpen(true);
+                  } else {
+                    setIsVaultManagerModalOpen(true);
+                  }
+                }} 
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 10px', 
+                  background: isStealthActive ? 'rgba(255, 51, 102, 0.12)' : 'rgba(0, 255, 102, 0.15)', 
+                  color: isStealthActive ? '#ff3366' : '#00ff66', 
+                  border: `1.5px solid ${isStealthActive ? '#ff3366' : '#00ff66'}`, 
+                  borderRadius: '8px', 
+                  fontWeight: 'bold', 
+                  cursor: 'pointer', 
+                  textAlign: 'center', 
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: isStealthActive ? '0 0 15px rgba(255,51,102,0.2)' : '0 0 15px rgba(0,255,102,0.2)'
+                }}
+              >
+                <span style={{ fontSize: '15px' }}>{isStealthActive ? '🛡️' : '🔓'}</span>
+                <span>プライベート金庫 {isStealthActive ? '(施錠・隔離中)' : '(隔離解除中)'}</span>
+              </button>
+
               <button 
                 onClick={() => { setIsMenuOpen(false); window.dispatchEvent(new CustomEvent('open-recurring-modal')); }} 
                 style={{ width: '100%', padding: '10px', background: 'rgba(0, 191, 255, 0.12)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center', fontSize: '12px' }}
@@ -871,12 +995,14 @@ export default function MobileApp() {
         {/* 🌟 入力フォームに dbMode と familyId を渡して、保存先をコントロールします */}
         {currentTab === 'input' && (
           <MobileInputForm 
-            key={`inp_${settingsVersion}`}
+            key={`inp_${settingsVersion}_${isStealthActive}`}
             familyId={familyId} 
             initialAccount={nfcAccount} 
             autoOpenKeypad={nfcAutoKeypad} 
             onKeypadConsumed={() => setNfcAutoKeypad(false)}
             transactions={safeTransactions}
+            isStealthActive={isStealthActive}
+            ghostAccounts={stealthAccounts}
           />
         )}
         {currentTab === 'balance' && (
@@ -1199,6 +1325,273 @@ export default function MobileApp() {
           whiteSpace: 'nowrap'
         }}>
           {nfcToast}
+        </div>
+      )}
+
+      {/* 🌟 プライベート金庫：PIN認証モーダル */}
+      {isVaultAuthModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ width: '85%', maxWidth: '320px', background: '#0d1117', border: '1px solid #ff3366', borderRadius: '16px', padding: '24px 20px', boxShadow: '0 0 40px rgba(255, 51, 102, 0.25)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ fontSize: '32px', marginBottom: '8px' }}>🛡️</div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fff', marginBottom: '4px' }}>プライベート金庫 認証</div>
+            <div style={{ fontSize: '11px', color: '#888', marginBottom: '16px', textAlign: 'center' }}>
+              4桁の暗証番号を入力してください<br/>
+              <span style={{ color: '#555' }}>(初期値: 0000 または cyber)</span>
+            </div>
+
+            {/* PINドットインジケーター */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+              {[0, 1, 2, 3].map(idx => (
+                <div 
+                  key={idx} 
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    background: vaultPinInput.length > idx ? '#ff3366' : 'rgba(255, 255, 255, 0.1)',
+                    border: `1.5px solid ${vaultPinInput.length > idx ? '#ff3366' : 'rgba(255, 255, 255, 0.3)'}`,
+                    boxShadow: vaultPinInput.length > idx ? '0 0 10px #ff3366' : 'none',
+                    transition: 'all 0.15s'
+                  }}
+                />
+              ))}
+            </div>
+
+            {vaultPinError && (
+              <div style={{ fontSize: '11px', color: '#ff3366', fontWeight: 'bold', marginBottom: '12px', textAlign: 'center' }}>
+                {vaultPinError}
+              </div>
+            )}
+
+            {/* テンキー（1〜9, C, 0, 決定） */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', width: '100%', marginBottom: '16px' }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'OK'].map(btn => (
+                <button
+                  key={btn}
+                  type="button"
+                  onClick={() => {
+                    if (navigator.vibrate) navigator.vibrate(12);
+                    if (btn === 'C') {
+                      setVaultPinInput('');
+                      setVaultPinError('');
+                    } else if (btn === 'OK') {
+                      handleVaultAuthSubmit(vaultPinInput);
+                    } else {
+                      if (vaultPinInput.length < 4) {
+                        const nextPin = vaultPinInput + btn;
+                        setVaultPinInput(nextPin);
+                        setVaultPinError('');
+                        if (nextPin.length === 4) {
+                          handleVaultAuthSubmit(nextPin);
+                        }
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '14px 0',
+                    background: btn === 'OK' ? '#ff3366' : (btn === 'C' ? 'rgba(255, 255, 255, 0.05)' : '#161a22'),
+                    border: btn === 'OK' ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+                    color: btn === 'OK' ? '#fff' : '#ddd',
+                    borderRadius: '10px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    boxShadow: btn === 'OK' ? '0 0 12px rgba(255, 51, 102, 0.4)' : 'none'
+                  }}
+                >
+                  {btn}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsVaultAuthModalOpen(false);
+                setVaultPinInput('');
+                setVaultPinError('');
+              }}
+              style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '13px', cursor: 'pointer', padding: '6px 12px' }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 プライベート金庫：隔離口座マネージャーモーダル */}
+      {isVaultManagerModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ width: '90%', maxWidth: '380px', maxHeight: '85vh', background: '#0d1117', border: '1px solid #00ff66', borderRadius: '16px', padding: '20px', boxShadow: '0 0 40px rgba(0, 255, 102, 0.25)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            {/* ヘッダー */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🛡️</span>
+                <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#fff' }}>プライベート金庫設定</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVaultManagerModalOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* スクロール可能コンテンツ */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '2px' }}>
+              
+              {/* 金庫状態トグル */}
+              <div style={{ background: '#161a22', border: `1px solid ${isStealthActive ? '#ff3366' : '#00ff66'}`, borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>現在の金庫状態</div>
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: isStealthActive ? '#ff3366' : '#00ff66', marginTop: '2px' }}>
+                    {isStealthActive ? '🔒 施錠中（口座を隔離保護）' : '🔓 解除中（隠し口座を表示中）'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateStealthActive(!isStealthActive)}
+                  style={{
+                    background: isStealthActive ? '#ff3366' : '#00ff66',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontWeight: 'bold',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {isStealthActive ? '解除する' : '今すぐ施錠'}
+                </button>
+              </div>
+
+              {/* 隔離対象口座チェックリスト */}
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#00bfff', marginBottom: '4px' }}>
+                  隔離する口座を選択 (タップで切替)
+                </div>
+                <div style={{ fontSize: '10.5px', color: '#888', lineHeight: '1.4', marginBottom: '10px' }}>
+                  チェックした口座は、施錠中はアプリ内の「入力選択肢・残高一覧・グラフ・履歴」から完全に遮断されます。（口座データや過去取引は安全に保持されます）
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  {allAccountsToDisplay.map(accName => {
+                    const isIsolated = isGhostAccount(accName, stealthAccounts);
+                    return (
+                      <div
+                        key={accName}
+                        onClick={() => toggleStealthAccount(accName, !isIsolated)}
+                        style={{
+                          background: isIsolated ? 'rgba(255, 51, 102, 0.15)' : '#161a22',
+                          border: isIsolated ? '1.5px solid #ff3366' : '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: '10px',
+                          padding: '10px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          boxShadow: isIsolated ? '0 0 10px rgba(255, 51, 102, 0.3)' : 'none',
+                          transition: 'all 0.12s'
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: isIsolated ? '#fff' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {accName}
+                        </div>
+                        <span style={{ fontSize: '13px' }}>{isIsolated ? '🛡️' : '⚪'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 新規口座の直接入力追加 */}
+              <div style={{ background: '#161a22', borderRadius: '10px', padding: '12px', border: '1px dashed #333' }}>
+                <div style={{ fontSize: '11px', color: '#aaa', fontWeight: 'bold', marginBottom: '6px' }}>
+                  [+] 隔離口座を手動追加
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={newGhostBank}
+                    onChange={(e) => setNewGhostBank(e.target.value)}
+                    placeholder="口座名 (例: 秘密口座)"
+                    style={{
+                      flex: 1,
+                      background: '#0d1117',
+                      border: '1px solid #333',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomGhostMobile}
+                    style={{
+                      background: '#ff3366',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 14px',
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    追加
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* フッターアクション */}
+            <div style={{ display: 'flex', gap: '8px', paddingTop: '6px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  updateStealthActive(true);
+                  setIsVaultManagerModalOpen(false);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: 'rgba(255, 51, 102, 0.2)',
+                  border: '1px solid #ff3366',
+                  color: '#ff3366',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔒 施錠して閉じる
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVaultManagerModalOpen(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: '#00ff66',
+                  border: 'none',
+                  color: '#000',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                完了 (解除のまま)
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
       
