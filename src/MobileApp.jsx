@@ -749,27 +749,7 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('open-recurring-modal'))}
-          className="clickable-item"
-          style={{ 
-            width: '38px', 
-            height: '38px', 
-            borderRadius: '10px', 
-            background: 'rgba(0, 191, 255, 0.1)', 
-            border: '1px solid rgba(0, 191, 255, 0.3)', 
-            color: '#00bfff', 
-            fontSize: '17px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            cursor: 'pointer'
-          }}
-          title="固定費・サブスク"
-        >
-          <span>📅</span>
-        </button>
+        <div style={{ width: '38px', height: '38px' }} />
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -782,6 +762,12 @@ export default function MobileApp() {
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${activeThemeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+              <button 
+                onClick={() => { setIsMenuOpen(false); window.dispatchEvent(new CustomEvent('open-recurring-modal')); }} 
+                style={{ width: '100%', padding: '10px', background: 'rgba(0, 191, 255, 0.12)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center', fontSize: '12px' }}
+              >
+                📅 [固定費] 毎月自動計上＆更新マネージャー
+              </button>
               <button 
                 onClick={() => { setIsMenuOpen(false); setShowNfcModal(true); }} 
                 style={{ width: '100%', padding: '10px', background: 'rgba(0, 191, 255, 0.12)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center', fontSize: '12px' }}
