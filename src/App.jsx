@@ -22,7 +22,7 @@ import DesktopCockpitOS from './components/DesktopCockpitOS';
 import SavingsHub from './components/SavingsHub';
 import { applyCloudSettingsToLocal, syncLocalSettingsToCloud } from './utils/cloudSync';
 import { getStealthDisguisedTransactions } from './utils/stealthHelper';
-import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName, isGhostAccount } from './utils/accountUtils';
+import { deduplicateAccounts, normalizeCreditCardSettings, getCleanAccountName, getCleanItemName, isGhostAccount } from './utils/accountUtils';
 
 function App() {
   const [user, setUser] = useState(null);
