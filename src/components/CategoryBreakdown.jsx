@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
-import { getCleanItemName } from '../utils/accountUtils';
+import { getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
-export default function CategoryBreakdown({ transactions, isStealthMode }) {
+export default function CategoryBreakdown({ transactions = [], ghostAccounts = [], isStealthMode }) {
   const chartRef = useRef(null);
 
   // 1️⃣ カテゴリごとの「支出」の合計と、全体の総支出を計算する（アイコンパスや表記揺れを完全正規化）
@@ -11,10 +11,18 @@ export default function CategoryBreakdown({ transactions, isStealthMode }) {
 
   transactions.forEach(tx => {
     if (tx.type === 'expense') {
+      const rawMethod = tx.paymentMethod || '';
+      const cleanMethod = getCleanAccountName(rawMethod);
       const rawCat = tx.category || 'その他';
-      const cat = getCleanItemName(rawCat) || 'その他';
+      const cleanCat = getCleanItemName(rawCat) || 'その他';
+
+      if (isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts)) return;
+      if (isGhostAccount(rawCat, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts)) return;
+      if (tx.isGhostBridge) return;
+      if (cleanCat === '貯蓄・積立' || cleanCat === '内部振替' || cleanCat === '資金振替') return;
+
       const amount = Number(tx.amount) || 0;
-      categoryData[cat] = (categoryData[cat] || 0) + amount;
+      categoryData[cleanCat] = (categoryData[cleanCat] || 0) + amount;
       totalExpense += amount;
     }
   });

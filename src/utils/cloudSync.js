@@ -13,7 +13,9 @@ const SYNC_KEYS = [
   { field: 'incomeCategories', localKey: 'm402_income_cats' },
   { field: 'recurringItems', localKey: 'm402_recurring_items' },
   { field: 'appTheme', localKey: 'm402_app_theme' },
-  { field: 'cardMode', localKey: 'm402_card_mode' }
+  { field: 'cardMode', localKey: 'm402_card_mode' },
+  { field: 'stealthAccounts', localKey: 'm402_stealth_accounts' },
+  { field: 'isStealthActive', localKey: 'm402_is_stealth_active' }
 ];
 
 /**

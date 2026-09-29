@@ -219,27 +219,65 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
 
     chronologicalTx.forEach(tx => {
       if (!tx.date) return;
-      const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
-      const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
       const amount = Number(tx.amount) || 0;
       const rawMethod = tx.paymentMethod || '不明';
       const cleanMethod = getCleanAccountName(rawMethod) || '不明';
       const rawCategory = tx.category || '不明';
       const cleanCategory = getCleanAccountName(rawCategory) || '不明';
 
-      if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
-      usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
+      const isFromGhost = isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts);
+      const isToGhost = isGhostAccount(rawCategory, ghostAccounts) || isGhostAccount(cleanCategory, ghostAccounts);
+
+      // 🌟 隠し口座同士の振替、隠し口座の直接入金、隠し口座での直接支出、偽装取引はトレンド計算から100%除外
+      if (isFromGhost && isToGhost) return;
+      if (isFromGhost && (tx.type === 'income' || tx.type === 'expense')) return;
+      if (tx.isGhostBridge) return;
+
+      const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
+      const dateStr = txDate.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+
+      let balanceChanged = false;
 
       if (tx.type === 'income') {
-        runningBalances[cleanMethod] += amount;
+        if (!isFromGhost) {
+          if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
+          usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
+          runningBalances[cleanMethod] += amount;
+          balanceChanged = true;
+        }
       } else if (tx.type === 'expense') {
-        runningBalances[cleanMethod] -= amount;
+        if (!isFromGhost) {
+          if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
+          usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
+          runningBalances[cleanMethod] -= amount;
+          balanceChanged = true;
+        }
       } else if (tx.type === 'transfer') {
-        if (!runningBalances[cleanCategory]) runningBalances[cleanCategory] = 0;
-        usageCounts[cleanCategory] = (usageCounts[cleanCategory] || 0) + 1;
-        runningBalances[cleanMethod] -= amount;
-        runningBalances[cleanCategory] += amount;
+        if (!isFromGhost && isToGhost) {
+          // 通常口座 -> 隠し口座への振替（通常口座から出金）
+          if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
+          usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
+          runningBalances[cleanMethod] -= amount;
+          balanceChanged = true;
+        } else if (isFromGhost && !isToGhost) {
+          // 隠し口座 -> 通常口座への振替（通常口座へ入金）
+          if (!runningBalances[cleanCategory]) runningBalances[cleanCategory] = 0;
+          usageCounts[cleanCategory] = (usageCounts[cleanCategory] || 0) + 1;
+          runningBalances[cleanCategory] += amount;
+          balanceChanged = true;
+        } else if (!isFromGhost && !isToGhost) {
+          // 通常口座同士の振替
+          if (!runningBalances[cleanMethod]) runningBalances[cleanMethod] = 0;
+          if (!runningBalances[cleanCategory]) runningBalances[cleanCategory] = 0;
+          usageCounts[cleanMethod] = (usageCounts[cleanMethod] || 0) + 1;
+          usageCounts[cleanCategory] = (usageCounts[cleanCategory] || 0) + 1;
+          runningBalances[cleanMethod] -= amount;
+          runningBalances[cleanCategory] += amount;
+          balanceChanged = true;
+        }
       }
+
+      if (!balanceChanged) return;
 
       // 🌟 隠し口座・切断口座の残高を折れ線グラフから100%確実に除外
       let currentVisibleTotal = 0;
@@ -311,13 +349,13 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
     let oldBalance = lastBalance;
     let oldDate = today;
 
-    for (let i = chronologicalTx.length - 1; i >= 0; i--) {
-      const txDate = chronologicalTx[i].date?.toDate ? chronologicalTx[i].date.toDate() : new Date(chronologicalTx[i].date);
-      if (txDate < past14Days) { oldBalance = bData[i]; oldDate = txDate; break; }
-      if (i === 0) { oldBalance = bData[0]; oldDate = txDate; }
+    if (bData.length > 0) {
+      // 過去データから安全に比較対象の残高を取得
+      const compareIndex = Math.max(0, bData.length - 14);
+      oldBalance = bData[compareIndex] !== undefined ? bData[compareIndex] : bData[0];
     }
 
-    const diffDays = Math.max(1, (today.getTime() - oldDate.getTime()) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.max(1, 14);
     const dailyPace = (lastBalance - oldBalance) / diffDays;
     const predictionDays = 14;
     const pLabels = [];

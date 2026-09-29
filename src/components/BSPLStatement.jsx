@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
-import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
+import { getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
-export default function BSPLStatement({ transactions, isStealthMode }) {
+export default function BSPLStatement({ transactions = [], ghostAccounts = [], isStealthMode }) {
   const chartRef = useRef(null);
 
   // 🌟 ドリルダウン（展開）用のState
@@ -15,26 +15,48 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
 
   transactions.forEach(tx => {
     const amount = Number(tx.amount) || 0;
-    const method = getCleanAccountName(tx.paymentMethod) || '不明';
-    const category = getCleanAccountName(tx.category) || '不明';
+    const rawMethod = tx.paymentMethod || '';
+    const cleanMethod = getCleanAccountName(rawMethod) || '不明';
+    const rawCategory = tx.category || '';
+    const cleanCategory = getCleanAccountName(rawCategory) || '不明';
 
-    if (!balances[method]) balances[method] = 0;
+    const isFromGhost = isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts);
+    const isToGhost = isGhostAccount(rawCategory, ghostAccounts) || isGhostAccount(cleanCategory, ghostAccounts);
+
+    if (isFromGhost && isToGhost) return;
+    if (isFromGhost && (tx.type === 'income' || tx.type === 'expense')) return;
+    if (tx.isGhostBridge) return;
+
+    if (!isFromGhost && !balances[cleanMethod]) balances[cleanMethod] = 0;
 
     if (tx.type === 'income') {
-      balances[method] += amount;
-      totalAssets += amount;
+      if (!isFromGhost) {
+        balances[cleanMethod] += amount;
+        totalAssets += amount;
+      }
     } else if (tx.type === 'expense') {
-      balances[method] -= amount;
-      totalAssets -= amount;
+      if (!isFromGhost) {
+        balances[cleanMethod] -= amount;
+        totalAssets -= amount;
+      }
     } else if (tx.type === 'transfer') {
-      if (!balances[category]) balances[category] = 0;
-      balances[method] -= amount;
-      balances[category] += amount;
+      if (!isFromGhost && isToGhost) {
+        balances[cleanMethod] -= amount;
+        totalAssets -= amount;
+      } else if (isFromGhost && !isToGhost) {
+        if (!balances[cleanCategory]) balances[cleanCategory] = 0;
+        balances[cleanCategory] += amount;
+        totalAssets += amount;
+      } else if (!isFromGhost && !isToGhost) {
+        if (!balances[cleanCategory]) balances[cleanCategory] = 0;
+        balances[cleanMethod] -= amount;
+        balances[cleanCategory] += amount;
+      }
     }
   });
 
   const sortedBalances = Object.entries(balances)
-    .filter(([, amount]) => amount !== 0)
+    .filter(([name, amount]) => amount !== 0 && !isGhostAccount(name, ghostAccounts))
     .sort((a, b) => b[1] - a[1]);
 
   // 2. 損益の部 (P/L) ＆ ドリルダウン用のカテゴリ別集計
@@ -45,14 +67,22 @@ export default function BSPLStatement({ transactions, isStealthMode }) {
 
   transactions.forEach(tx => {
     const amount = Number(tx.amount) || 0;
-    const cat = getCleanItemName(tx.category) || 'その他';
+    const rawMethod = tx.paymentMethod || '';
+    const cleanMethod = getCleanAccountName(rawMethod);
+    const rawCat = tx.category || '';
+    const cleanCat = getCleanItemName(rawCat) || 'その他';
+
+    if (isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts)) return;
+    if (isGhostAccount(rawCat, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts)) return;
+    if (tx.isGhostBridge) return;
+    if (cleanCat === '貯蓄・積立' || cleanCat === '内部振替' || cleanCat === '資金振替') return;
 
     if (tx.type === 'income') {
       totalIncome += amount;
-      incomeBreakdown[cat] = (incomeBreakdown[cat] || 0) + amount;
+      incomeBreakdown[cleanCat] = (incomeBreakdown[cleanCat] || 0) + amount;
     } else if (tx.type === 'expense') {
       totalExpense += amount;
-      expenseBreakdown[cat] = (expenseBreakdown[cat] || 0) + amount;
+      expenseBreakdown[cleanCat] = (expenseBreakdown[cleanCat] || 0) + amount;
     }
   });
 

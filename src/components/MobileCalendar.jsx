@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
+import { getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
-export default function MobileCalendar({ transactions, themeColor }) {
+export default function MobileCalendar({ transactions = [], ghostAccounts = [], themeColor }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState(() => {
     const today = new Date();
@@ -13,24 +13,33 @@ export default function MobileCalendar({ transactions, themeColor }) {
 
   const token = localStorage.getItem('timeTreeToken') || '';
 
-  // 🌟 Firebaseのデータから日付ごとの「合計支出・収入」をリアルタイム集計
+  // 🌟 Firebaseのデータから日付ごとの「合計支出・収入」をリアルタイム集計（隠し口座は完全除外）
   const dailyTotals = useMemo(() => {
     const totals = {};
     transactions.forEach(tx => {
       if (!tx.date) return;
+      const rawMethod = tx.paymentMethod || '';
+      const cleanMethod = getCleanAccountName(rawMethod);
+      const rawCat = tx.category || '';
+      const cleanCat = getCleanItemName(rawCat);
+
+      if (isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts)) return;
+      if (isGhostAccount(rawCat, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts)) return;
+      if (tx.isGhostBridge) return;
+
       const d = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       
       if (!totals[dateStr]) totals[dateStr] = { expense: 0, income: 0 };
       
       if (tx.type === 'expense') {
-        totals[dateStr].expense += tx.amount;
+        totals[dateStr].expense += (Number(tx.amount) || 0);
       } else if (tx.type === 'income') {
-        totals[dateStr].income += tx.amount;
+        totals[dateStr].income += (Number(tx.amount) || 0);
       }
     });
     return totals;
-  }, [transactions]);
+  }, [transactions, ghostAccounts]);
 
   // デモ用の相対日付ジェネレータ
   function getRelativeDateStr(offset) {

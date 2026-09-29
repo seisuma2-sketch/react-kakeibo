@@ -71,8 +71,8 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
       const cleanCat = getCleanItemName(rawCategory) || 'その他';
 
       // 🌟 隠し口座が関わる取引は総収入・総支出・残高・グラフから完全に100%遮断
-      const isFromGhost = isGhostAccount(rawMethod, ghostAccounts);
-      const isToGhost = isGhostAccount(rawCategory, ghostAccounts);
+      const isFromGhost = isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts);
+      const isToGhost = isGhostAccount(rawCategory, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts);
       if (isFromGhost || isToGhost || tx.isGhostBridge) {
         return;
       }
@@ -90,11 +90,18 @@ export default function DesktopCockpitOS({ transactions = [], ghostAccounts = []
         methodBal[cleanMethod] -= amt; 
         if (isCurrentCycle) { 
           totalOut += amt; // 期間内のみ支出加算
-          catOut[cleanCat] = (catOut[cleanCat] || 0) + amt; // レーダーチャートも期間内に限定
+          if (cleanCat !== '貯蓄・積立' && cleanCat !== '内部振替' && cleanCat !== '資金振替') {
+            catOut[cleanCat] = (catOut[cleanCat] || 0) + amt; // レーダーチャートも期間内に限定
+          }
         } 
+      } else if (tx.type === 'transfer') {
+        const cleanTo = getCleanAccountName(rawCategory);
+        if (!methodBal[cleanTo]) methodBal[cleanTo] = 0;
+        methodBal[cleanMethod] -= amt;
+        methodBal[cleanTo] += amt;
       }
       let currentTot = 0; Object.values(methodBal).forEach(v => currentTot += v);
-      if (tx.date) { 
+      if (tx.date && txDateObj) { 
         dLabels.push(txDateObj.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })); 
         bData.push(currentTot); 
       }

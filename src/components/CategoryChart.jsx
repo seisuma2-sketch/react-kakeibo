@@ -1,20 +1,41 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
-import { getCleanItemName } from '../utils/accountUtils';
+import { getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
-export default function CategoryChart({ transactions }) {
+export default function CategoryChart({ transactions = [], ghostAccounts = [], cyclePeriod = null }) {
   // 💡 React公認の裏口（グラフを描画するキャンバスの場所を確保する魔法）
   const chartRef = useRef(null);
 
   useEffect(() => {
     // 1️⃣ 渡された履歴データから、カテゴリごとの「支出」だけを計算する（アイコンパスや表記揺れを完全正規化）
+    // 🌟 隠し口座での支出、隠し口座への振替、偽装ブリッジ取引は100%完全に除外
     const categories = {};
+    const startDate = cyclePeriod?.startDate || null;
+    const endDate = cyclePeriod?.endDate || null;
+
     transactions.forEach(tx => {
-      if (tx.type === 'expense') {
-        const rawCat = tx.category || 'その他';
-        const cat = getCleanItemName(rawCat) || 'その他';
-        categories[cat] = (categories[cat] || 0) + (Number(tx.amount) || 0);
+      if (tx.type !== 'expense') return;
+
+      // 隠し口座関連の支出は完全排除
+      const rawMethod = tx.paymentMethod || '';
+      const cleanMethod = getCleanAccountName(rawMethod);
+      const rawCat = tx.category || 'その他';
+      const cleanCat = getCleanItemName(rawCat) || 'その他';
+
+      if (isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts)) return;
+      if (isGhostAccount(rawCat, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts)) return;
+      if (tx.isGhostBridge) return;
+
+      // 偽装カテゴリ（貯蓄・積立、内部振替等）の万が一の漏洩もガード
+      if (cleanCat === '貯蓄・積立' || cleanCat === '内部振替' || cleanCat === '資金振替') return;
+
+      // 現在のサイクル期間（当月）の絞り込み
+      if (startDate && endDate && tx.date) {
+        const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
+        if (txDate < startDate || txDate > endDate) return;
       }
+
+      categories[cleanCat] = (categories[cleanCat] || 0) + (Number(tx.amount) || 0);
     });
 
     const catKeys = Object.keys(categories);
@@ -62,7 +83,7 @@ export default function CategoryChart({ transactions }) {
       chartInstance.dispose();
     };
 
-  }, [transactions]); // 👈 魔法のポイント：transactions（データ）が変わるたびにグラフを自動で描き直す！
+  }, [transactions, ghostAccounts, cyclePeriod]); // 👈 魔法のポイント：transactionsやステルス設定が変わるたびにグラフを自動で描き直す！
 
   return (
     <div style={{ background: '#11141a', padding: '20px', borderRadius: '8px', border: '1px solid #252838', height: '100%' }}>

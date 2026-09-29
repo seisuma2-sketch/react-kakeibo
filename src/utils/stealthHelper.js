@@ -140,23 +140,13 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
             isGhostBridge: true
           });
         } else {
-          // 一般口座A -> 支出 に偽装
-          disguisedTransactions.push({
-            ...outflow.origTx,
-            id: `disguised_${outflow.origTx.id || Math.random()}`,
-            originalDocId: outflow.origTx?.id,
-            type: 'expense',
-            paymentMethod: matchedInflow.rawSource || matchedInflow.source,
-            category: outflow.category,
-            amount: matchAmt,
-            memo: outflow.memo || matchedInflow.memo || '',
-            isGhostBridge: true
-          });
+          // 隠し口座での直接支出は表向きの家計簿には出さない（完全不可視化）
+          // 隠し口座で行った買い物が表の生活費やカテゴリ比率に漏洩するのを完全に防止
         }
       }
     } else {
       // ペアとなる流入がない流出（隠し口座から一般口座Bへ移動した場合）
-      // 総収入を狂わせないため、type を 'transfer'（振替）にして偽装
+      // 総収入・総支出を狂わせないため、type を 'transfer'（振替）にして偽装
       if (outflow.type === 'transfer' && outflow.amount > 0) {
         disguisedTransactions.push({
           ...outflow.origTx,
@@ -173,18 +163,20 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
     }
   });
 
-  // 未消費の流入（一般口座Aから隠し口座にお金を入れたまま出金されていない場合）
+  // 未消費の流入（一般口座Aから隠し口座にお金を送金した取引）
+  // 🌟 重要：支出（expense）や「貯蓄・積立」に偽装すると総支出やカテゴリ比率が崩壊するため、
+  // 安全な名目（口座振替・資金移動）の振替（transfer）として処理する
   ghostInflows.forEach(inflow => {
     if (inflow.amount > 0 && !inflow.isIncome) {
       disguisedTransactions.push({
         ...inflow.origTx,
         id: `disguised_${inflow.origTx.id || Math.random()}`,
         originalDocId: inflow.origTx?.id,
-        type: 'expense',
+        type: 'transfer',
         paymentMethod: inflow.rawSource || inflow.source,
-        category: '貯蓄・積立',
+        category: '資金振替',
         amount: inflow.amount,
-        memo: '内部振替',
+        memo: inflow.memo || '口座間移動',
         isGhostBridge: true
       });
     }
@@ -196,4 +188,26 @@ export function getStealthDisguisedTransactions(transactions = [], ghostAccounts
     const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
     return dateB - dateA;
   });
+}
+
+/**
+ * 🌟 純粋ステルス判定：取引に隠し口座が関係しているか
+ */
+export function isStealthTransaction(tx, ghostAccounts = []) {
+  if (!tx || !Array.isArray(ghostAccounts) || ghostAccounts.length === 0) return false;
+  if (tx.isGhostBridge) return true;
+  const fromAcc = tx.paymentMethod;
+  const toAcc = tx.category;
+  return isGhostAccount(fromAcc, ghostAccounts) || isGhostAccount(toAcc, ghostAccounts);
+}
+
+/**
+ * 🌟 純粋ステルス抽出フィルター（総収入、カテゴリ比率、トレンドグラフ計算用）
+ * ステルスモードONの時、隠し口座の関わるすべての取引を100%完全に排除した通常データ配列を返す
+ */
+export function getPureStealthTransactions(transactions = [], ghostAccounts = [], isStealthActive = true) {
+  if (!isStealthActive || !Array.isArray(ghostAccounts) || ghostAccounts.length === 0) {
+    return transactions;
+  }
+  return transactions.filter(tx => !isStealthTransaction(tx, ghostAccounts));
 }

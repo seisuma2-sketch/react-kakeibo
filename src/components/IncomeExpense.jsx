@@ -1,12 +1,21 @@
 import { useState } from 'react';
-import { getCleanItemName, getCleanAccountName } from '../utils/accountUtils';
+import { getCleanItemName, getCleanAccountName, isGhostAccount } from '../utils/accountUtils';
 
-export default function IncomeExpense({ transactions, isStealthMode }) {
+export default function IncomeExpense({ transactions = [], ghostAccounts = [], isStealthMode }) {
   // 🌟 絞り込み用のState（最初は 'all' ＝ 全て表示）
   const [filter, setFilter] = useState('all');
 
-  // 選んだフィルターに合わせてデータを絞り込む
+  // 選んだフィルターに合わせてデータを絞り込む（隠し口座関連は完全排除）
   const filteredTransactions = transactions.filter(tx => {
+    const rawMethod = tx.paymentMethod || '';
+    const cleanMethod = getCleanAccountName(rawMethod);
+    const rawCat = tx.category || '';
+    const cleanCat = getCleanItemName(rawCat);
+
+    if (isGhostAccount(rawMethod, ghostAccounts) || isGhostAccount(cleanMethod, ghostAccounts)) return false;
+    if (isGhostAccount(rawCat, ghostAccounts) || isGhostAccount(cleanCat, ghostAccounts)) return false;
+    if (tx.isGhostBridge) return false;
+
     if (filter === 'all') return true;
     return tx.type === filter;
   });

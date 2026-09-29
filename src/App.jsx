@@ -75,17 +75,31 @@ function App() {
   const [tempCycleDay, setTempCycleDay] = useState(cycleStartDay);
 
   const [stealthConfig, setStealthConfig] = useState(() => {
+    let ghostAccounts = [];
+    const savedAccounts = localStorage.getItem('m402_stealth_accounts');
+    if (savedAccounts) {
+      try { ghostAccounts = JSON.parse(savedAccounts); } catch (e) {}
+    }
     const saved = localStorage.getItem('stealthConfig');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          ...parsed,
+          ghostAccounts: (Array.isArray(parsed.ghostAccounts) && parsed.ghostAccounts.length > 0) ? parsed.ghostAccounts : ghostAccounts
+        };
+      } catch (e) {}
     }
     return {
-      active: true, hideSummary: false, hideCartridges: true, hideHistory: false, ghostAccounts: [],
+      active: true, hideSummary: false, hideCartridges: true, hideHistory: false, ghostAccounts: ghostAccounts,
     };
   });
   
   useEffect(() => {
     localStorage.setItem('stealthConfig', JSON.stringify(stealthConfig));
+    if (Array.isArray(stealthConfig.ghostAccounts)) {
+      localStorage.setItem('m402_stealth_accounts', JSON.stringify(stealthConfig.ghostAccounts));
+    }
   }, [stealthConfig]);
 
   const updateStealthActive = async (newVal) => {
@@ -415,15 +429,19 @@ function App() {
       if (!tx.date) return;
       const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       if (txDate >= startDate && txDate <= endDate) {
-        // 🌟 ステルスON時は、隠し口座宛の収入・支出・振替を完璧に100%除外する安全ガード
-        if (stealthConfig.active) {
-          const isFromGhost = isGhostAccount(tx.paymentMethod, stealthConfig.ghostAccounts);
-          const isToGhost = isGhostAccount(tx.category, stealthConfig.ghostAccounts);
+        // 🌟 ステルスON時は、隠し口座宛の収入・支出・振替・偽装取引を完璧に100%除外
+        if (stealthConfig.active && stealthConfig.ghostAccounts.length > 0) {
+          const rawMethod = tx.paymentMethod || '';
+          const cleanMethod = getCleanAccountName(rawMethod);
+          const rawCategory = tx.category || '';
+          const cleanCategory = getCleanItemName(rawCategory);
+          const isFromGhost = isGhostAccount(rawMethod, stealthConfig.ghostAccounts) || isGhostAccount(cleanMethod, stealthConfig.ghostAccounts);
+          const isToGhost = isGhostAccount(rawCategory, stealthConfig.ghostAccounts) || isGhostAccount(cleanCategory, stealthConfig.ghostAccounts);
           if (isFromGhost || isToGhost || tx.isGhostBridge) return;
         }
 
-        if (tx.type === 'income') monthlyIncome += (tx.amount || 0);
-        if (tx.type === 'expense') monthlyExpense += (tx.amount || 0);
+        if (tx.type === 'income') monthlyIncome += (Number(tx.amount) || 0);
+        if (tx.type === 'expense') monthlyExpense += (Number(tx.amount) || 0);
       }
     });
 
@@ -605,8 +623,8 @@ function App() {
                 <div style={{ flex: 2, minWidth: 0 }}>
                   <BalanceChart key={`bal_home_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
-                  <CategoryChart transactions={displayTransactions} />
+                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
+                  <CategoryChart transactions={displayTransactions} ghostAccounts={ghostList} cyclePeriod={cyclePeriod} />
                   {!isMobile && <TopNewsWidget onClickViewAll={() => setCurrentTab('feed')} />}
                   <NebulaCore netIncome={cyclePeriod.netIncome} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />
                 </div>
@@ -637,9 +655,9 @@ function App() {
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
           {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
-          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
-          {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
-          {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
+          {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
+          {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
+          {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'playground' && <Playground transactions={displayTransactions} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'map' && <MoneyFlowMap transactions={displayTransactions} />}
           {currentTab === 'feed' && <NewsFeed transactions={displayTransactions} />}

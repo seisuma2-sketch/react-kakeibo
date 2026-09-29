@@ -73,7 +73,25 @@ export default function MobileApp() {
     }
   };
 
-  const [stealthAccounts, setStealthAccounts] = useState([]); 
+  const [stealthAccounts, setStealthAccounts] = useState(() => {
+    const saved = localStorage.getItem('m402_stealth_accounts');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    const savedConfig = localStorage.getItem('stealthConfig');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        if (Array.isArray(parsed.ghostAccounts)) return parsed.ghostAccounts;
+      } catch (e) {}
+    }
+    return [];
+  });
+  useEffect(() => {
+    if (Array.isArray(stealthAccounts)) {
+      localStorage.setItem('m402_stealth_accounts', JSON.stringify(stealthAccounts));
+    }
+  }, [stealthAccounts]);
   const [newGhostBank, setNewGhostBank] = useState('');
 
   const [sortKey, setSortKey] = useState(() => localStorage.getItem('sortKey') || 'amount');
@@ -879,7 +897,7 @@ export default function MobileApp() {
         )}
         {currentTab === 'calendar' && (
           <div style={{ flex: 1, paddingBottom: '80px' }}>
-            <MobileCalendar transactions={safeTransactions} themeColor={activeThemeColor} />
+            <MobileCalendar transactions={safeTransactions} ghostAccounts={ghostAccountsList} themeColor={activeThemeColor} />
           </div>
         )}
         {currentTab === 'history' && <MobileTransactionList transactions={safeTransactions} />}
