@@ -295,6 +295,8 @@ function App() {
         setIsProfileModalOpen(true);
         syncLocalSettingsToCloud(user.uid);
       }
+    }, (err) => {
+      console.warn("user_settings リアルタイム同期通知:", err.message);
     });
 
     const unsubUsers = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
@@ -303,6 +305,9 @@ function App() {
         currentFamilyId = docSnap.data().familyId; 
       }
       setFamilyId(currentFamilyId);
+    }, (_err) => {
+      // FamilySync (Next.js) コレクションが未作成または権限なし時は個人UIDで安全に継続
+      setFamilyId(user.uid);
     });
 
     return () => { unsubSettings(); unsubUsers(); };
@@ -318,6 +323,9 @@ function App() {
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
       setIsTxLoaded(true); 
+    }, (err) => {
+      console.warn("transactions リアルタイム同期通知:", err.message);
+      setIsTxLoaded(true);
     });
 
     return () => unsubscribe();

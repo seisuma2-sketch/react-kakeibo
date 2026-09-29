@@ -350,6 +350,8 @@ export default function MobileApp() {
       }
       
       setFamilyId(currentFamilyId);
+    }, (err) => {
+      console.warn("user_settings モバイル同期通知:", err.message);
     });
 
     return () => { 
@@ -367,6 +369,8 @@ export default function MobileApp() {
       let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
+    }, (err) => {
+      console.warn("transactions モバイル同期通知:", err.message);
     });
 
     return () => unsubscribeTx();

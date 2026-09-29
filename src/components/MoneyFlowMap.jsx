@@ -134,6 +134,8 @@ export default function MoneyFlowMap({ transactions = [] }) {
           const data = [];
           snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
           setInternalTx(data);
+        }, (err) => {
+          console.warn("MoneyFlowMap transactions同期通知:", err.message);
         });
       } else { setInternalTx([]); }
     });
