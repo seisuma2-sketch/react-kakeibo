@@ -91,7 +91,7 @@ function App() {
       } catch (e) {}
     }
     return {
-      active: true, hideSummary: false, hideCartridges: true, hideHistory: false, ghostAccounts: ghostAccounts,
+      active: true, hideSummary: true, hideCartridges: true, hideHistory: true, ghostAccounts: ghostAccounts,
     };
   });
   
@@ -178,7 +178,6 @@ function App() {
     if (stealthPassword === CORRECT_PASSWORD || stealthPassword === '0000') {
       setIsAuthModalOpen(false);
       setStealthPassword('');
-      updateStealthActive(false);
       setIsConfigModalOpen(true);
     } else {
       alert('認証エラー：パスコードが違います。');
@@ -448,6 +447,13 @@ function App() {
           if (isFromGhost || isToGhost || tx.isGhostBridge) return;
         }
 
+        // 🌟 初期設定残高やチャージは当月の収入・支出ではないため除外
+        const rawCat = tx.category || '';
+        const cleanCat = getCleanItemName(rawCat);
+        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ') {
+          return;
+        }
+
         if (tx.type === 'income') monthlyIncome += (Number(tx.amount) || 0);
         if (tx.type === 'expense') monthlyExpense += (Number(tx.amount) || 0);
       }
@@ -597,28 +603,6 @@ function App() {
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {!stealthConfig.active && (
-              <button 
-                onClick={() => updateStealthActive(true)}
-                style={{
-                  background: 'rgba(255, 51, 102, 0.2)',
-                  border: '1.5px solid #ff3366',
-                  borderRadius: '20px',
-                  color: '#ff3366',
-                  padding: '5px 12px',
-                  fontWeight: 'bold',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 0 12px rgba(255, 51, 102, 0.45)',
-                  animation: 'pulse 1.8s infinite'
-                }}
-              >
-                <span>🔓</span> 隔離解除中 (クリックで施錠)
-              </button>
-            )}
             <button onClick={() => { setTempCycleDay(cycleStartDay); setIsCycleModalOpen(true); }} style={{ background: `${themeColor}15`, border: `1px solid ${themeColor}55`, color: themeColor, padding: '5px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', fontFamily: 'monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: `0 0 10px ${themeColor}22` }} title="集計期間を変更">
               <span>🗓️</span> サイクル ({cyclePeriod.label})
             </button>
@@ -874,7 +858,7 @@ function App() {
       {/* 🌟 ステルス設定モーダル */}
       {isConfigModalOpen && (
         <div style={overlayStyle}>
-          <div style={{...modalStyle, maxHeight: '80vh', overflowY: 'auto', width: '90%', maxWidth: '400px', border: `1px solid ${themeColor}`, boxShadow: `0 0 40px ${themeColor}44`}}>
+          <div style={{...modalStyle, maxHeight: '85vh', overflowY: 'auto', width: '92%', maxWidth: '440px', border: `1px solid ${themeColor}`, boxShadow: `0 0 40px ${themeColor}44`, borderRadius: '12px'}}>
             <h3 style={{ color: themeColor, marginTop: 0 }}>🕶️ ステルス制御</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 0' }}>
               <span style={{ color: stealthConfig.active ? themeColor : '#aaa' }}>稼働状況</span>
@@ -887,7 +871,7 @@ function App() {
             
             <div style={{ marginTop: '20px', borderTop: '1px solid #ff3366', paddingTop: '10px' }}>
               <div style={{ color: '#ff3366', fontSize: '14px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>☠️</span> ゴースト口座の設定
+                <span>☠️</span> ゴースト口座の設定 (カートリッジ選択)
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
@@ -906,14 +890,69 @@ function App() {
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {allAccountsToDisplay.map(account => (
-                  <label key={account} style={{ fontSize: '12px', background: stealthConfig.ghostAccounts.includes(account) ? '#ff336622' : '#1a1d24', padding: '8px 12px', borderRadius: '4px', border: `1px solid ${stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : '#252838'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input type="checkbox" checked={stealthConfig.ghostAccounts.includes(account)} onChange={(e) => toggleGhostAccount(account, e.target.checked)} style={{ display: 'none' }} />
-                    <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: stealthConfig.ghostAccounts.includes(account) ? '#ff3366' : 'transparent', border: '1px solid #ff3366' }} />
-                    {account}
-                  </label>
-                ))}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                {allAccountsToDisplay.map(account => {
+                  const isGhost = stealthConfig.ghostAccounts.includes(account);
+                  return (
+                    <div 
+                      key={account} 
+                      onClick={() => toggleGhostAccount(account, !isGhost)}
+                      style={{
+                        position: 'relative',
+                        background: isGhost ? 'linear-gradient(135deg, rgba(255, 51, 102, 0.22) 0%, rgba(20, 10, 15, 0.95) 100%)' : 'linear-gradient(135deg, rgba(0, 191, 255, 0.08) 0%, rgba(10, 15, 25, 0.9) 100%)',
+                        border: isGhost ? '1.5px solid #ff3366' : '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: '8px',
+                        padding: '12px 10px 10px 10px',
+                        cursor: 'pointer',
+                        boxShadow: isGhost ? '0 0 15px rgba(255, 51, 102, 0.35), inset 0 0 10px rgba(255, 51, 102, 0.15)' : 'none',
+                        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {/* カートリッジ上部の金メッキ端子風アクセント */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '3px' }}>
+                          {[0, 1, 2, 3].map(pin => (
+                            <div key={pin} style={{ width: '5px', height: '3px', background: isGhost ? '#ff3366' : '#00bfff', borderRadius: '1px', opacity: 0.8 }} />
+                          ))}
+                        </div>
+                        <span style={{ 
+                          fontSize: '9px', 
+                          fontWeight: 'bold', 
+                          fontFamily: 'monospace',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          background: isGhost ? 'rgba(255, 51, 102, 0.3)' : 'rgba(255, 255, 255, 0.08)',
+                          color: isGhost ? '#ff3366' : '#888'
+                        }}>
+                          {isGhost ? '🔒 ISOLATED' : 'ONLINE'}
+                        </span>
+                      </div>
+
+                      {/* 口座名 */}
+                      <div style={{ 
+                        fontSize: '12.5px', 
+                        fontWeight: 'bold', 
+                        color: isGhost ? '#fff' : '#ccc', 
+                        whiteSpace: 'nowrap', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis',
+                        marginTop: '2px'
+                      }}>
+                        {account}
+                      </div>
+
+                      {/* ステータスインジケーター */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: isGhost ? '#ff3366' : '#666' }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isGhost ? '#ff3366' : '#444', boxShadow: isGhost ? '0 0 6px #ff3366' : 'none' }} />
+                        <span>{isGhost ? '完全隔離中' : '通常表示'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

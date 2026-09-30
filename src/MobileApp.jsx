@@ -100,6 +100,18 @@ export default function MobileApp() {
   const [isVaultManagerModalOpen, setIsVaultManagerModalOpen] = useState(false);
   const [vaultPinInput, setVaultPinInput] = useState('');
   const [vaultPinError, setVaultPinError] = useState('');
+  const lastTitleTapRef = useRef(0);
+
+  const handleTitleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTitleTapRef.current < 400) {
+      lastTitleTapRef.current = 0;
+      setIsVaultAuthModalOpen(true);
+      if (navigator.vibrate) navigator.vibrate([40, 60]);
+    } else {
+      lastTitleTapRef.current = now;
+    }
+  };
 
   const allAccountsToDisplay = useMemo(() => {
     let storedAccounts = [];
@@ -115,7 +127,7 @@ export default function MobileApp() {
 
   const handleVaultAuthSubmit = (pin = vaultPinInput) => {
     if (pin === '0000' || pin === 'cyber') {
-      updateStealthActive(false);
+      // 🌟 勝手にOFFにせず、現在の稼働状態（ON/OFF）を維持したまま安全に設定パネルを開く
       setIsVaultAuthModalOpen(false);
       setVaultPinInput('');
       setVaultPinError('');
@@ -818,7 +830,7 @@ export default function MobileApp() {
         </div>
         
         <div 
-          onClick={handleBalanceQuadTap}
+          onClick={handleTitleDoubleTap}
           style={{ 
             fontWeight: 'bold', 
             letterSpacing: '3px', 
@@ -832,37 +844,8 @@ export default function MobileApp() {
           M402 <span style={{ color: activeThemeColor }}>家計簿</span>
         </div>
 
-        {/* 🌟 右側：アンロック中（隔離解除中）は即時再ロックボタンを表示 */}
-        {!isStealthActive ? (
-          <button 
-            type="button"
-            onClick={() => {
-              updateStealthActive(true);
-              if (navigator.vibrate) navigator.vibrate([40, 40]);
-            }}
-            style={{
-              background: 'rgba(255, 51, 102, 0.2)',
-              border: '1.5px solid #ff3366',
-              borderRadius: '20px',
-              color: '#ff3366',
-              padding: '5px 10px',
-              fontSize: '10.5px',
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer',
-              boxShadow: '0 0 12px rgba(255, 51, 102, 0.45)',
-              animation: 'pulse 1.8s infinite',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <span style={{ fontSize: '12px' }}>🔓</span>
-            <span>施錠する</span>
-          </button>
-        ) : (
-          <div style={{ width: '38px', height: '38px' }} />
-        )}
+        {/* 🌟 痕跡ゼロ化：ヘッダー右側は常に目立たないスペースとして維持 */}
+        <div style={{ width: '38px', height: '38px' }} />
       </div>
 
       {/* 🚀 サイドメニュー */}
@@ -875,39 +858,6 @@ export default function MobileApp() {
             <div><h2 style={{ margin: 0, fontSize: '18px', color: '#fff', borderBottom: `1px solid ${activeThemeColor}44`, paddingBottom: '10px' }}>設定</h2></div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
-              {/* 🌟 プライベート金庫（口座の隔離設定） */}
-              <button 
-                type="button"
-                onClick={() => { 
-                  setIsMenuOpen(false); 
-                  if (isStealthActive) {
-                    setIsVaultAuthModalOpen(true);
-                  } else {
-                    setIsVaultManagerModalOpen(true);
-                  }
-                }} 
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 10px', 
-                  background: isStealthActive ? 'rgba(255, 51, 102, 0.12)' : 'rgba(0, 255, 102, 0.15)', 
-                  color: isStealthActive ? '#ff3366' : '#00ff66', 
-                  border: `1.5px solid ${isStealthActive ? '#ff3366' : '#00ff66'}`, 
-                  borderRadius: '8px', 
-                  fontWeight: 'bold', 
-                  cursor: 'pointer', 
-                  textAlign: 'center', 
-                  fontSize: '13px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: isStealthActive ? '0 0 15px rgba(255,51,102,0.2)' : '0 0 15px rgba(0,255,102,0.2)'
-                }}
-              >
-                <span style={{ fontSize: '15px' }}>{isStealthActive ? '🛡️' : '🔓'}</span>
-                <span>プライベート金庫 {isStealthActive ? '(施錠・隔離中)' : '(隔離解除中)'}</span>
-              </button>
-
               <button 
                 onClick={() => { setIsMenuOpen(false); window.dispatchEvent(new CustomEvent('open-recurring-modal')); }} 
                 style={{ width: '100%', padding: '10px', background: 'rgba(0, 191, 255, 0.12)', color: '#00bfff', border: '1px solid #00bfff', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center', fontSize: '12px' }}
@@ -1468,13 +1418,13 @@ export default function MobileApp() {
                 </button>
               </div>
 
-              {/* 隔離対象口座チェックリスト */}
+              {/* 隔離対象口座カートリッジリスト */}
               <div>
                 <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#00bfff', marginBottom: '4px' }}>
-                  隔離する口座を選択 (タップで切替)
+                  隔離データカートリッジ (タップで切替)
                 </div>
                 <div style={{ fontSize: '10.5px', color: '#888', lineHeight: '1.4', marginBottom: '10px' }}>
-                  チェックした口座は、施錠中はアプリ内の「入力選択肢・残高一覧・グラフ・履歴」から完全に遮断されます。（口座データや過去取引は安全に保持されます）
+                  隔離指定された口座は、施錠中はアプリ内の「入力選択肢・残高一覧・グラフ・履歴」から物理的に遮断されます。（口座残高や過去取引データは消えずに隔離保護されます）
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
@@ -1485,22 +1435,60 @@ export default function MobileApp() {
                         key={accName}
                         onClick={() => toggleStealthAccount(accName, !isIsolated)}
                         style={{
-                          background: isIsolated ? 'rgba(255, 51, 102, 0.15)' : '#161a22',
-                          border: isIsolated ? '1.5px solid #ff3366' : '1px solid rgba(255, 255, 255, 0.1)',
-                          borderRadius: '10px',
-                          padding: '10px 10px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
+                          position: 'relative',
+                          background: isIsolated 
+                            ? 'linear-gradient(135deg, rgba(255, 51, 102, 0.22) 0%, rgba(20, 10, 15, 0.95) 100%)' 
+                            : 'linear-gradient(135deg, rgba(0, 191, 255, 0.08) 0%, rgba(10, 15, 25, 0.9) 100%)',
+                          border: isIsolated ? '1.5px solid #ff3366' : '1px solid rgba(255, 255, 255, 0.12)',
+                          borderRadius: '8px',
+                          padding: '10px 8px 8px 8px',
                           cursor: 'pointer',
-                          boxShadow: isIsolated ? '0 0 10px rgba(255, 51, 102, 0.3)' : 'none',
-                          transition: 'all 0.12s'
+                          boxShadow: isIsolated ? '0 0 12px rgba(255, 51, 102, 0.35), inset 0 0 8px rgba(255, 51, 102, 0.15)' : 'none',
+                          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '5px',
+                          overflow: 'hidden'
                         }}
                       >
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: isIsolated ? '#fff' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {/* カートリッジ上部の金メッキ端子風アクセント */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '3px' }}>
+                            {[0, 1, 2, 3].map(pin => (
+                              <div key={pin} style={{ width: '4px', height: '3px', background: isIsolated ? '#ff3366' : '#00bfff', borderRadius: '1px', opacity: 0.8 }} />
+                            ))}
+                          </div>
+                          <span style={{ 
+                            fontSize: '8.5px', 
+                            fontWeight: 'bold', 
+                            fontFamily: 'monospace',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            background: isIsolated ? 'rgba(255, 51, 102, 0.3)' : 'rgba(255, 255, 255, 0.08)',
+                            color: isIsolated ? '#ff3366' : '#888'
+                          }}>
+                            {isIsolated ? '🔒 ISOLATED' : 'ONLINE'}
+                          </span>
+                        </div>
+
+                        {/* 口座名 */}
+                        <div style={{ 
+                          fontSize: '12px', 
+                          fontWeight: 'bold', 
+                          color: isIsolated ? '#fff' : '#ccc', 
+                          whiteSpace: 'nowrap', 
+                          overflow: 'hidden', 
+                          textOverflow: 'ellipsis',
+                          marginTop: '2px'
+                        }}>
                           {accName}
                         </div>
-                        <span style={{ fontSize: '13px' }}>{isIsolated ? '🛡️' : '⚪'}</span>
+
+                        {/* ステータスインジケーター */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9.5px', color: isIsolated ? '#ff3366' : '#666' }}>
+                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: isIsolated ? '#ff3366' : '#444', boxShadow: isIsolated ? '0 0 5px #ff3366' : 'none' }} />
+                          <span>{isIsolated ? '完全隔離中' : '通常表示'}</span>
+                        </div>
                       </div>
                     );
                   })}

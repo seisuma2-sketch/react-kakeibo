@@ -631,11 +631,14 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
       const history = getOneMonthHistory(selectedAccHistory);
       let totalOutflow = 0; let totalInflow = 0; let maxHit = { amount: 0, category: 'N/A' }; const catCount = {};
       history.forEach(tx => {
+        const cleanCat = getCleanItemName(tx.category) || 'その他';
+        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL')) {
+          return;
+        }
         const amt = Number(tx.amount) || 0;
         const isExpense = tx.type === 'expense' || (tx.type === 'transfer' && isSameAccount(tx.paymentMethod, selectedAccHistory));
         if (isExpense) {
           totalOutflow += amt;
-          const cleanCat = getCleanItemName(tx.category) || 'その他';
           const catName = tx.type === 'transfer' ? `振替: ${cleanCat}` : cleanCat;
           catCount[catName] = (catCount[catName] || 0) + 1;
           if (amt > maxHit.amount) { maxHit = { amount: amt, category: catName }; }
@@ -1555,17 +1558,32 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
             
             let amountText, mainColor, percent, remain, isOver;
             if (isCard) {
-              isOver = item.used > item.budget;
+              const b = Number(item.budget) || 0;
+              const u = Number(item.used) || 0;
+              isOver = b > 0 && u > b;
+
               if (cardMode === 'used') {
-                amountText = `-¥${item.used.toLocaleString()}`;
-                mainColor = '#ff3366';
-                percent = item.budget > 0 ? Math.min(100, (item.used / item.budget) * 100) : (item.used > 0 ? 100 : 0);
+                amountText = `-¥${u.toLocaleString()}`;
+                mainColor = u > 0 ? '#ff3366' : '#888';
+                percent = b > 0 ? Math.min(100, (u / b) * 100) : 0;
               } else {
-                remain = Math.max(0, item.budget - item.used);
-                percent = item.budget > 0 ? Math.max(0, Math.min(100, (remain / item.budget) * 100)) : 0;
-                mainColor = '#00ff66';
-                if (percent <= 20 || isOver) mainColor = '#ff3366'; else if (percent <= 50) mainColor = '#ff9900';
-                amountText = isOver ? 'OVER!' : `¥${remain.toLocaleString()}`;
+                if (b > 0) {
+                  remain = Math.max(0, b - u);
+                  percent = Math.max(0, Math.min(100, (remain / b) * 100));
+                  if (isOver) {
+                    mainColor = '#ff3366';
+                    amountText = `超過 -¥${(u - b).toLocaleString()}`;
+                  } else {
+                    mainColor = percent <= 20 ? '#ff3366' : (percent <= 50 ? '#ff9900' : '#00ff66');
+                    amountText = `¥${remain.toLocaleString()}`;
+                  }
+                } else {
+                  // 🌟 予算未設定（0円）の場合はOVER!にせず、利用額を明瞭に表示
+                  remain = 0;
+                  percent = 0;
+                  mainColor = u > 0 ? '#ff9900' : '#888';
+                  amountText = u > 0 ? `-¥${u.toLocaleString()}` : '¥0';
+                }
               }
             } else {
               const bal = item.balance;
