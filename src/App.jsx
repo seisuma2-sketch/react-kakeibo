@@ -447,10 +447,10 @@ function App() {
           if (isFromGhost || isToGhost || tx.isGhostBridge) return;
         }
 
-        // 🌟 初期設定残高やチャージは当月の収入・支出ではないため除外
+        // 🌟 初期設定残高やチャージ、残高調整（棚卸し）は当月の純粋な収入・支出ではないため除外
         const rawCat = tx.category || '';
         const cleanCat = getCleanItemName(rawCat);
-        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ') {
+        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ' || cleanCat.includes('残高調整') || cleanCat.includes('棚卸')) {
           return;
         }
 
@@ -635,7 +635,7 @@ function App() {
 
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  <BalanceChart key={`bal_home_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
+                  <BalanceChart key={`bal_home_${settingsVersion}`} transactions={transactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} ghostAccounts={ghostList} cyclePeriod={cyclePeriod} />
@@ -673,7 +673,7 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
+          {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={transactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}

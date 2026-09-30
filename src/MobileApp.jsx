@@ -965,7 +965,7 @@ export default function MobileApp() {
             </div>
             <BalanceChart 
               key={`bal_${settingsVersion}`}
-              transactions={safeTransactions} 
+              transactions={transactions} 
               ghostAccounts={ghostAccountsList} 
               sortKey={sortKey} 
               sortOrder={sortOrder} 

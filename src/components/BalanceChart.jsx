@@ -1437,6 +1437,39 @@ export default function BalanceChart({ transactions = [], ghostAccounts = [], so
               <button onClick={() => setSelectedAccHistory(null)} style={{ background: 'transparent', border: 'none', color: '#ff3366', fontSize: '20px', cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              {/* 🌟 実際の残高との直接一致調整ボタン */}
+              {systemData.combined.some(i => i.name === selectedAccHistory && i.type === 'bank') && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0, 191, 255, 0.08)', border: '1px solid #00bfff', borderRadius: '8px', padding: '10px 14px' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#aaa' }}>現在のアプリ残高</div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#00bfff', fontFamily: 'monospace' }}>
+                      ¥{(systemData.combined.find(i => i.name === selectedAccHistory)?.balance || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const acc = selectedAccHistory;
+                      setSelectedAccHistory(null);
+                      openAuditModal(acc);
+                    }}
+                    style={{
+                      background: '#00bfff',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 14px',
+                      fontWeight: 'bold',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      boxShadow: '0 0 10px rgba(0, 191, 255, 0.3)'
+                    }}
+                  >
+                    ⚖️ 実残高に合わせる (残高修正)
+                  </button>
+                </div>
+              )}
+
               {isAnalyzing ? (
                 <div style={{ textAlign: 'center', color: '#00ff66', fontFamily: 'monospace', padding: '30px 0' }}>
                   <div style={{ marginTop: '15px', fontWeight: 'bold' }}>詳細プロファイリングを実行中...</div>
