@@ -53,47 +53,6 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
   const [searchQuery, setSearchQuery] = useState(''); // 検索バー用
   const [deletedIds, setDeletedIds] = useState([]); // 削除済み除外用
 
-  // 🌟 取引編集用State
-  const [editingTx, setEditingTx] = useState(null);
-  const [editAmount, setEditAmount] = useState('');
-  const [editPaymentMethod, setEditPaymentMethod] = useState('');
-  const [editCategory, setEditCategory] = useState('');
-  const [editMemo, setEditMemo] = useState('');
-  const [editType, setEditType] = useState('expense');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-
-  const openEditModal = (tx) => {
-    setEditingTx(tx);
-    setEditAmount(String(tx.amount || ''));
-    setEditPaymentMethod(tx.paymentMethod || '');
-    setEditCategory(tx.category || '');
-    setEditMemo(tx.memo || '');
-    setEditType(tx.type || 'expense');
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingTx) return;
-    const realId = editingTx.originalDocId || (typeof editingTx.id === 'string' && editingTx.id.startsWith('disguised_') ? editingTx.id.replace('disguised_', '') : editingTx.id);
-    if (!realId) return;
-
-    setIsSavingEdit(true);
-    try {
-      await updateDoc(doc(db, "transactions", realId), {
-        amount: Number(editAmount) || 0,
-        paymentMethod: editPaymentMethod,
-        category: editCategory,
-        memo: editMemo,
-        type: editType
-      });
-      setEditingTx(null);
-    } catch (e) {
-      console.error("更新エラー:", e);
-      alert("取引の更新に失敗しました: " + e.message);
-    } finally {
-      setIsSavingEdit(false);
-    }
-  };
-
   // ステルスモード時の偽装表示
   if (isStealthMode) {
     return (
@@ -150,6 +109,43 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
           }
         } catch (updateErr) {
           console.error("updateDoc failed as well:", updateErr);
+        }
+      }
+    }
+  };
+
+  // 取引データの簡易編集（口座・金額の変更）
+  const handleQuickEdit = async (e, tx) => {
+    e.stopPropagation();
+    const currentAcc = cleanText(tx.paymentMethod) || '';
+    const currentAmt = Number(tx.amount || 0);
+    const action = window.prompt(
+      `【データ編集メニュー】\n1: 口座の変更 (現在: ${currentAcc})\n2: 金額の変更 (現在: ¥${currentAmt.toLocaleString()})\n\n変更したい項目の番号 (1 または 2) を入力してください:`, 
+      "1"
+    );
+    if (!action) return;
+
+    const realId = tx.originalDocId || (typeof tx.id === 'string' && tx.id.startsWith('disguised_') ? tx.id.replace('disguised_', '') : tx.id);
+    if (!realId) return;
+
+    if (action.trim() === '1') {
+      const newAcc = window.prompt(`変更後の口座名を入力してください（例: 三井住友銀行, 三菱UFJ銀行, 現金）:`, currentAcc);
+      if (newAcc && newAcc.trim() && newAcc.trim() !== currentAcc) {
+        try {
+          await updateDoc(doc(db, "transactions", realId), { paymentMethod: newAcc.trim() });
+          alert(`口座を「${newAcc.trim()}」に変更しました。`);
+        } catch (err) {
+          alert("更新エラー: " + err.message);
+        }
+      }
+    } else if (action.trim() === '2') {
+      const newAmtStr = window.prompt(`新しい金額を入力してください:`, currentAmt);
+      if (newAmtStr && !isNaN(Number(newAmtStr))) {
+        try {
+          await updateDoc(doc(db, "transactions", realId), { amount: Number(newAmtStr) });
+          alert(`金額を ¥${Number(newAmtStr).toLocaleString()} に変更しました。`);
+        } catch (err) {
+          alert("更新エラー: " + err.message);
         }
       }
     }
@@ -285,7 +281,7 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
 
                       {/* ホバーアクション (PC時のみ、マウスを乗せると出現) */}
                       <div className="tx-actions" style={{ position: 'absolute', right: '15px', background: '#1a1d24', display: 'flex', gap: '8px', padding: '4px 8px', borderRadius: '4px', boxShadow: '0 0 10px rgba(0,0,0,0.5)', opacity: 0, transition: 'opacity 0.2s' }}>
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(tx); }} style={{ background: 'transparent', border: 'none', color: '#00bfff', cursor: 'pointer', fontSize: '14px' }} title="編集">✏️</button>
+                        <button onClick={(e) => handleQuickEdit(e, tx)} style={{ background: 'transparent', border: 'none', color: '#00bfff', cursor: 'pointer', fontSize: '14px' }} title="編集">✏️</button>
                         <button onClick={(e) => handleDelete(e, tx)} style={{ background: 'transparent', border: 'none', color: '#ff3366', cursor: 'pointer', fontSize: '14px' }} title="削除">🗑️</button>
                       </div>
                     </div>
@@ -299,10 +295,8 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #333', paddingBottom: '10px' }}>
                       <span style={{ color: '#00bfff', fontSize: '12px', fontFamily: 'monospace', fontWeight: 'bold', letterSpacing: '1px' }}>FORENSIC DATA ANALYSIS //</span>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(tx); }} style={{ background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>✏️ EDIT</button>
-                        {isMobile && (
-                          <button onClick={(e) => handleDelete(e, tx)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>🗑️ DELETE</button>
-                        )}
+                        <button onClick={(e) => handleQuickEdit(e, tx)} style={{ background: 'transparent', border: '1px solid #00bfff', color: '#00bfff', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>✏️ 編集</button>
+                        <button onClick={(e) => handleDelete(e, tx)} style={{ background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontFamily: 'monospace' }}>🗑️ DELETE</button>
                       </div>
                     </div>
 
@@ -343,119 +337,6 @@ export default function TransactionList({ transactions = [], isStealthMode, isMo
           })
         )}
       </div>
-
-      {/* 🌟 取引編集モーダル */}
-      {editingTx && (
-        <div onClick={() => setEditingTx(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.2s ease-out' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#0a0c10', border: '1px solid #00bfff', borderRadius: '12px', width: '90%', maxWidth: '380px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 0 35px rgba(0,191,255,0.3)' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#00bfff', fontSize: '16px', fontFamily: 'monospace' }}>
-                ✏️ 取引データの編集
-              </h3>
-              <button onClick={() => setEditingTx(null)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer' }}>×</button>
-            </div>
-
-            {/* 種別トグル */}
-            <div style={{ display: 'flex', background: '#11141a', borderRadius: '6px', padding: '4px', border: '1px solid #252838' }}>
-              {['expense', 'income', 'transfer'].map(t => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setEditType(t)}
-                  style={{
-                    flex: 1,
-                    padding: '8px',
-                    border: 'none',
-                    borderRadius: '4px',
-                    fontWeight: 'bold',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    background: editType === t ? (t === 'expense' ? '#ff3366' : (t === 'income' ? '#00ff66' : '#b666ff')) : 'transparent',
-                    color: editType === t ? (t === 'income' ? '#000' : '#fff') : '#888'
-                  }}
-                >
-                  {t === 'expense' ? '支出' : (t === 'income' ? '収入' : '振替')}
-                </button>
-              ))}
-            </div>
-
-            {/* 金額入力 */}
-            <div>
-              <div style={{ fontSize: '11px', color: '#aaa', fontWeight: 'bold', marginBottom: '4px' }}>金額</div>
-              <div style={{ display: 'flex', alignItems: 'center', background: '#11141a', border: '1px solid #00bfff', borderRadius: '6px', padding: '0 12px' }}>
-                <span style={{ color: '#00bfff', fontSize: '16px', fontWeight: 'bold' }}>¥</span>
-                <input
-                  type="number"
-                  value={editAmount}
-                  onChange={e => setEditAmount(e.target.value)}
-                  style={{ width: '100%', padding: '10px 8px', background: 'transparent', color: '#fff', border: 'none', outline: 'none', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}
-                />
-              </div>
-            </div>
-
-            {/* 口座選択 */}
-            <div>
-              <div style={{ fontSize: '11px', color: '#aaa', fontWeight: 'bold', marginBottom: '4px' }}>
-                {editType === 'transfer' ? '出金元口座' : (editType === 'income' ? '入金先口座' : '支払口座')}
-              </div>
-              <input
-                type="text"
-                value={editPaymentMethod}
-                onChange={e => setEditPaymentMethod(e.target.value)}
-                placeholder="口座名 (例: 三井住友銀行, 三菱UFJ銀行)"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#11141a', color: '#fff', border: '1px solid #333', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
-              />
-            </div>
-
-            {/* カテゴリ */}
-            <div>
-              <div style={{ fontSize: '11px', color: '#aaa', fontWeight: 'bold', marginBottom: '4px' }}>
-                {editType === 'transfer' ? '入金先口座' : 'カテゴリ'}
-              </div>
-              <input
-                type="text"
-                value={editCategory}
-                onChange={e => setEditCategory(e.target.value)}
-                placeholder="カテゴリまたは入金先"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#11141a', color: '#fff', border: '1px solid #333', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
-              />
-            </div>
-
-            {/* メモ */}
-            <div>
-              <div style={{ fontSize: '11px', color: '#aaa', fontWeight: 'bold', marginBottom: '4px' }}>メモ</div>
-              <input
-                type="text"
-                value={editMemo}
-                onChange={e => setEditMemo(e.target.value)}
-                placeholder="メモ"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#11141a', color: '#fff', border: '1px solid #333', borderRadius: '6px', fontSize: '13px', outline: 'none' }}
-              />
-            </div>
-
-            {/* アクションボタン */}
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setEditingTx(null)}
-                style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={isSavingEdit}
-                style={{ flex: 1, padding: '12px', background: '#00bfff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: isSavingEdit ? 'not-allowed' : 'pointer', boxShadow: '0 0 15px rgba(0,191,255,0.3)' }}
-              >
-                {isSavingEdit ? '保存中...' : '変更を保存'}
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* アニメーションとホバー用CSS */}
       <style>{`

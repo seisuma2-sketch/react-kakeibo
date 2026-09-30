@@ -270,8 +270,8 @@ function App() {
         const data = docSnap.data();
         setStealthConfig(prev => ({ 
           ...prev, 
-          ghostAccounts: data.stealthAccounts || [],
-          active: data.isStealthActive !== undefined ? data.isStealthActive : prev.active
+          ghostAccounts: (Array.isArray(data.stealthAccounts) && data.stealthAccounts.length > 0) ? data.stealthAccounts : prev.ghostAccounts,
+          active: data.isStealthActive !== undefined ? data.isStealthActive : true
         }));
         if (data.userName !== undefined) setUserName(data.userName);
         else setIsProfileModalOpen(true);
@@ -369,16 +369,17 @@ function App() {
     return getPureStealthTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
   }, [transactions, stealthConfig.ghostAccounts, stealthConfig.active]); 
 
-  // 🌟 誤って三菱UFJ銀行に記録されていた給与（229,582円等）を本来の隠し口座（三井住友銀行）へ自動修復
+  // 🌟 誤って三菱UFJ銀行に記録されていた給与（229,582円等）を本来の隔離隠し口座（三井住友銀行）へ自動修復
   useEffect(() => {
     if (!user || transactions.length === 0) return;
-    const targetTx = transactions.find(t => 
-      Number(t.amount) === 229582 && 
-      isSameAccount(t.paymentMethod, '三菱UFJ銀行')
-    );
-    if (targetTx) {
-      console.log("給与取引の入金口座を三井住友銀行へ自動修復します:", targetTx.id);
-      updateDoc(doc(db, "transactions", targetTx.id), { 
+    const misplacedTx = transactions.find(t => {
+      const amt = Math.round(Number(String(t.amount || '').replace(/[^0-9.-]/g, '')));
+      const method = String(t.paymentMethod || '');
+      return amt === 229582 && (method.includes('三菱') || method.includes('UFJ'));
+    });
+    if (misplacedTx) {
+      console.log("給与取引の入金口座を三井住友銀行へ自動修復更新します:", misplacedTx.id);
+      updateDoc(doc(db, "transactions", misplacedTx.id), { 
         paymentMethod: '三井住友銀行' 
       }).catch(err => console.error("給与口座自動修正エラー:", err));
     }
@@ -462,10 +463,10 @@ function App() {
           if (isFromGhost || isToGhost || tx.isGhostBridge) return;
         }
 
-        // 🌟 初期設定残高やチャージは当月の収入・支出ではないため除外
+        // 🌟 初期設定残高やチャージ、残高調整(棚卸し)は当月の収入・支出ではないため除外
         const rawCat = tx.category || '';
         const cleanCat = getCleanItemName(rawCat);
-        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ') {
+        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ' || cleanCat.includes('残高調整') || cleanCat.includes('棚卸')) {
           return;
         }
 

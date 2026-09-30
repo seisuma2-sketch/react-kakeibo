@@ -177,14 +177,14 @@ export default function SavingsHub({ transactions = [], cyclePeriod, user, isMob
     };
   }, [transactions, cyclePeriod, monthlyBudget]);
 
-  if (isStealthMode) {
-    return null;
-  }
-
   const isSafePositive = dailyMetrics.safeToSpend >= 0;
   const animatedSafeToSpend = useCountUp(dailyMetrics.safeToSpend);
   const animatedTsumoriMonth = useCountUp(tsumoriStats.monthTotal);
   const animatedTsumoriAll = useCountUp(tsumoriStats.allTotal);
+
+  if (isStealthMode) {
+    return null;
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', marginBottom: '20px' }}>
