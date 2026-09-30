@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { collection, onSnapshot, query, where, doc, setDoc } from 'firebase/firestore'; 
+import { collection, onSnapshot, query, where, doc, setDoc, updateDoc } from 'firebase/firestore'; 
 import { signOut } from 'firebase/auth'; 
 import { db, auth } from './firebase';
 
@@ -768,6 +768,21 @@ export default function MobileApp() {
     return getPureStealthTransactions(transactions, stealthAccounts, isStealthActive);
   }, [transactions, stealthAccounts, isStealthActive]);
 
+  // 🌟 誤って三菱UFJ銀行に記録されていた給与（229,582円等）を本来の隠し口座（三井住友銀行）へ自動修復
+  useEffect(() => {
+    if (!user || transactions.length === 0) return;
+    const targetTx = transactions.find(t => 
+      Number(t.amount) === 229582 && 
+      isSameAccount(t.paymentMethod, '三菱UFJ銀行')
+    );
+    if (targetTx) {
+      console.log("モバイル: 給与取引の入金口座を三井住友銀行へ自動修復します:", targetTx.id);
+      updateDoc(doc(db, "transactions", targetTx.id), { 
+        paymentMethod: '三井住友銀行' 
+      }).catch(err => console.error("給与口座自動修正エラー:", err));
+    }
+  }, [user, transactions]);
+
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
   if (!user) {
@@ -965,7 +980,7 @@ export default function MobileApp() {
             </div>
             <BalanceChart 
               key={`bal_${settingsVersion}`}
-              transactions={transactions} 
+              transactions={safeTransactions} 
               ghostAccounts={ghostAccountsList} 
               sortKey={sortKey} 
               sortOrder={sortOrder} 

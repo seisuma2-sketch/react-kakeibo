@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot, query, where, doc, setDoc, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, setDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth } from './firebase';
 
@@ -369,6 +369,21 @@ function App() {
     return getPureStealthTransactions(transactions, stealthConfig.ghostAccounts, stealthConfig.active);
   }, [transactions, stealthConfig.ghostAccounts, stealthConfig.active]); 
 
+  // 🌟 誤って三菱UFJ銀行に記録されていた給与（229,582円等）を本来の隠し口座（三井住友銀行）へ自動修復
+  useEffect(() => {
+    if (!user || transactions.length === 0) return;
+    const targetTx = transactions.find(t => 
+      Number(t.amount) === 229582 && 
+      isSameAccount(t.paymentMethod, '三菱UFJ銀行')
+    );
+    if (targetTx) {
+      console.log("給与取引の入金口座を三井住友銀行へ自動修復します:", targetTx.id);
+      updateDoc(doc(db, "transactions", targetTx.id), { 
+        paymentMethod: '三井住友銀行' 
+      }).catch(err => console.error("給与口座自動修正エラー:", err));
+    }
+  }, [user, transactions]); 
+
   // 🌟 口座やカード設定の重複（リクルートカード等の2重化）を自動クリーンアップ
   useEffect(() => {
     ['creditCardSettings', 'creditCardSettings_sync'].forEach(cardKey => {
@@ -447,10 +462,10 @@ function App() {
           if (isFromGhost || isToGhost || tx.isGhostBridge) return;
         }
 
-        // 🌟 初期設定残高やチャージ、残高調整（棚卸し）は当月の純粋な収入・支出ではないため除外
+        // 🌟 初期設定残高やチャージは当月の収入・支出ではないため除外
         const rawCat = tx.category || '';
         const cleanCat = getCleanItemName(rawCat);
-        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ' || cleanCat.includes('残高調整') || cleanCat.includes('棚卸')) {
+        if (cleanCat.includes('初期設定') || cleanCat.includes('INIT') || cleanCat.includes('INITIAL') || cleanCat === 'チャージ') {
           return;
         }
 
@@ -635,7 +650,7 @@ function App() {
 
              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '15px' : '25px' }}>
                 <div style={{ flex: 2, minWidth: 0 }}>
-                  <BalanceChart key={`bal_home_${settingsVersion}`} transactions={transactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
+                  <BalanceChart key={`bal_home_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />
                 </div>
                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: isMobile ? '15px' : '25px' }}>
                   <CategoryChart transactions={displayTransactions} ghostAccounts={ghostList} cyclePeriod={cyclePeriod} />
@@ -673,7 +688,7 @@ function App() {
           )}
 
           {currentTab === 'calendar' && <CalendarView transactions={displayTransactions} />}
-          {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={transactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
+          {currentTab === 'balance' && <BalanceChart key={`bal_${settingsVersion}`} transactions={displayTransactions} ghostAccounts={ghostList} onOpenStealth={() => setIsAuthModalOpen(true)} />}
           {currentTab === 'bs-pl' && <BSPLStatement transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideSummary} />}
           {currentTab === 'income-expense' && <IncomeExpense transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
           {currentTab === 'category' && <CategoryBreakdown transactions={displayTransactions} ghostAccounts={ghostList} isStealthMode={stealthConfig.active && stealthConfig.hideHistory} />}
