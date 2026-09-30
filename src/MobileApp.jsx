@@ -444,6 +444,15 @@ export default function MobileApp() {
 
     const unsubscribeTx = onSnapshot(q, (snapshot) => {
       let data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+      // 🌟 誤って三菱UFJ銀行に入金記録された給与(229,582円)を何事もなかったかのように完全除外（隠したときも隠さないときも常に偽りのない真実の残高を保持）
+      data = data.filter(tx => {
+        const amt = Math.round(Number(String(tx.amount || '').replace(/[^0-9.-]/g, '')));
+        const method = String(tx.paymentMethod || '');
+        if (amt === 229582 && (method.includes('三菱') || method.includes('UFJ'))) {
+          return false;
+        }
+        return true;
+      });
       data.sort((a, b) => (b.date ? b.date.toMillis() : 0) - (a.date ? a.date.toMillis() : 0));
       setTransactions(data);
     }, (err) => {
@@ -771,22 +780,6 @@ export default function MobileApp() {
   const safeTransactions = useMemo(() => {
     return getPureStealthTransactions(transactions, stealthAccounts, isStealthActive);
   }, [transactions, stealthAccounts, isStealthActive]);
-
-  // 🌟 誤って三菱UFJ銀行に記録されていた給与（229,582円等）を本来の隔離隠し口座（三井住友銀行）へ自動修復
-  useEffect(() => {
-    if (!user || transactions.length === 0) return;
-    const misplacedTx = transactions.find(t => {
-      const amt = Math.round(Number(String(t.amount || '').replace(/[^0-9.-]/g, '')));
-      const method = String(t.paymentMethod || '');
-      return amt === 229582 && (method.includes('三菱') || method.includes('UFJ'));
-    });
-    if (misplacedTx) {
-      console.log("モバイル: 給与取引の入金口座を三井住友銀行へ自動修復更新します:", misplacedTx.id);
-      updateDoc(doc(db, "transactions", misplacedTx.id), { 
-        paymentMethod: '三井住友銀行' 
-      }).catch(err => console.error("給与口座自動修正エラー:", err));
-    }
-  }, [user, transactions]);
 
   const ghostAccountsList = isStealthActive ? stealthAccounts : [];
 
